@@ -11,13 +11,13 @@ class AIProviderSettings(BaseModel):
     """AI provider connection and behaviour settings."""
     model_config = ConfigDict(extra="ignore")
 
-    model: str = "deepseek-v4-pro"
-    base_url: str = "https://api.deepseek.com"
+    model: str = "claude-sonnet-4-6"
+    base_url: str = "https://www.packyapi.com/v1"
     api_key: str = ""
     api_key_encrypted: str = ""
     thinking: bool = True
     reasoning_effort: Literal["low", "medium", "high", "max"] = "max"
-    context_window: int = 1_000_000
+    context_window: int = 2_000_000
 
 
 class GeneralSettings(BaseModel):
@@ -27,13 +27,13 @@ class GeneralSettings(BaseModel):
     default_bar_count: int = 100
     refresh_interval_ms: int = 1000
     context_warning_threshold_pct: float = 80.0
-    last_symbol: str = "XAUUSD"
-    last_timeframe: str = "1h"
-    decision_flow_auto_play: bool = False
+    last_symbol: str = "XAUUSDm"
+    last_timeframe: str = "15m"
+    decision_flow_auto_play: bool = True
     decision_flow_play_seconds: int = 50
     incremental_max_new_bars: int = Field(default=10, ge=0, le=500)
-    #: 阶段二交易倾向：conservative=当前默认；balanced/aggressive 逐级更愿意下单
-    decision_stance: DecisionStance = "conservative"
+    #: 阶段二交易倾向：balanced=默认；conservative/aggressive 逐级调整下单意愿
+    decision_stance: DecisionStance = "balanced"
     #: 决策树可视化：在「整图适配」基础上的缩放百分比（100=与适配一致；可任意放大，仅下限 10%）
     decision_flow_default_zoom_pct: int = Field(default=500, ge=10)
 

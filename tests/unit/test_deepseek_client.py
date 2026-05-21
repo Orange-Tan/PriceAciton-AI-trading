@@ -63,6 +63,8 @@ def test_chat_does_not_send_forbidden_params():
 def test_chat_extra_body_thinking_enabled():
     """extra_body must contain thinking.type=enabled and reasoning_effort."""
     settings = _make_settings()
+    settings.base_url = "https://api.deepseek.com"
+    settings.model = "deepseek-v4-pro"
     settings.thinking = True
     settings.reasoning_effort = "max"
     client = DeepSeekClient(settings)
@@ -80,10 +82,11 @@ def test_chat_extra_body_thinking_enabled():
     assert kwargs["reasoning_effort"] == "max"
 
 
-def test_completion_max_tokens_practical_unlimited():
+def test_completion_max_tokens_deepseek_cap():
     settings = _make_settings()
-    extra_body = {"thinking": {"type": "enabled", "budget_tokens": 999_998}}
-    assert _completion_max_tokens(settings, extra_body=extra_body, effort="high") == 999_999
+    settings.base_url = "https://api.deepseek.com"
+    settings.model = "deepseek-v4-pro"
+    assert _completion_max_tokens(settings, extra_body={}, effort="max") == 393_216
 
 
 def test_completion_max_tokens_packy_claude_cap():
@@ -123,6 +126,8 @@ def test_packy_claude_thinking_uses_budget_not_reasoning_effort():
 
 def test_chat_sends_max_tokens_when_thinking():
     settings = _make_settings()
+    settings.base_url = "https://api.deepseek.com"
+    settings.model = "deepseek-v4-pro"
     settings.thinking = True
     settings.reasoning_effort = "medium"
     client = DeepSeekClient(settings)
@@ -135,7 +140,7 @@ def test_chat_sends_max_tokens_when_thinking():
         client.chat([{"role": "user", "content": "hi"}])
 
     kwargs = mock_openai.return_value.chat.completions.create.call_args.kwargs
-    assert kwargs["max_tokens"] == 999_999
+    assert kwargs["max_tokens"] == 393_216
 
 
 def test_chat_kkai_sends_thinking_object_not_reasoning_effort():

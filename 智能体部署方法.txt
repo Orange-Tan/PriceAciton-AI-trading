@@ -1,0 +1,277 @@
+================================================================
+  PA Agent 智能体部署方法
+  适用环境：Windows + Python 3.11+ 已安装 + MT5 已安装
+================================================================
+
+【说明】
+本文档供自动化 Agent 按步骤执行部署。每一步都有明确的命令和验收条件。
+遇到问题时按"故障排查"章节处理。最后必须通过验收环节才能交付给用户。
+
+【重要：项目路径】
+本文档中 PROJECT_ROOT 代表 PA_Agent 项目的根目录。
+执行前必须先确定项目实际路径，后续所有命令中的 PROJECT_ROOT 都替换为实际路径。
+例如：用户项目在 D:\cl\PA_Agent，则 PROJECT_ROOT = D:\cl\PA_Agent
+      用户项目在 C:\Users\张三\Desktop\PA_Agent，则 PROJECT_ROOT = C:\Users\张三\Desktop\PA_Agent
+
+确定方法：找到项目中存在 pa_agent\main.py 和 pyproject.toml 的那个目录，就是 PROJECT_ROOT。
+
+================================================================
+  第一步：确认前置条件
+================================================================
+
+执行以下命令，确认 Python 和 MT5 已就绪：
+
+  python --version
+
+预期输出：Python 3.11.x 或更高版本（3.12、3.13 均可）
+
+若输出"不是内部或外部命令"，说明 Python 未加入 PATH，需用户重新安装并勾选"Add Python to PATH"。
+
+MT5 确认：检查 MetaTrader 5 终端是否已安装并能正常打开登录。
+MT5 必须在运行部署和启动智能体时保持打开且已登录状态。
+
+================================================================
+  第二步：创建 Python 虚拟环境
+================================================================
+
+  cd /d PROJECT_ROOT
+  python -m venv .venv
+
+验收：确认 .venv 目录已创建
+
+  dir PROJECT_ROOT\.venv\Scripts\python.exe
+
+预期输出：文件存在
+
+【故障排查】
+- 若报错"No module named venv"：Python 安装不完整，需重新安装 Python 勾选全部特性
+- 若报错"权限不足"：以管理员身份运行命令提示符
+
+================================================================
+  第三步：激活虚拟环境并升级 pip
+================================================================
+
+  PROJECT_ROOT\.venv\Scripts\activate
+  python -m pip install --upgrade pip
+
+验收：
+
+  python -c "import pip; print(pip.__version__)"
+
+预期输出：pip 版本号 24.x 或更高
+
+【故障排查】
+- 若 pip 升级网络超时，切换清华源：
+
+    python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+
+================================================================
+  第四步：安装项目依赖
+================================================================
+
+  cd /d PROJECT_ROOT
+  PROJECT_ROOT\.venv\Scripts\activate
+  pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+
+说明：
+- -e . 表示以开发模式安装，代码改动即时生效
+- -i 指定清华源，避免默认源网络问题
+- 会自动安装 pyproject.toml 中列出的所有依赖：
+  PyQt6, pyqtgraph, numpy, pandas, openai, tiktoken,
+  jsonschema, pydantic, MetaTrader5, cryptography, pywin32
+
+验收：逐个检查核心包是否可导入
+
+  python -c "import PyQt6; print('PyQt6 OK')"
+  python -c "import pyqtgraph; print('pyqtgraph OK')"
+  python -c "import numpy; print('numpy OK')"
+  python -c "import pandas; print('pandas OK')"
+  python -c "import openai; print('openai OK')"
+  python -c "import tiktoken; print('tiktoken OK')"
+  python -c "import jsonschema; print('jsonschema OK')"
+  python -c "import pydantic; print('pydantic OK')"
+  python -c "import MetaTrader5; print('MetaTrader5 OK')"
+  python -c "import cryptography; print('cryptography OK')"
+  python -c "import win32crypt; print('pywin32 OK')"
+
+预期输出：每行均显示 "xxx OK"
+
+【故障排查】
+
+问题 1：pip install 网络超时 / ConnectionError
+解决：
+  方案 A - 换清华源（已在上面命令中使用）：
+    pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+
+  方案 B - 换阿里云源：
+    pip install -e . -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+
+  方案 C - 逐个安装（某个包卡住时单独装）：
+    pip install PyQt6 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+    pip install pyqtgraph -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+    ... 依次安装每个包
+
+问题 2：PyQt6 安装后报 "DLL load failed"
+解决：安装 Microsoft Visual C++ Redistributable
+  下载地址：https://aka.ms/vs/17/release/vc_redist.x64.exe
+  安装后重启电脑
+
+问题 3：MetaTrader5 包安装失败
+解决：
+  - MetaTrader5 包仅支持 Windows，确认当前是 Windows 系统
+  - 若 pip 安装报错，尝试指定版本：
+    pip install MetaTrader5==5.0.45 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+  - 必须确保 MT5 终端已安装，否则 Python 包虽能装上但运行时会报错
+
+问题 4：pywin32 安装后报 ImportError
+解决：安装后需执行 post-install 脚本：
+    python "PROJECT_ROOT\.venv\Scripts\pywin32_postinstall.py" -install
+
+问题 5：pyqtgraph 与 PyQt6 版本不兼容
+解决：指定兼容版本：
+    pip install pyqtgraph>=0.13 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+
+问题 6：numpy 版本冲突
+解决：
+    pip install numpy>=1.26 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+
+================================================================
+  第五步：确认项目目录结构完整性
+================================================================
+
+  cd /d PROJECT_ROOT
+  dir pa_agent\main.py
+  dir pa_agent\gui\main_window.py
+  dir prompt_engineering
+
+预期输出：以上文件均存在
+
+config\settings.json 若不存在，程序首次启动会自动创建，可忽略。
+
+================================================================
+  第六步：生成运行智能体.bat 到项目根目录
+================================================================
+
+在 PROJECT_ROOT 目录下生成"运行智能体.bat"文件。
+bat 文件必须放在项目根目录（与 run.py 同级），且使用 GBK 编码保存。
+
+执行以下命令生成（PowerShell）：
+
+  $batContent = @"
+  @echo off
+  chcp 65001 >nul 2>&1
+  title PA Agent - AI K线分析助手
+  cd /d "%~dp0"
+  call .venv\Scripts\activate.bat
+  python run.py
+  if errorlevel 1 (
+      echo.
+      echo [错误] 程序异常退出，请查看上方错误信息。
+      pause
+  )
+  "@
+  [System.IO.File]::WriteAllText("PROJECT_ROOT\运行智能体.bat", $batContent, [System.Text.Encoding]::GetEncoding("gbk"))
+
+说明：
+- cd /d "%~dp0" 会自动切换到 bat 文件自身所在的目录，所以 bat 必须放在项目根目录
+- 无论用户把项目放在哪个路径，只要 bat 在项目根目录就能正确运行
+- 使用 GBK 编码是因为 bat 文件含中文，cmd.exe 默认用 GBK 解释
+
+验收：确认文件已生成且内容正确
+
+  Test-Path "PROJECT_ROOT\运行智能体.bat"
+  Get-Content "PROJECT_ROOT\运行智能体.bat" -Encoding Default
+
+预期输出：
+- Test-Path 返回 True
+- Get-Content 显示上述 bat 文件完整内容
+
+【故障排查】
+- 若 bat 文件中文乱码：确认用 GBK 编码保存（上述命令已使用 GBK）
+- 若双击闪退：bat 末尾已有 pause，异常退出时会暂停窗口显示错误信息
+- 若 PowerShell here-string 缩进问题：确保 $batContent 内容顶格无多余空格
+
+================================================================
+  第七步：验收 — 运行程序并确认无错误
+================================================================
+
+验收流程（必须全部通过才能交付）：
+
+7.1 检查虚拟环境和依赖完整性
+
+  cd /d PROJECT_ROOT
+  call .venv\Scripts\activate.bat
+  python -c "from pa_agent.main import main; print('Import OK')"
+
+预期输出：Import OK
+若失败：依赖未安装完整，回到第四步重新安装
+
+7.2 启动程序（命令行方式，确认能正常初始化）
+
+  cd /d PROJECT_ROOT
+  call .venv\Scripts\activate.bat
+  python run.py
+
+验收标准：
+- 程序窗口成功弹出（PyQt6 GUI 窗口出现）
+- 窗口标题显示 "PA Agent"
+- 控制台无 ImportError / ModuleNotFoundError 等致命错误
+- MT5 连接：若 MT5 终端已打开且登录，控制台应显示 "MT5 connected"
+  若 MT5 未打开，会显示警告但程序不会崩溃
+
+若窗口正常弹出，关闭窗口即可（点 X 退出）。
+
+7.3 双击 bat 文件验收
+
+  start "" "PROJECT_ROOT\运行智能体.bat"
+
+验收标准：同 7.2，窗口正常弹出且无致命错误
+
+7.4 最终验收清单
+
+  [ ] python --version 输出 3.11+
+  [ ] .venv 虚拟环境已创建
+  [ ] 所有核心包导入测试通过（11 个 OK）
+  [ ] python -c "from pa_agent.main import main; print('Import OK')" 输出 Import OK
+  [ ] python run.py 窗口正常弹出
+  [ ] 运行智能体.bat 双击窗口正常弹出
+  [ ] 控制台无 ImportError / ModuleNotFoundError
+
+全部通过 → 部署成功，可交付用户。
+任一项失败 → 根据错误信息对照故障排查章节修复后重新验收。
+
+================================================================
+  附：配置 API Key（用户首次使用时需操作）
+================================================================
+
+程序启动后，在 GUI 界面中点击"设置"按钮：
+- 填入 Base URL（如 https://www.packyapi.com/v1）
+- 填入 API Key
+- 选择模型（如 claude-sonnet-4-6）
+- 点击保存
+
+API Key 会被 DPAPI 加密存储在 config/settings.json 中，不会明文保存。
+
+================================================================
+  附：常见运行时问题
+================================================================
+
+Q: 启动后 MT5 连接失败
+A: 确保 MT5 终端已打开并已登录账户。MT5 必须在程序运行期间保持打开。
+
+Q: API 调用报网络错误
+A: 检查网络连接；若使用代理需确认代理可用；确认 API Key 和 Base URL 配置正确。
+
+Q: config/settings.json 损坏
+A: 删除该文件，程序重启会自动生成默认配置：
+   del "PROJECT_ROOT\config\settings.json"
+
+Q: 日志在哪里
+A: PROJECT_ROOT\logs\pa_agent.log
+
+Q: 如何更新程序
+A: 
+   cd /d PROJECT_ROOT
+   call .venv\Scripts\activate.bat
+   git pull
+   pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn

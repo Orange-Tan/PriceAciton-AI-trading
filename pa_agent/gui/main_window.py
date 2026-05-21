@@ -254,14 +254,16 @@ class MainWindow(QMainWindow):
         ctrl_layout.addWidget(QLabel("品种:"))
         self._symbol_combo = QComboBox()
         self._symbol_combo.setEditable(True)
-        self._symbol_combo.addItems(["XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "XAGUSD"])
+        self._symbol_combo.addItems(
+            ["XAUUSDm", "XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "XAGUSD"]
+        )
         # Restore last-used symbol from settings
-        _last_symbol = "XAUUSD"
-        _last_tf = "1h"
+        _last_symbol = "XAUUSDm"
+        _last_tf = "15m"
         _settings = getattr(self._ctx, "settings", None)
         if _settings is not None:
-            _last_symbol = getattr(_settings.general, "last_symbol", "XAUUSD") or "XAUUSD"
-            _last_tf = getattr(_settings.general, "last_timeframe", "1h") or "1h"
+            _last_symbol = getattr(_settings.general, "last_symbol", "XAUUSDm") or "XAUUSDm"
+            _last_tf = getattr(_settings.general, "last_timeframe", "15m") or "15m"
         self._symbol_combo.setCurrentText(_last_symbol)
         self._symbol_combo.setMinimumWidth(110)
         self._symbol_combo.lineEdit().setPlaceholderText("输入品种名…")
@@ -1257,10 +1259,10 @@ class MainWindow(QMainWindow):
         self._update_submit_button_state()
         from pa_agent.ai.decision_stance import stance_label_zh
 
-        stance_raw = "conservative"
+        stance_raw = "balanced"
         settings = getattr(self._ctx, "settings", None)
         if settings is not None:
-            stance_raw = getattr(settings.general, "decision_stance", "conservative")
+            stance_raw = getattr(settings.general, "decision_stance", "balanced")
         stance_label = stance_label_zh(stance_raw)
         if incremental_new_bar_count is not None:
             prefix = "强制增量分析中" if force_incremental else "增量分析中"

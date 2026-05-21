@@ -18,10 +18,13 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QDesktopServices
 
 from pa_agent.config.settings import Settings, save_settings
 from pa_agent.config.paths import SETTINGS_JSON_PATH
+
+_API_KEY_HELP_URL = "https://my.feishu.cn/wiki/CUV1wUKWxiQGhekQdRvcZQQ2ncf"
 
 
 class SettingsDialog(QDialog):
@@ -79,6 +82,11 @@ class SettingsDialog(QDialog):
         self._context_window_spin.setSingleStep(1_000)
         provider_form.addRow("Context Window:", self._context_window_spin)
 
+        self._api_key_help_btn = QPushButton("点击获取模型API KEY")
+        self._api_key_help_btn.setToolTip(_API_KEY_HELP_URL)
+        self._api_key_help_btn.clicked.connect(self._open_api_key_help_url)
+        provider_form.addRow("", self._api_key_help_btn)
+
         form_layout.addWidget(provider_group)
 
         general_group = QGroupBox("通用设置")
@@ -108,8 +116,8 @@ class SettingsDialog(QDialog):
         general_form.addRow("增量分析最大新增K线:", self._incremental_max_new_bars_spin)
 
         self._decision_stance_combo = QComboBox()
-        self._decision_stance_combo.addItem("保守（当前默认）", "conservative")
-        self._decision_stance_combo.addItem("均衡（比保守更愿意下单）", "balanced")
+        self._decision_stance_combo.addItem("保守", "conservative")
+        self._decision_stance_combo.addItem("均衡（默认，比保守更愿意下单）", "balanced")
         self._decision_stance_combo.addItem("激进（比均衡更愿意下单）", "aggressive")
         self._decision_stance_combo.addItem(
             "极度激进（强制选方向与进场方式）",
@@ -239,6 +247,9 @@ class SettingsDialog(QDialog):
 
         if self._decision_flow_play_handler is not None:
             self._decision_flow_play_handler()
+
+    def _open_api_key_help_url(self) -> None:
+        QDesktopServices.openUrl(QUrl(_API_KEY_HELP_URL))
 
     def _toggle_api_key_visibility(self, checked: bool) -> None:
         if checked:

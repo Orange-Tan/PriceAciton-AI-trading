@@ -63,6 +63,8 @@ def _is_packyapi(base_url: str) -> bool:
 
 # Packy claude-officially returns 400 if max_tokens exceeds model output cap.
 _PACKY_CLAUDE_MAX_OUTPUT_TOKENS = 128_000
+# DeepSeek API: max_tokens must be in [1, 393216].
+_DEEPSEEK_MAX_OUTPUT_TOKENS = 393_216
 
 
 def _model_uses_claude_adaptive(model: str) -> bool:
@@ -137,6 +139,16 @@ def _prepare_chat_messages(
     return api_messages, system_param
 
 
+def _provider_max_output_tokens(settings: AIProviderSettings) -> int:
+    """Per-gateway completion cap (max_tokens); avoids 400 from provider limits."""
+    model = (settings.model or "").lower()
+    if _is_packyapi(settings.base_url) and "claude" in model:
+        return _PACKY_CLAUDE_MAX_OUTPUT_TOKENS
+    if _is_deepseek_native(settings.base_url):
+        return _DEEPSEEK_MAX_OUTPUT_TOKENS
+    return _PRACTICAL_UNLIMITED_MAX_TOKENS
+
+
 def _completion_max_tokens(
     settings: AIProviderSettings,
     *,
@@ -144,14 +156,8 @@ def _completion_max_tokens(
     effort: str | None,
 ) -> int:
     """Total completion budget (thinking + content) for OpenAI-compatible APIs."""
-    del effort
-    cap = _PRACTICAL_UNLIMITED_MAX_TOKENS
-    if _is_packyapi(settings.base_url):
-        cap = _PACKY_CLAUDE_MAX_OUTPUT_TOKENS
-    thinking_cfg = extra_body.get("thinking") or {}
-    if thinking_cfg.get("type") in ("enabled", "adaptive"):
-        return cap
-    return cap
+    del effort, extra_body
+    return _provider_max_output_tokens(settings)
 
 
 def _resolve_thinking_params(

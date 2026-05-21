@@ -31,12 +31,16 @@ def test_defaults(tmp_path, fake_secret_store):
     """load_settings on a missing file returns defaults and creates the file."""
     p = tmp_path / "settings.json"
     s = load_settings(p)
-    assert s.provider.model == "deepseek-v4-pro"
+    assert s.provider.model == "claude-sonnet-4-6"
+    assert s.provider.base_url == "https://www.packyapi.com/v1"
     assert s.provider.thinking is True
     assert s.provider.reasoning_effort == "max"
-    assert s.provider.context_window == 1_000_000
+    assert s.provider.context_window == 2_000_000
     assert s.general.default_bar_count == 100
-    assert s.general.last_symbol == "XAUUSD"
+    assert s.general.last_symbol == "XAUUSDm"
+    assert s.general.last_timeframe == "15m"
+    assert s.general.decision_stance == "balanced"
+    assert s.general.decision_flow_auto_play is True
     assert p.exists(), "defaults should be written to disk"
 
 
@@ -70,7 +74,7 @@ def test_corrupt_json_returns_defaults(tmp_path, fake_secret_store):
     p = tmp_path / "settings.json"
     p.write_text("{not valid json", encoding="utf-8")
     s = load_settings(p)
-    assert s.provider.model == "deepseek-v4-pro"
+    assert s.provider.model == "claude-sonnet-4-6"
 
 
 def test_missing_encrypted_key_leaves_api_key_blank(tmp_path, fake_secret_store):
