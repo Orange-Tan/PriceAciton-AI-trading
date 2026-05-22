@@ -18,13 +18,13 @@ def _make_bar(i: int, ts: float) -> KlineBar:
 
 def _fill_buffer(n_closed: int, has_forming: bool) -> KlineBuffer:
     buf = KlineBuffer(capacity=n_closed + 10)
-    # Add closed bars oldest-first (append expects newest-first in the deque,
-    # but we just need them in the buffer)
+    # appendleft → newest-first; increasing ts per append keeps ts strictly decreasing in snapshot
+    base = 1000.0
     for i in range(n_closed):
-        buf.append(_make_bar(i, float(n_closed - i)))  # ts decreasing = newest-first
+        buf.append(_make_bar(i, base + float(i)))
     if has_forming:
         forming = KlineBar(
-            seq=1, ts_open=float(n_closed + 1),
+            seq=1, ts_open=base + float(n_closed),
             open=1.0, high=2.0, low=0.5, close=1.5, volume=100.0,
             closed=False,
         )

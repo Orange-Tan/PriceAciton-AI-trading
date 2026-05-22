@@ -60,6 +60,8 @@ def test_log_file_never_contains_plaintext_key(api_key: str) -> None:
         try:
             # Patch LOG_FILE_PATH so we write to a temp file, not the real log
             with patch.object(logging_module, "LOG_FILE_PATH", log_file):
+                logging_module._configured = False  # noqa: SLF001
+                _close_root_handlers()
                 logging_module.configure_logging(api_key=api_key)
 
             # Emit a log message that contains the plaintext key

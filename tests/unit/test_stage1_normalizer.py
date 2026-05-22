@@ -60,6 +60,7 @@ def test_validator_accepts_normalized_user_payload() -> None:
     }
     normalized = normalize_stage1(payload)
     normalized["gate_trace"] = VALID_STAGE1["gate_trace"]
+    normalized["bar_by_bar_summary"] = VALID_STAGE1["bar_by_bar_summary"]
     normalized["strategy_files_needed"] = ["下跌通道分析识别.txt"]
     result = JsonValidator().validate("stage1", json.dumps(normalized, ensure_ascii=False))
     from pa_agent.ai.json_validator import Ok

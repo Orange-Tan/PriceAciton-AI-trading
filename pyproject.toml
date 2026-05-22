@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pa-agent"
 version = "0.1.0"
-description = "AI K-line analysis decision aid (DeepSeek V4 Pro)"
+description = "Price Action AI assistant: MT5 kline data, two-stage LLM analysis (MIT)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

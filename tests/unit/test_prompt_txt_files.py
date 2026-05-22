@@ -2,32 +2,29 @@
 from __future__ import annotations
 
 from pa_agent.ai.prompt_assembler import (
+    COMMON_SYSTEM_PROMPT_TXT_FILES,
+    STAGE1_TASK_PROMPT_TXT_FILES,
+    STAGE2_BASE_PROMPT_TXT_FILES,
+    STAGE2_FULL_STRATEGY_PROMPT_TXT_FILES,
     stage1_prompt_txt_files,
     stage2_prompt_txt_files,
+    stage2_user_task_txt_files,
 )
 
 
 def test_stage1_txt_files() -> None:
     files = stage1_prompt_txt_files()
-    assert files == [
-        "提示词大纲_人设与思维方式.txt",
-        "二元决策.txt",
-        "市场诊断框架.txt",
-        "文件16-K线信号识别.txt",
-        "逐棒分析检查单.txt",
-    ]
+    assert files == [*COMMON_SYSTEM_PROMPT_TXT_FILES, *STAGE1_TASK_PROMPT_TXT_FILES]
 
 
 def test_stage2_txt_files_order() -> None:
     routed = ["震荡区间交易策略.txt", "震荡区间分析识别.txt"]
     files = stage2_prompt_txt_files(routed)
-    assert files[:2] == [
-        "提示词大纲_人设与思维方式.txt",
-        "二元决策.txt",
-    ]
-    assert files[2:-3] == routed
-    assert files[-3:] == [
-        "逐棒分析检查单.txt",
-        "文件16-K线信号识别.txt",
-        "文件17-止损和止盈与仓位管理.txt",
-    ]
+    expected_user = stage2_user_task_txt_files(routed)
+    assert files == [*COMMON_SYSTEM_PROMPT_TXT_FILES, *expected_user]
+    assert files[:2] == list(COMMON_SYSTEM_PROMPT_TXT_FILES)
+    assert files[-3:] == list(STAGE2_BASE_PROMPT_TXT_FILES)
+    assert routed[0] in files
+    assert "文件17-止损和止盈与仓位管理.txt" in files
+    for name in STAGE2_FULL_STRATEGY_PROMPT_TXT_FILES:
+        assert name in files

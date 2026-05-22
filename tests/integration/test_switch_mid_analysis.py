@@ -59,8 +59,10 @@ def _make_frame() -> KlineFrame:
 
 def _make_reply(content_dict: dict) -> MagicMock:
     reply = MagicMock()
-    reply.content = json.dumps(content_dict)
+    reply.content = json.dumps(content_dict, ensure_ascii=False)
+    reply.reasoning_content = ""
     reply.raw = {"content": reply.content}
+    reply.latency_ms = 1.0
     reply.usage = MagicMock()
     reply.usage.prompt_tokens = 100
     reply.usage.completion_tokens = 50
@@ -327,26 +329,20 @@ class TestSwitchMidAnalysis:
         window = MainWindow(ctx=app_ctx)
         qtbot.addWidget(window)
 
-        # Simulate that a free chat session was active
         window._free_chat_session = MagicMock()
+        panel = window._stream_panel
+        panel.set_input_enabled(True)
 
-        # Add a QPlainTextEdit to the chat tab to simulate the input widget
-        chat_tab = window._tabs.widget(1)
-        input_widget = QPlainTextEdit(chat_tab)
-        input_widget.setEnabled(True)
-
-        # Trigger switch (no worker running, so this is a clean switch)
         window._on_symbol_or_tf_changed("BTCUSD", "1d")
 
-        # FreeChatSession must be destroyed
         assert window._free_chat_session is None, (
             "FreeChatSession was not cleared after symbol switch"
         )
 
-        # Tab2 input must be disabled
-        assert not input_widget.isEnabled(), (
-            "Tab2 input widget was not disabled after symbol switch"
+        assert not panel._input_edit.isEnabled(), (
+            "Stream panel input was not disabled after symbol switch"
         )
+        assert not panel._send_btn.isEnabled()
 
     def test_cancel_token_set_within_100ms(
         self, qtbot, app_ctx, pending_writer

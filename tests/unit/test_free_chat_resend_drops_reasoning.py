@@ -96,7 +96,7 @@ class TestFreeChatResendDropsReasoning:
         """After 3 sends, every assistant message in history_for_api must lack
         reasoning_content."""
         client = MagicMock()
-        client.chat.side_effect = [
+        client.stream_chat.side_effect = [
             _make_reply("reply 1", "reasoning 1"),
             _make_reply("reply 2", "reasoning 2"),
             _make_reply("reply 3", "reasoning 3"),
@@ -108,10 +108,10 @@ class TestFreeChatResendDropsReasoning:
         session.send("question 2", cancel)
         session.send("question 3", cancel)
 
-        assert client.chat.call_count == 3
+        assert client.stream_chat.call_count == 3
 
         # Inspect every call's history_for_api (first positional arg)
-        for call_args in client.chat.call_args_list:
+        for call_args in client.stream_chat.call_args_list:
             messages: list[dict] = call_args[0][0]
             for msg in messages:
                 if msg.get("role") == "assistant":
@@ -122,7 +122,7 @@ class TestFreeChatResendDropsReasoning:
     def test_history_full_preserves_reasoning_content(self):
         """history_full must retain reasoning_content for all assistant turns."""
         client = MagicMock()
-        client.chat.side_effect = [
+        client.stream_chat.side_effect = [
             _make_reply("reply 1", "reasoning 1"),
             _make_reply("reply 2", "reasoning 2"),
             _make_reply("reply 3", "reasoning 3"),
@@ -144,28 +144,29 @@ class TestFreeChatResendDropsReasoning:
             )
             assert msg["reasoning_content"] == f"reasoning {i}"
 
-    def test_stage2_assistant_reasoning_stripped_from_api(self):
-        """The stage2 assistant message in history_for_api must not carry
-        reasoning_content (it comes from base_record.stage2_response)."""
+    def test_followup_history_has_no_reasoning_by_default(self):
+        """Follow-up API history uses advisory system + analysis ref; no reasoning_content."""
         client = MagicMock()
-        client.chat.return_value = _make_reply()
+        client.stream_chat.return_value = _make_reply()
         session = _make_session(client)
         cancel = CancelToken()
 
         session.send("hello", cancel)
 
-        messages: list[dict] = client.chat.call_args[0][0]
-        # Find the stage2 assistant message (third message: system, user, assistant)
-        assert len(messages) >= 3
-        stage2_assistant = messages[2]
-        assert stage2_assistant["role"] == "assistant"
-        assert stage2_assistant["content"] == "stage2 content"
-        assert "reasoning_content" not in stage2_assistant
+        messages: list[dict] = client.stream_chat.call_args[0][0]
+        assert messages[0]["role"] == "system"
+        assert "追问助手" in messages[0]["content"]
+        assert messages[1]["role"] == "user"
+        assert "上次分析结果" in messages[1]["content"]
+        assert messages[2]["role"] == "user"
+        assert messages[2]["content"] == "hello"
+        for msg in messages:
+            assert "reasoning_content" not in msg
 
     def test_turn_counter_increments(self):
         """Each send increments the internal turn counter."""
         client = MagicMock()
-        client.chat.return_value = _make_reply()
+        client.stream_chat.return_value = _make_reply()
         pending_writer = MagicMock()
         session = FreeChatSession(
             base_record=_make_base_record(),
@@ -190,7 +191,7 @@ class TestFreeChatResendDropsReasoning:
     def test_ledger_add_called_per_send(self):
         """ledger.add must be called once per successful send."""
         client = MagicMock()
-        client.chat.return_value = _make_reply()
+        client.stream_chat.return_value = _make_reply()
         ledger = MagicMock()
         session = FreeChatSession(
             base_record=_make_base_record(),
@@ -207,30 +208,28 @@ class TestFreeChatResendDropsReasoning:
         assert ledger.add.call_count == 2
 
     def test_history_for_api_structure_first_turn(self):
-        """On the first send, history_for_api should be:
-        [system, stage2_user, stage2_assistant, new_user]."""
+        """On the first send: [followup_system, analysis_ref, new_user]."""
         client = MagicMock()
-        client.chat.return_value = _make_reply()
+        client.stream_chat.return_value = _make_reply()
         session = _make_session(client)
         cancel = CancelToken()
 
         session.send("my question", cancel)
 
-        messages: list[dict] = client.chat.call_args[0][0]
+        messages: list[dict] = client.stream_chat.call_args[0][0]
+        assert len(messages) == 3
         assert messages[0]["role"] == "system"
-        assert messages[0]["content"] == "system prompt"
+        assert "追问助手" in messages[0]["content"]
         assert messages[1]["role"] == "user"
-        assert messages[1]["content"] == "user msg"
-        assert messages[2]["role"] == "assistant"
-        assert messages[2]["content"] == "stage2 content"
-        assert messages[3]["role"] == "user"
-        assert messages[3]["content"] == "my question"
+        assert "上次分析结果" in messages[1]["content"]
+        assert messages[2]["role"] == "user"
+        assert messages[2]["content"] == "my question"
 
     def test_history_for_api_grows_with_turns(self):
         """On the second send, previous free-chat turn is included in
         history_for_api (without reasoning_content)."""
         client = MagicMock()
-        client.chat.side_effect = [
+        client.stream_chat.side_effect = [
             _make_reply("reply 1", "reasoning 1"),
             _make_reply("reply 2", "reasoning 2"),
         ]
@@ -240,14 +239,13 @@ class TestFreeChatResendDropsReasoning:
         session.send("question 1", cancel)
         session.send("question 2", cancel)
 
-        # Second call's messages
-        messages: list[dict] = client.chat.call_args_list[1][0][0]
-        # system, stage2_user, stage2_assistant, q1, a1, q2
-        assert len(messages) == 6
-        assert messages[3]["role"] == "user"
-        assert messages[3]["content"] == "question 1"
-        assert messages[4]["role"] == "assistant"
-        assert messages[4]["content"] == "reply 1"
-        assert "reasoning_content" not in messages[4]
-        assert messages[5]["role"] == "user"
-        assert messages[5]["content"] == "question 2"
+        # Second call's messages: system, ref, q1, a1, q2
+        messages: list[dict] = client.stream_chat.call_args_list[1][0][0]
+        assert len(messages) == 5
+        assert messages[2]["role"] == "user"
+        assert messages[2]["content"] == "question 1"
+        assert messages[3]["role"] == "assistant"
+        assert messages[3]["content"] == "reply 1"
+        assert "reasoning_content" not in messages[3]
+        assert messages[4]["role"] == "user"
+        assert messages[4]["content"] == "question 2"

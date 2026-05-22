@@ -37,6 +37,14 @@ from pa_agent.util.timefmt import now_local_ms
 
 logger = logging.getLogger(__name__)
 
+
+def _latency_ms_label(latency_ms: object) -> str:
+    """Format API latency for console logs; tolerate mocks or missing values."""
+    try:
+        return f"{float(latency_ms):.0f}ms"
+    except (TypeError, ValueError):
+        return "?"
+
 # When the gateway buffers the full reply, emit pseudo-stream chunks to the UI.
 _FALLBACK_STREAM_CHUNK = 48
 
@@ -420,7 +428,11 @@ class TwoStageOrchestrator:
         print(reply_s1.content)
         if reply_s1.reasoning_content:
             print(f"\n--- [思考过程] ---\n{reply_s1.reasoning_content}")
-        print(f"\n--- [Token 用量] prompt={reply_s1.usage.prompt_tokens} completion={reply_s1.usage.completion_tokens} latency={reply_s1.latency_ms:.0f}ms ---")
+        print(
+            f"\n--- [Token 用量] prompt={reply_s1.usage.prompt_tokens} "
+            f"completion={reply_s1.usage.completion_tokens} "
+            f"latency={_latency_ms_label(reply_s1.latency_ms)} ---"
+        )
         print("="*80 + "\n")
 
         result_s1 = self._validator.validate("stage1", reply_s1.content)
@@ -645,7 +657,11 @@ class TwoStageOrchestrator:
         print(reply_s2.content)
         if reply_s2.reasoning_content:
             print(f"\n--- [思考过程] ---\n{reply_s2.reasoning_content}")
-        print(f"\n--- [Token 用量] prompt={reply_s2.usage.prompt_tokens} completion={reply_s2.usage.completion_tokens} latency={reply_s2.latency_ms:.0f}ms ---")
+        print(
+            f"\n--- [Token 用量] prompt={reply_s2.usage.prompt_tokens} "
+            f"completion={reply_s2.usage.completion_tokens} "
+            f"latency={_latency_ms_label(reply_s2.latency_ms)} ---"
+        )
         print("="*80 + "\n")
 
         result_s2 = self._validator.validate(

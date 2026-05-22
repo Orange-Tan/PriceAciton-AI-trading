@@ -64,9 +64,9 @@ def test_no_plaintext_key_on_disk(tmp_path, fake_secret_store):
     s.provider.api_key = "sk-super-secret-key"
     save_settings(s, p)
     raw = p.read_text(encoding="utf-8")
-    assert "sk-super-secret-key" not in raw, "plaintext key must not appear on disk"
-    assert "api_key_encrypted" in raw, "encrypted key must be present"
-    assert "ENC:sk-super-secret-key" in raw, "fake-encrypted value must be present"
+    data = json.loads(raw)
+    assert "api_key" not in data.get("provider", {}), "plaintext api_key field must not be saved"
+    assert data["provider"]["api_key_encrypted"] == "ENC:sk-super-secret-key"
 
 
 def test_corrupt_json_returns_defaults(tmp_path, fake_secret_store):

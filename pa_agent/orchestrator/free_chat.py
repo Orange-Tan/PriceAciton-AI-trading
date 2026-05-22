@@ -192,8 +192,10 @@ class FreeChatSession:
             if msg["role"] == "user":
                 history_for_api.append({"role": "user", "content": msg["content"]})
             elif msg["role"] == "assistant":
-                # Follow-up chat should not resend chain-of-thought.
-                history_for_api.append({"role": "assistant", "content": msg["content"]})
+                assistant_msg: dict = {"role": "assistant", "content": msg["content"]}
+                if self.keep_reasoning_in_resend and msg.get("reasoning_content"):
+                    assistant_msg["reasoning_content"] = msg["reasoning_content"]
+                history_for_api.append(assistant_msg)
 
         # New user message — prepend latest K-line snapshot if available
         user_content = user_text

@@ -97,6 +97,18 @@ SAMPLE_DECISION_TRACE = [
     },
 ]
 
+SAMPLE_BAR_BY_BAR_SUMMARY = [
+    {
+        "bar": "K1",
+        "role": "structure",
+        "bar_type": "trend_bull",
+        "context_effect": "strengthens_bull",
+        "follow_through": "pending",
+        "trapped_side": "none",
+        "reason": "最新K线支持多头结构",
+    },
+]
+
 VALID_STAGE1 = {
     "cycle_position": "normal_channel",
     "direction": "bullish",
@@ -107,8 +119,29 @@ VALID_STAGE1 = {
     "htf_context": "bullish trend",
     "entry_setup": "buy on pullback",
     "strategy_files_needed": ["上涨通道分析识别.txt"],
+    "bar_by_bar_summary": SAMPLE_BAR_BY_BAR_SUMMARY,
     "gate_trace": SAMPLE_GATE_TRACE,
     "gate_result": "proceed",
+}
+
+SAMPLE_BAR_ANALYSIS = {
+    "always_in": "long",
+    "last_closed_bar": "K1",
+    "bar_type": "trend_bull",
+    "signal_bar": {
+        "bar": "K2",
+        "quality": "strong",
+        "pattern": "H1",
+        "reason": "test",
+    },
+    "entry_bar": {
+        "bar": "K1",
+        "strength": "strong",
+        "follow_through": True,
+        "still_valid": True,
+        "freshness": "fresh",
+    },
+    "second_entry": {"is_second_entry": False, "type": "none"},
 }
 
 VALID_STAGE2 = {
@@ -135,6 +168,7 @@ VALID_STAGE2 = {
         "direction": "bullish",
         "key_signals": ["signal1"],
     },
+    "bar_analysis": SAMPLE_BAR_ANALYSIS,
     "decision_trace": SAMPLE_DECISION_TRACE,
     "terminal": {
         "node_id": "11.2",

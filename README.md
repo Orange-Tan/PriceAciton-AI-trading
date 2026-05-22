@@ -26,6 +26,7 @@
 - [运行测试](#运行测试)
 - [目录结构](#目录结构)
 - [配置文件](#配置文件)
+- [参与贡献与安全](#参与贡献与安全)
 - [详细使用说明](#详细使用说明)
 - [常见问题](#常见问题)
 
@@ -144,7 +145,15 @@ pip install -e ".[dev]"
 
 ### 6. 配置 API
 
+复制配置模板（首次克隆建议执行）：
+
+```cmd
+copy config\settings.example.json config\settings.json
+```
+
 启动程序后打开 **设置**，填写 **Base URL**、**模型名** 与 **API Key**（支持 DeepSeek 官方或第三方兼容网关）。Key 会加密写入 `config/settings.json`，不会以明文提交到 Git。
+
+字段说明见 [`config/README.md`](config/README.md)。
 
 ---
 
@@ -209,7 +218,10 @@ PA_Agent/
 │   └── util/                  # 工具函数
 ├── prompt_engineering/        # 价格行为提示词与策略模块（.txt）
 ├── tests/                     # 单元 / 属性 / 集成 / e2e 测试
-├── config/                    # 本机配置（不提交 Git）
+├── config/                    # 配置模板与说明（settings.json 本地生成，不提交）
+│   ├── settings.example.json
+│   └── README.md
+├── .github/workflows/         # CI（Windows + pytest）
 ├── experience/                # 经验库案例
 ├── records/                   # 分析记录（pending / 归档）
 ├── logs/                      # 运行日志
@@ -227,8 +239,9 @@ PA_Agent/
 | 文件 | 说明 |
 |------|------|
 | `config/settings.json` | 主配置（API Key 存为 `api_key_encrypted`） |
-| `config/settings.example.json` | 无密钥的模板 |
-| `config/exception_state.json` | 连续校验失败等异常状态 |
+| `config/settings.example.json` | 无密钥的模板（复制为 `settings.json`） |
+| `config/exception_state.example.json` | 异常计数状态结构参考 |
+| `config/exception_state.json` | 运行时自动生成，不提交 Git |
 
 ### 防止密钥被 push 到 GitHub
 
@@ -238,6 +251,16 @@ PA_Agent/
    ```
 2. 仅在 GUI「设置」或本地 `settings.json` 中配置 Key，不要写进 README / 测试用例。
 3. 默认 `pytest` 不跑需真实网络的 `live` 测试。
+
+---
+
+## 参与贡献与安全
+
+| 文档 | 说明 |
+|------|------|
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 开发环境、测试与 PR 约定 |
+| [`SECURITY.md`](SECURITY.md) | 漏洞与密钥泄露报告方式 |
+| [`LICENSE`](LICENSE) | MIT 许可证 |
 
 ---
 
@@ -301,3 +324,7 @@ pip install -e ".[dev]"
 ---
 
 **免责声明**：本工具仅供学习与研究，不构成投资建议。交易有风险，决策后果自负。
+
+---
+
+本项目采用 [MIT License](LICENSE) 发布。
