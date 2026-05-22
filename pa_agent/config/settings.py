@@ -57,6 +57,13 @@ class Settings(BaseModel):
     general: GeneralSettings = Field(default_factory=GeneralSettings)
 
 
+def provider_api_key_configured(settings: Settings | None) -> bool:
+    """Return True when a non-empty API key is loaded in memory."""
+    if settings is None:
+        return False
+    return bool((settings.provider.api_key or "").strip())
+
+
 # ── Persistence ───────────────────────────────────────────────────────────────
 import json
 import logging

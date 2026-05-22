@@ -288,6 +288,11 @@ class SettingsDialog(QDialog):
         save_settings(self._settings, SETTINGS_JSON_PATH)
         self.accept()
 
+    def focus_api_key_field(self) -> None:
+        """Focus the API Key field (e.g. when prompting on first launch)."""
+        self._api_key_edit.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._api_key_edit.selectAll()
+
     def set_decision_flow_play_handler(self, handler: Callable[[], None] | None) -> None:
         """Register callback invoked when user clicks 播放决策树可视化."""
         self._decision_flow_play_handler = handler

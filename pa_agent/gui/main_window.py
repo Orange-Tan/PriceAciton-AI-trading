@@ -4,7 +4,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from PyQt6.QtCore import QThread, pyqtSignal, QObject
+from PyQt6.QtCore import QThread, QTimer, pyqtSignal, QObject
+from PyQt6.QtGui import QAction, QShowEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -23,7 +24,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtGui import QAction
 from PyQt6.QtCore import Qt
 
 from pa_agent.app_context import AppContext
@@ -175,6 +175,7 @@ class MainWindow(QMainWindow):
         self._demo_replayer: Any = None
         self._demo_auto_next_armed = False
         self._demo_waiting_flow_playback = False
+        self._startup_api_key_check_done = False
         # RefreshLoop runs in its own QThread
         self._refresh_loop: Any = None
         self._refresh_thread: QThread | None = None
@@ -227,7 +228,7 @@ class MainWindow(QMainWindow):
         self._demo_mode_label.hide()
         self._status_bar.addWidget(self._demo_mode_label, 1)
         self._status_bar.showMessage("就绪")
-        self._sync_submit_button_state()
+        self._refresh_api_key_ui_state()
 
         # ── Menu bar ──────────────────────────────────────────────────────────
         menu_bar: QMenuBar = self.menuBar()  # type: ignore[assignment]
@@ -249,6 +250,11 @@ class MainWindow(QMainWindow):
         # ── Control bar ───────────────────────────────────────────────────────
         ctrl_layout = QHBoxLayout()
         ctrl_layout.setSpacing(8)
+
+        self._settings_btn = QPushButton("设置")
+        self._settings_btn.setToolTip("配置 API Key、模型与通用选项")
+        self._settings_btn.clicked.connect(self._open_settings_dialog)
+        ctrl_layout.addWidget(self._settings_btn)
 
         # Symbol — editable combo (user can type any MT5 symbol)
         ctrl_layout.addWidget(QLabel("品种:"))
@@ -342,6 +348,17 @@ class MainWindow(QMainWindow):
         ctrl_layout.addWidget(self._ai_mode_label)
 
         outer_layout.addLayout(ctrl_layout)
+
+        self._api_key_alert_label = QLabel(
+            "未配置 API Key：请点击左上角「设置」按钮，在设置中填写 API Key 后才能进行 AI 分析。"
+        )
+        self._api_key_alert_label.setWordWrap(True)
+        self._api_key_alert_label.setStyleSheet(
+            "background-color: #3d2a00; color: #ffb86c; padding: 8px 10px; "
+            "border: 1px solid #8a6d2f; border-radius: 4px; font-weight: 600;"
+        )
+        self._api_key_alert_label.hide()
+        outer_layout.addWidget(self._api_key_alert_label)
 
         status_row = QHBoxLayout()
         status_row.addStretch()
@@ -1778,10 +1795,54 @@ class MainWindow(QMainWindow):
         else:
             self._status_bar.showMessage("分析完成")
 
-    def _open_settings_dialog(self) -> None:
+    def showEvent(self, event: QShowEvent | None) -> None:
+        """On first show, prompt for API Key when missing."""
+        super().showEvent(event)
+        if self._startup_api_key_check_done:
+            return
+        self._startup_api_key_check_done = True
+        QTimer.singleShot(0, self._on_startup_api_key_check)
+
+    def _on_startup_api_key_check(self) -> None:
+        self._refresh_api_key_ui_state()
+        if not self._has_api_key_configured():
+            QMessageBox.information(
+                self,
+                "需要配置 API Key",
+                "尚未配置 API Key，将打开设置窗口。\n"
+                "请填写 API Key 并点击「保存」，才能使用「提交分析」与「增量分析」。",
+            )
+            self._open_settings_dialog(focus_api_key=True)
+
+    def _has_api_key_configured(self) -> bool:
+        from pa_agent.config.settings import provider_api_key_configured
+
+        settings = getattr(self._ctx, "settings", None)
+        return provider_api_key_configured(settings)
+
+    def _refresh_api_key_ui_state(self) -> None:
+        """Show or hide API Key warning and sync submit button state."""
+        configured = self._has_api_key_configured()
+        alert = getattr(self, "_api_key_alert_label", None)
+        if alert is not None:
+            alert.setVisible(not configured)
+        self._sync_submit_button_state()
+        status_bar = getattr(self, "_status_bar", None)
+        if status_bar is None or configured:
+            return
+        if self._analysis_in_progress:
+            return
+        cur = status_bar.currentMessage() or ""
+        if cur in ("就绪", "") or "API Key" in cur or "提交分析已锁定" in cur:
+            status_bar.showMessage(
+                "未配置 API Key：请点击左上角「设置」填写后才能分析"
+            )
+
+    def _open_settings_dialog(self, *, focus_api_key: bool = False) -> None:
         """Open the SettingsDialog; import lazily to avoid circular imports."""
         from pa_agent.gui.settings_dialog import SettingsDialog
         from pa_agent.config.settings import Settings
+        from pa_agent.util.logging import update_api_key
 
         settings: Settings = self._ctx.settings  # type: ignore[assignment]
         if settings is None:
@@ -1789,6 +1850,8 @@ class MainWindow(QMainWindow):
 
         dlg = SettingsDialog(settings, parent=self)
         dlg.set_decision_flow_play_handler(self._trigger_decision_flow_playback)
+        if focus_api_key:
+            dlg.focus_api_key_field()
         if dlg.exec():
             self._ctx.settings = settings
             client = getattr(self._ctx, "client", None)
@@ -1802,7 +1865,9 @@ class MainWindow(QMainWindow):
                 self._debug_widget._api_key = key
                 self._ai_sidebar.bind_settings(settings)
                 self._apply_chart_display_settings()
+                update_api_key(key)
             self._update_ai_mode_label()
+            self._refresh_api_key_ui_state()
 
     def _apply_chart_display_settings(self) -> None:
         """Sync chart label font sizes from persisted general settings."""
@@ -1860,6 +1925,8 @@ class MainWindow(QMainWindow):
 
     def _submit_block_reason(self) -> str | None:
         """Human-readable reason when submit is disabled, or None if allowed."""
+        if not self._has_api_key_configured():
+            return "未配置 API Key，请点击左上角「设置」填写后才能分析"
         if self._demo_mode:
             return "演示模式中，请退出演示后再提交真实分析"
         if self._analysis_in_progress:
