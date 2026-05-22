@@ -55,6 +55,7 @@ class ChartWidget(pg.PlotWidget):
         self._overlay = OverlayLines()
         self._pending_decision: dict | None = None
         self._direction_items: list[pg.GraphicsItem] = []
+        self._seq_label_font_pt: int = 7
 
         # 30 Hz redraw timer (task 14.5)
         self._timer = QTimer(self)
@@ -64,10 +65,29 @@ class ChartWidget(pg.PlotWidget):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    def set_seq_label_font_pt(self, point_size: int) -> None:
+        """Set K-line sequence label font size and refresh the chart if needed."""
+        point_size = max(6, min(24, int(point_size)))
+        if point_size == self._seq_label_font_pt:
+            return
+        self._seq_label_font_pt = point_size
+        if self._latest_frame is not None:
+            self._dirty = True
+
     def set_frame(self, frame: "KlineFrame") -> None:
         """Cache the latest KlineFrame; actual redraw happens on the timer."""
         self._latest_frame = frame
         self._dirty = True
+
+    def set_frame_now(self, frame: "KlineFrame") -> None:
+        """Apply *frame* to the chart immediately (bypass 30 Hz throttle)."""
+        self._latest_frame = frame
+        self._dirty = False
+        self._render_frame(frame)
+
+    def displayed_frame(self) -> "KlineFrame | None":
+        """Return the KlineFrame currently shown on the chart."""
+        return self._latest_frame
 
     def set_decision(self, decision: dict) -> None:
         """Draw or clear entry/TP/SL lines and direction marker from the AI decision."""
@@ -148,7 +168,9 @@ class ChartWidget(pg.PlotWidget):
             # Sequence label above the high — only odd seq numbers (1, 3, 5, …)
             if bar.seq % 2 == 1:
                 label_y = bar.high
-                seq_label = SeqLabelItem(bar.seq, x_pos, label_y)
+                seq_label = SeqLabelItem(
+                    bar.seq, x_pos, label_y, font_pt=self._seq_label_font_pt
+                )
                 self.addItem(seq_label)
                 self._seq_labels.append(seq_label)
 

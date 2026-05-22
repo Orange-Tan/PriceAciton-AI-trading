@@ -364,6 +364,7 @@ class MainWindow(QMainWindow):
         self._chart_widget.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
+        self._apply_chart_display_settings()
         workbench.addWidget(self._chart_widget)
 
         self._ai_sidebar.setMinimumWidth(400)
@@ -494,16 +495,45 @@ class MainWindow(QMainWindow):
 
     def _refresh_chart_once(self) -> None:
         """Apply one immediate chart refresh (e.g. after resuming)."""
+        self._pull_chart_frame_from_source()
+
+    def _pull_chart_frame_from_source(self) -> Any:
+        """Fetch latest bars from MT5 and return the chart display frame."""
         data_source = getattr(self._ctx, "data_source", None)
         if data_source is None or not getattr(data_source, "_connected", False):
-            return
+            return None
         try:
             n_bars = self._bar_count_spin.value() + 5
             bars = data_source.latest_snapshot(n_bars)
-            if bars:
-                self._on_refresh_frame_ready(bars)
+            if not bars:
+                return None
+            return self._build_chart_frame_from_bars(bars, include_forming=True)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Immediate chart refresh failed: %s", exc)
+            logger.debug("Chart frame pull failed: %s", exc)
+            return None
+
+    def snapshot_klines_for_followup(self) -> str:
+        """Refresh chart once, freeze updates, return K-line table matching the chart."""
+        import time as _time
+
+        from pa_agent.ai.prompt_assembler import PromptAssembler
+
+        frame = self._pull_chart_frame_from_source()
+        chart = getattr(self, "_chart_widget", None)
+        if frame is not None and chart is not None:
+            chart.set_frame_now(frame)
+            self._last_refresh_ts = _time.monotonic()
+        elif chart is not None:
+            frame = chart.displayed_frame()
+
+        self._set_chart_refresh_paused(True)
+        self._update_refresh_elapsed()
+        if getattr(self, "_status_bar", None) is not None:
+            self._status_bar.showMessage("追问：已刷新并冻结图表，K线与屏幕一致")
+
+        if frame is None:
+            return ""
+        return PromptAssembler._render_kline_table(frame)
 
     def _update_refresh_elapsed(self) -> None:
         """Update the 'distance from last refresh' label every second."""
@@ -531,7 +561,7 @@ class MainWindow(QMainWindow):
             label.setStyleSheet("color: #58a6ff; font-size: 11px;")
             return
         if self._chart_refresh_paused:
-            label.setText("图表刷新已暂停（分析中）")
+            label.setText("图表刷新已暂停")
             label.setStyleSheet("color: #e6b800; font-size: 11px;")
             return
         if self._last_refresh_ts == 0.0:
@@ -1771,7 +1801,18 @@ class MainWindow(QMainWindow):
                 key = getattr(settings.provider, "api_key", "") or ""
                 self._debug_widget._api_key = key
                 self._ai_sidebar.bind_settings(settings)
+                self._apply_chart_display_settings()
             self._update_ai_mode_label()
+
+    def _apply_chart_display_settings(self) -> None:
+        """Sync chart label font sizes from persisted general settings."""
+        chart = getattr(self, "_chart_widget", None)
+        settings = getattr(self._ctx, "settings", None)
+        if chart is None or settings is None:
+            return
+        chart.set_seq_label_font_pt(
+            int(getattr(settings.general, "chart_seq_label_font_pt", 7) or 7)
+        )
 
     def _update_ai_mode_label(self) -> None:
         """Show current thinking / reasoning_effort / model in the toolbar."""
@@ -1911,23 +1952,10 @@ class MainWindow(QMainWindow):
             return None
 
     def _make_kline_snapshot_fn(self) -> Any:
-        """Return a callable that captures the latest closed K-line data as a text table.
-
-        The returned function reads from the live data source at call time,
-        so FreeChatSession always gets the most recent market data when the
-        user sends a follow-up message.
-        """
-        from pa_agent.ai.prompt_assembler import PromptAssembler
-
-        symbol = self._symbol_combo.currentText()
-        timeframe = self._tf_combo.currentText()
-        bar_count = self._bar_count_spin.value()
+        """Return a callable that refreshes/freeze chart then exports its K-line table."""
 
         def _snapshot() -> str:
-            frame = self._take_snapshot(symbol, timeframe, bar_count)
-            if frame is None:
-                return ""
-            return PromptAssembler._render_kline_table(frame)
+            return self.snapshot_klines_for_followup()
 
         return _snapshot
 

@@ -181,6 +181,15 @@ def test_invalid_enum_value_is_category_c():
     assert result.category == "c"
 
 
+def test_stage1_bar_role_alias_is_normalized():
+    """Common bar_by_bar_summary role aliases are accepted and normalized."""
+    obj = _valid_stage1()
+    obj["bar_by_bar_summary"][0]["role"] = "continuation"
+    result = validator.validate("stage1", json.dumps(obj))
+    assert isinstance(result, Ok), f"Expected Ok, got {result}"
+    assert result.obj["bar_by_bar_summary"][0]["role"] == "confirmation"
+
+
 def test_plain_text_is_category_d():
     """Plain text (no JSON) is classified as category d.
 

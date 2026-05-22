@@ -23,6 +23,31 @@ _LANGUAGE_ZH_RULE = """
 - **思考过程**：扩展思考、内部推理、以及写入 JSON 的 `reason`、`diagnosis_confidence_reasoning`、`trade_confidence_reasoning`、`estimated_win_rate_reasoning` 等说明，**全程使用简体中文**。禁止用英文写推理段落或中英混杂的长句（常见缩写如 HH、HL、Spike、TR 可保留）。
 - **最终输出**：阶段一诊断 JSON、阶段二决策 JSON 中所有面向用户的字符串（含 `reasoning`、`key_factors`、`risk_assessment`、`watch_points`、`gate_trace`/`decision_trace` 的 `question` 与 `reason` 等）**一律使用简体中文**。
 - **仅允许英文或固定英文枚举**：JSON 字段名（schema 键名）、规定的枚举取值（如 `proceed`、`wait`、`bullish`、`bearish`）、策略文件名、K 线序号格式（如 `K1`、`K42-K1`）。
+- **价格行为术语**：思考与 JSON 说明中优先使用下列简体中文 PA 术语（见下节），避免自造词或仅用英文描述。
+""".strip()
+
+_PA_TERMINOLOGY_ZH = """
+## 价格行为常用术语（简体中文，思考与 JSON 说明中优先使用）
+
+| 术语 | 含义 / 用法提示 |
+|------|----------------|
+| 信号棒 | 触发入场计划的 K 线；极点外 1 跳动设止损/突破单 |
+| 入场棒 | 实际触发入场的 K 线；须在信号棒之后 |
+| 确认棒 / 跟随 | 信号或入场后 1–2 根同向延续；无跟随则信号易失败 |
+| 突破 | 价格越过结构位、通道线、区间边界或信号棒极点 |
+| 假突破 | 突破后快速回到原结构内；区间中常见 |
+| 突破回踩 / 回测 | 突破后回撤测试被突破位再延续（勿与「历史回测」混淆） |
+| 外包棒 | 高低点完全包含前一根；方向未定时勿追两端 |
+| 内包棒 | 完全在前一根范围内；ii/iii 为连续内包 |
+| 流星线 | 长上影、小实体，常作顶部拒绝 |
+| 锤子线 | 长下影、小实体，常作底部拒绝 |
+| 十字星 | 开收接近、多空犹豫 |
+| 趋势棒 | 实体大、收盘近极点、影线短 |
+| 铁丝网 | 极窄重叠区间，默认少交易 |
+| 被套 | 突破方向上的交易者被迫止损离场 |
+| 磁力位 | 失败信号棒/入场棒极点吸引价格回测 |
+
+英文缩写（可保留）：SB/EB、OB/IB、H1/H2、L1/L2、MTR、AIL/AIS、20GB。
 """.strip()
 
 _THINKING_CONTENT_OUTPUT_RULE = """
@@ -31,7 +56,7 @@ _THINKING_CONTENT_OUTPUT_RULE = """
 启用扩展思考时，**思考区仅用于推演草稿**；**程序只读取 assistant 消息的 `content`（正文）** 做 JSON 校验，**不会**把 `reasoning_content` / 思考流当作阶段结果。
 
 **你必须做到：**
-1. 思考可以较长，但思考结束后**必须在 `content` 正文里输出完整、可 `json.loads` 的裸 JSON 对象**（阶段一诊断 JSON 或阶段二决策 JSON）。
+1. 思考可以较长，但思考结束后**必须在 `content` 正文里输出完整、可 `json.loads` 的裸 JSON 对象**（阶段一诊断 JSON 或阶段二决策 JSON）。界面会把思考流与 `content` 正文（撰写回答）都显示在「思考过程」窗口；**正文 JSON 仍必须写在 `content`，不能只在思考里写完。**
 2. **禁止**把完整 JSON **只**写在思考里而让 `content` 为空、空白或纯叙述文字。
 3. **禁止**在 `content` 里输出 markdown 说明、英文长文分析、或「详见上文思考」——`content` 里**只能**是裸 JSON。
 4. 若思考预算较大，请**预留足够 token** 给最终 JSON；宁可压缩思考篇幅，也**不得**省略正文 JSON。
@@ -130,6 +155,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 **逐K摘要硬规则：**
 - 必须输出 `bar_by_bar_summary`，覆盖最近 8–12 根已收盘 K 线（数据不足则覆盖全部；勿超过 12 条以免截断 gate_trace）。
 - 每条只写该 K 线对当前结构的增量作用，不写下单价格、不写止损止盈。
+- `role` 只能使用示例中的 8 个英文枚举；延续/跟随棒统一写 `confirmation`，不要写 `continuation`。
 - K线序号方向：K1 是最新已收盘，K2 是它前一根；判断 K2 的后续跟随时看 K1，判断 K3 的后续跟随时看 K2/K1；K1 的跟随通常为 pending。
 - `bar_type` 必须优先对齐程序提供的 K线几何特征表。
 
@@ -497,7 +523,7 @@ class PromptAssembler:
 
     def _build_common_system_prompt(self) -> str:
         """Build the stable system prompt shared by Stage 1 and Stage 2."""
-        system_parts = [_LANGUAGE_ZH_RULE, _THINKING_CONTENT_OUTPUT_RULE]
+        system_parts = [_LANGUAGE_ZH_RULE, _PA_TERMINOLOGY_ZH, _THINKING_CONTENT_OUTPUT_RULE]
         system_parts.extend(self._load(name) for name in COMMON_SYSTEM_PROMPT_TXT_FILES)
         return "\n\n---\n\n".join(p for p in system_parts if p)
 

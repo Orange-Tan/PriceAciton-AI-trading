@@ -36,6 +36,10 @@ class GeneralSettings(BaseModel):
     decision_stance: DecisionStance = "balanced"
     #: 决策树可视化：在「整图适配」基础上的缩放百分比（100=与适配一致；可任意放大，仅下限 10%）
     decision_flow_default_zoom_pct: int = Field(default=500, ge=10)
+    #: 「实时」页思考过程/撰写回答框与追问输入框的等宽字体字号（pt）
+    stream_pane_font_pt: int = Field(default=11, ge=8, le=28)
+    #: K 线图上 #序号 标签的字号（pt）
+    chart_seq_label_font_pt: int = Field(default=7, ge=6, le=24)
 
     @field_validator("decision_flow_default_zoom_pct", mode="before")
     @classmethod
@@ -120,6 +124,8 @@ def save_settings(settings: "Settings", path: Path | None = None) -> None:
     plaintext = data.get("provider", {}).get("api_key", "")
     if plaintext:
         data["provider"]["api_key_encrypted"] = SecretStore.encrypt(plaintext)
+    else:
+        data["provider"]["api_key_encrypted"] = ""
     data["provider"].pop("api_key", None)
 
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
