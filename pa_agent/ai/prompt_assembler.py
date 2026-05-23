@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from pa_agent.ai.decision_stance import build_decision_stance_guidance, normalize_stance
-from pa_agent.ai.kline_features import compute_kline_geometry_features
+from pa_agent.ai.kline_features import bar_candle_direction_label, compute_kline_geometry_features
 from pa_agent.data.base import KlineFrame
 from pa_agent.records.schema import AnalysisRecord
 
@@ -446,8 +446,8 @@ class PromptAssembler:
     def _render_kline_table(frame: KlineFrame, limit: int | None = None) -> str:
         """Render the K-line data as a text table (newest bar first)."""
         lines = [
-            "序号 | 时间                | 开盘价    | 最高价    | 最低价    | 收盘价    | 成交量    | EMA20     | ATR14",
-            "-----+--------------------+----------+----------+----------+----------+----------+-----------+----------",
+            "序号 | 时间                | 开盘价    | 最高价    | 最低价    | 收盘价    | 阳阴 | 成交量    | EMA20     | ATR14",
+            "-----+--------------------+----------+----------+----------+----------+------+----------+-----------+----------",
         ]
         bars = frame.bars[:limit] if limit is not None else frame.bars
         for i, bar in enumerate(bars):
@@ -455,11 +455,12 @@ class PromptAssembler:
             atr = frame.indicators.atr14[i]
             ema_str = f"{ema:.4f}" if not math.isnan(ema) else "N/A"
             atr_str = f"{atr:.4f}" if not math.isnan(atr) else "N/A"
+            yang_yin = bar_candle_direction_label(bar)
             # ts_open is in milliseconds (MT5 source); convert to seconds for fromtimestamp()
             dt = datetime.datetime.fromtimestamp(bar.ts_open / 1000).strftime("%Y-%m-%d %H:%M")
             lines.append(
                 f"{bar.seq:<4} | {dt:<19} | {bar.open:<9.4f} | {bar.high:<9.4f} | "
-                f"{bar.low:<9.4f} | {bar.close:<9.4f} | {bar.volume:<9.0f} | "
+                f"{bar.low:<9.4f} | {bar.close:<9.4f} | {yang_yin:<4} | {bar.volume:<9.0f} | "
                 f"{ema_str:<10} | {atr_str}"
             )
         return "\n".join(lines)
@@ -546,7 +547,8 @@ class PromptAssembler:
             f"品种:{frame.symbol} 周期:{frame.timeframe} K线数量:{n_bars}\n"
             f"（K线序号：1=最新已收盘，最大 K{n_bars}；"
             f"每个决策节点的 bar_range 由你自行选择子区间，勿超出 K{n_bars}-K1）\n\n"
-            f"## K线数据(序号1=最新已收盘K线,序号越大越早;不含当前未收盘K线)\n\n"
+            f"## K线数据(序号1=最新已收盘K线,序号越大越早;不含当前未收盘K线;"
+            f"阳阴列由程序按收盘价与开盘价计算:收盘>开盘=阳线,收盘<开盘=阴线,相等=平)\n\n"
             f"{kline_table}\n\n"
             "## K线几何特征(程序预计算，仅作客观辅助；类型为单棒分类，不替代周期判断)\n\n"
             f"{feature_table}\n\n"
@@ -595,11 +597,11 @@ class PromptAssembler:
             f"每个决策节点的 bar_range 由你自行选择子区间，勿超出 K{n_bars}-K1）\n\n"
             "## 上一轮已完成分析（仅作为延续上下文）\n\n"
             f"```json\n{json.dumps(previous_summary, ensure_ascii=False, indent=2)}\n```\n\n"
-            f"## 新增 K线数据(共{new_count}根，序号1=最新已收盘)\n\n"
+            f"## 新增 K线数据(共{new_count}根，序号1=最新已收盘；含阳阴列)\n\n"
             f"{new_kline_table}\n\n"
             f"## 新增 K线几何特征(共{new_count}根)\n\n"
             f"{new_feature_table}\n\n"
-            f"## 当前完整 K线数据(共{n_bars}根，用于必要时复核整体结构)\n\n"
+            f"## 当前完整 K线数据(共{n_bars}根，用于必要时复核整体结构；含阳阴列)\n\n"
             f"{full_kline_table}\n\n"
             f"## 当前完整 K线几何特征(用于逐棒辅助，不替代周期判断)\n\n"
             f"{full_feature_table}\n\n"
@@ -705,7 +707,7 @@ class PromptAssembler:
 
         n_bars = len(frame.bars)
         kline_block = (
-            f"## K线数据(与阶段一相同, 共{n_bars}根；各节点 bar_range 由你据实填写)\n\n"
+            f"## K线数据(与阶段一相同, 共{n_bars}根，含阳阴列；各节点 bar_range 由你据实填写)\n\n"
             f"{kline_table}\n\n"
             "## K线几何特征(程序预计算，仅作逐棒客观辅助；不得替代交易者方程)\n\n"
             f"{feature_table}\n\n"

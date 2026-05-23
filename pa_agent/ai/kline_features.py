@@ -7,6 +7,15 @@ from dataclasses import dataclass
 from pa_agent.data.base import KlineBar, KlineFrame
 
 
+def bar_candle_direction_label(bar: KlineBar) -> str:
+    """Return 阳线 / 阴线 / 平 from close vs open (deterministic)."""
+    if bar.close > bar.open:
+        return "阳线"
+    if bar.close < bar.open:
+        return "阴线"
+    return "平"
+
+
 @dataclass(frozen=True)
 class KlineGeometryFeature:
     """Single-bar geometry, newest bar keeps its original ``seq``."""
