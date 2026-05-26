@@ -8,6 +8,27 @@ from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
 from tests.integration.conftest import VALID_STAGE1
 
 
+def test_hoists_bar_by_bar_summary_from_bar_analysis() -> None:
+    """Regression: model nests bar_by_bar_summary inside bar_analysis."""
+    nested = [
+        {
+            "bar": "K1",
+            "role": "noise",
+            "bar_type": "outside_bull",
+            "context_effect": "weakens_bear",
+            "follow_through": "pending",
+            "trapped_side": "none",
+            "reason": "外包阳线",
+        }
+    ]
+    raw = {**VALID_STAGE1}
+    del raw["bar_by_bar_summary"]
+    raw["bar_analysis"] = {**raw.get("bar_analysis", {}), "bar_by_bar_summary": nested}
+    out = normalize_stage1(raw)
+    assert out["bar_by_bar_summary"] == nested
+    assert "bar_by_bar_summary" not in (out.get("bar_analysis") or {})
+
+
 def test_maps_recommended_strategy_files() -> None:
     raw = {**VALID_STAGE1}
     del raw["strategy_files_needed"]

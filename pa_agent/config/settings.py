@@ -53,8 +53,8 @@ class GeneralSettings(BaseModel):
     refresh_interval_ms: int = 1000
     context_warning_threshold_pct: float = 80.0
     last_data_source: DataSourceKind = "mt5"
-    #: TradingView 现货黄金默认 OANDA:XAUUSD（连续外汇金价，少跳空）
-    last_tradingview_exchange: str = "OANDA"
+    #: TradingView 交易所；空字符串 =（自动）依次探测预设列表
+    last_tradingview_exchange: str = ""
     last_symbol: str = "XAUUSDm"
     last_timeframe: str = "15m"
     decision_flow_auto_play: bool = True

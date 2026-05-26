@@ -351,7 +351,10 @@ class JsonValidator:
             from pa_agent.ai.stage2_normalizer import normalize_stage2
 
             obj = normalize_stage2(
-                obj, normalization_mode=norm_mode, kline_frame=kline_frame
+                obj,
+                normalization_mode=norm_mode,
+                kline_frame=kline_frame,
+                decision_stance=decision_stance,
             )
 
         # ── Schema validation (b and c) ───────────────────────────────────────

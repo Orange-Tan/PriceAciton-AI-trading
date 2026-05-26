@@ -72,9 +72,8 @@ class AppContext:
                 from pa_agent.data.tradingview import TradingViewSource
 
                 if isinstance(data_source, TradingViewSource):
-                    data_source.set_exchange(
-                        getattr(settings.general, "last_tradingview_exchange", "") or ""
-                    )
+                    # Forced rule: TradingView exchange always «auto» (empty string).
+                    data_source.set_exchange("")
             data_source.subscribe(
                 settings.general.last_symbol,
                 settings.general.last_timeframe,

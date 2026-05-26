@@ -77,10 +77,12 @@ def normalize_gold_symbol_for_kind(kind: str, symbol: str) -> str:
 
 
 def normalize_gold_tv_exchange(exchange: str) -> str:
-    """Default to OANDA for spot XAUUSD; map crypto venues away."""
+    """Persisted TV exchange id; empty / AUTO = probe all presets in UI list."""
     ex = (exchange or "").strip().upper()
-    if ex in ("", "BINANCE", "COINBASE", "BITSTAMP", "BYBIT", "OKX", "KRAKEN"):
-        return GOLD_TV_EXCHANGE
+    if is_tv_exchange_auto(ex):
+        return ""
+    if ex in ("BINANCE", "COINBASE", "BITSTAMP", "BYBIT", "OKX", "KRAKEN"):
+        return ""
     return ex
 
 
@@ -156,6 +158,40 @@ def is_tv_exchange_auto(exchange: str) -> bool:
     """True when UI/source exchange is «auto» (probe venues for equity)."""
     ex = (exchange or "").strip().upper()
     return ex in ("", "AUTO")
+
+
+_GOLD_TV_SYMBOLS = frozenset({"XAUUSD", "GOLD", "XAU"})
+
+
+def tv_forex_auto_probe_plan(symbol: str) -> list[tuple[str, str]]:
+    """Ordered (exchange, symbol) for auto gold/forex using UI preset venues."""
+    from pa_agent.data.tradingview import TV_EXCHANGE_PRESETS
+
+    sym = (symbol or "").strip().upper() or GOLD_TV_SYMBOL
+    pairs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for ex in TV_EXCHANGE_PRESETS:
+        if not ex or ex in TV_EQUITY_EXCHANGES:
+            continue
+        if sym in _GOLD_TV_SYMBOLS:
+            feed = TV_GOLD_SYMBOL_BY_EXCHANGE.get(ex)
+            if feed is None:
+                continue
+            pair = (ex, feed)
+        else:
+            pair = (ex, sym)
+        if pair not in seen:
+            seen.add(pair)
+            pairs.append(pair)
+    return pairs
+
+
+def tv_auto_probe_plan(symbol: str) -> list[tuple[str, str]]:
+    """Full auto-probe plan: equity venues first, else all forex presets in the UI list."""
+    equity = equity_tv_auto_probe_plan(symbol)
+    if equity:
+        return equity
+    return tv_forex_auto_probe_plan(symbol)
 
 
 def equity_tv_auto_probe_plan(symbol: str) -> list[tuple[str, str]]:
@@ -323,6 +359,8 @@ def resolve_tv_gold_pair(
         if ex_in in TV_EQUITY_EXCHANGES:
             return ex_in, sym, False
         return ex_in or "", sym, False
+    if is_tv_exchange_auto(ex_in):
+        return "", sym or GOLD_TV_SYMBOL, False
     ex = normalize_gold_tv_exchange(exchange)
     sym = sym or GOLD_TV_SYMBOL
     expected = TV_GOLD_SYMBOL_BY_EXCHANGE.get(ex)
@@ -342,7 +380,7 @@ def migrate_general_gold_defaults(general: dict) -> None:
     general["last_symbol"] = normalize_gold_symbol_for_kind(kind, sym)
     if kind == "tradingview":
         ex, sym, _ = resolve_tv_pair(
-            str(general.get("last_tradingview_exchange", GOLD_TV_EXCHANGE)),
+            str(general.get("last_tradingview_exchange", "")),
             general["last_symbol"],
         )
         general["last_tradingview_exchange"] = ex

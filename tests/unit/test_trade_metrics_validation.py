@@ -141,7 +141,7 @@ def test_good_trade_passes_aggressive_stance() -> None:
     assert not validate_order_trade_metrics(decision, decision_stance="aggressive")
 
 
-def test_stage2_validator_rejects_bad_rr() -> None:
+def test_stage2_validator_coerces_bad_rr_to_no_order() -> None:
     obj = {
         "decision": {
             "order_type": "突破单",
@@ -209,8 +209,10 @@ def test_stage2_validator_rejects_bad_rr() -> None:
     result = validator.validate(
         "stage2", json.dumps(obj), decision_stance="aggressive"
     )
-    assert isinstance(result, ValidationError)
-    assert any("metrics:" in f for f in result.invalid_fields)
+    assert isinstance(result, Ok)
+    assert result.obj["decision"]["order_type"] == "不下单"
+    assert result.obj["decision_trace"][0]["answer"] == "否"
+    assert result.obj["terminal"]["outcome"] == "reject"
 
 
 def test_stage2_validator_auto_fixes_breakout_entry_at_or_inside_basis_high() -> None:

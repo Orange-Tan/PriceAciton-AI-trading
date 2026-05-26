@@ -47,6 +47,30 @@ def bar_by_seq(kline_frame: Any, seq: int) -> Any | None:
     return None
 
 
+def canonical_breakout_extreme(order_direction: str) -> str | None:
+    """Return schema-correct entry_basis_extreme for a breakout order."""
+    direction = str(order_direction or "").strip()
+    if direction == "做多":
+        return "high"
+    if direction == "做空":
+        return "low"
+    return None
+
+
+def normalize_breakout_basis_extreme(decision: dict[str, Any]) -> bool:
+    """Align entry_basis_extreme with order_direction (做空→low, 做多→high)."""
+    if decision.get("order_type") != "突破单":
+        return False
+    want = canonical_breakout_extreme(str(decision.get("order_direction", "") or ""))
+    if not want:
+        return False
+    have = str(decision.get("entry_basis_extreme", "") or "").strip().lower()
+    if have == want:
+        return False
+    decision["entry_basis_extreme"] = want
+    return True
+
+
 def breakout_entry_target(
     *,
     direction: str,
@@ -104,11 +128,10 @@ def normalize_breakout_entry_price(
     if target is None:
         return False
 
-    needs_fix = False
-    if direction == "做多" and extreme == "high" and entry <= float(bar.high):
-        needs_fix = True
-    if direction == "做空" and extreme == "low" and entry >= float(bar.low):
-        needs_fix = True
+    needs_fix = (
+        (direction == "做多" and extreme == "high" and entry <= float(bar.high))
+        or (direction == "做空" and extreme == "low" and entry >= float(bar.low))
+    )
     if not needs_fix:
         return False
 

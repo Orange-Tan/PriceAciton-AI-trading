@@ -294,6 +294,8 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 
 **交易者方程（10.3）规则：**
 - 必须使用 **decision 中已填写的 entry_price / stop_loss_price / take_profit_price** 做数值计算，**禁止**用 K 线收盘、信号棒极点间距或「计划中的 1.8 点/3 点」代替三价
+- **突破单须先定 entry 再定 stop/target**：按下方「极值±1跳动」公式写入 `entry_price` 后，再用这三价做 10.3；程序校验前会把错误的突破 entry **校正**为极值±跳动。校正后若盈亏比/方程仍不达标，**10.3 必须判否**且 `order_type=不下单`
+- `decision_trace[10.3].reason` 中的入场/止损/目标数字必须与 `decision` 三价一致（勿用未写入 decision 的中间价）
 - 做多：风险点数 = entry − stop，回报点数 = take_profit − entry；做空：风险 = stop − entry，回报 = entry − take_profit
 - 盈亏比 = 回报 ÷ 风险（程序与界面只认此公式；reasoning 中写的 RR 必须与三价一致，否则校验失败）
 - 有下单时：盈亏比不得低于当前交易倾向的底线（保守≥1.5，均衡≥1.2，激进/极度激进≥1.0），且须满足 **胜率%×回报 > (100−胜率)%×风险**
@@ -305,7 +307,8 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 **突破单 entry_price 硬规则（程序会按 K 线表小数位推断最小跳动并校验）：**
 - order_type="突破单" 时，必须填写 decision.entry_basis_bar、decision.entry_basis_extreme、decision.entry_rule。
 - 做多突破单：entry_basis_extreme 必须为 "high"。从 K 线表读出 entry_basis_bar 的 **high**，设 `entry_price = high + 1×最小跳动`（**必须严格大于 high，禁止等于 high**）。示例：K1 high=4556.595、跳动=0.001 → entry_price=4556.596。
-- 做空突破单：entry_basis_extreme 必须为 "low"。`entry_price = low − 1×最小跳动`（**必须严格低于 low**）。
+- 做空突破单：entry_basis_extreme 必须为 "low"。从 K 线表读出 entry_basis_bar 的 **low**，设 `entry_price = low − 1×最小跳动`（**必须严格低于 low**；禁止用 K 线中部、收盘价或高于 low 的价位）。示例：K2 low=10.67、跳动=0.01 → entry_price=10.66。
+- **做空突破单 basis 必须是 low**：即使叙事是「反弹至高点做空」，突破单仍挂在依据 K 的 **低点下方** 突破位；禁止写 `entry_basis_extreme="high"`（与「限价在高点附近做空」不同）。
 - entry_rule 只写挂单位置规则（如「K1 高点上方 1 跳动」），**禁止**在 entry_rule 里重复 order_type/方向或写 `entry_price=` 公式串。
 - 突破单禁止使用 K 线实体中部、收盘价、EMA 或「约等于高点」作为 entry_price。
 - 若无法从 K 线表确定依据 K 的 high/low 或最小跳动，应 order_type="不下单"，勿编造中间价。
@@ -322,9 +325,10 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 - 无持仓：跳过 §12、§13（不写 trace）
 - 不适用分支：skipped:true，answer=不适用
 
-terminal 必须与 order_type 一致：
-- 有下单 → outcome=trade，terminal.node_id 建议为最后一个 §11 节点
-- 不下单 → outcome=wait 或 reject
+terminal 必须与 order_type 一致（**decision 与 decision_trace 同步**）：
+- 有下单 → outcome=trade，10.3 必须为「是」，decision 含有效三价
+- 不下单 → outcome=wait 或 reject，order_type=不下单，三价与 order_direction 均为 null
+- **禁止** decision 写突破单/限价单/市价单，同时 decision_trace 里 10.3=否 或 terminal=reject
 
 阶段一 gate_result 为 wait/unknown 时：系统会短路，不应调用本阶段。
 

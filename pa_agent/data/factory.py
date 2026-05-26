@@ -7,7 +7,6 @@ from pa_agent.data.base import DataSource
 from pa_agent.data.market_defaults import (
     A_SHARE_DEFAULT_SYMBOL,
     GOLD_MT5_SYMBOL,
-    GOLD_TV_EXCHANGE,
     GOLD_TV_SYMBOL,
 )
 
@@ -26,7 +25,8 @@ _DEFAULT_SYMBOLS: dict[DataSourceKind, str] = {
 
 
 def default_tradingview_exchange() -> str:
-    return GOLD_TV_EXCHANGE
+    """Empty string = UI «（自动）» — probe all TV preset venues."""
+    return ""
 
 
 def normalize_data_source_kind(kind: str | None) -> DataSourceKind:

@@ -14,7 +14,10 @@ from pa_agent.data.market_defaults import (
     normalize_gold_tv_exchange,
     resolve_tv_gold_pair,
     resolve_tv_pair,
+    tv_auto_probe_plan,
+    tv_forex_auto_probe_plan,
 )
+from pa_agent.data.tradingview import TV_EXCHANGE_PRESETS
 
 
 def test_crypto_symbol_migrates_to_gold():
@@ -26,9 +29,27 @@ def test_mt5_suffix_on_tv_becomes_xauusd():
     assert normalize_gold_symbol_for_kind("tradingview", "XAUUSDm") == GOLD_TV_SYMBOL
 
 
-def test_tv_exchange_defaults_to_oanda():
-    assert normalize_gold_tv_exchange("") == GOLD_TV_EXCHANGE
-    assert normalize_gold_tv_exchange("BINANCE") == GOLD_TV_EXCHANGE
+def test_tv_exchange_auto_preserved():
+    assert normalize_gold_tv_exchange("") == ""
+    assert normalize_gold_tv_exchange("AUTO") == ""
+    assert normalize_gold_tv_exchange("BINANCE") == ""
+    assert normalize_gold_tv_exchange("OANDA") == "OANDA"
+
+
+def test_tv_forex_auto_probe_tries_all_forex_presets():
+    plan = tv_forex_auto_probe_plan("XAUUSD")
+    exchanges = [ex for ex, _ in plan]
+    assert exchanges == [
+        ex
+        for ex in TV_EXCHANGE_PRESETS
+        if ex and ex not in {"SSE", "SZSE", "HKEX"}
+    ]
+    assert ("OANDA", "XAUUSD") in plan
+    assert ("TVC", "GOLD") in plan
+
+
+def test_tv_auto_probe_ashare_still_two_venues():
+    assert tv_auto_probe_plan("600519") == [("SSE", "600519"), ("SZSE", "600519")]
 
 
 def test_tvc_xauusd_is_invalid_pair_fixed_to_gold():

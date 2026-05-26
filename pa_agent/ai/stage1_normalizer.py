@@ -71,6 +71,22 @@ _CONTEXT_EFFECT_ALIASES: dict[str, str] = {
 }
 
 
+def _hoist_bar_by_bar_summary(out: dict[str, Any]) -> None:
+    """Move bar_by_bar_summary from bar_analysis to root when the model nests it."""
+    root = out.get("bar_by_bar_summary")
+    if isinstance(root, list) and root:
+        return
+    ba = out.get("bar_analysis")
+    if not isinstance(ba, dict):
+        return
+    nested = ba.get("bar_by_bar_summary")
+    if not isinstance(nested, list) or not nested:
+        return
+    out["bar_by_bar_summary"] = nested
+    ba.pop("bar_by_bar_summary", None)
+    logger.debug("Hoisted bar_by_bar_summary from bar_analysis to root (%s items)", len(nested))
+
+
 def _normalize_strategy_file_names(files: Any) -> list[str]:
     if not isinstance(files, list):
         return []
@@ -302,6 +318,7 @@ def normalize_stage1(
 
     sync_detected_patterns_field(out)
 
+    _hoist_bar_by_bar_summary(out)
     normalize_stage1_traces(out, normalization_mode=normalization_mode)
     _normalize_bar_by_bar_roles(out)
     _normalize_bar_by_bar_context_effects(out)

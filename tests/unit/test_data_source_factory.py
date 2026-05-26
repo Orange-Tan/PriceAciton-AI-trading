@@ -8,7 +8,6 @@ from pa_agent.data.factory import (
     default_tradingview_exchange,
     normalize_data_source_kind,
 )
-from pa_agent.data.market_defaults import GOLD_TV_EXCHANGE
 from pa_agent.data.mt5 import MT5Source
 from pa_agent.data.tradingview import TradingViewSource
 
@@ -30,8 +29,8 @@ def test_default_symbols_per_kind():
     assert default_symbol_for_kind("tradingview") == "XAUUSD"
 
 
-def test_default_tradingview_exchange_is_oanda():
-    assert default_tradingview_exchange() == GOLD_TV_EXCHANGE
+def test_default_tradingview_exchange_is_auto():
+    assert default_tradingview_exchange() == ""
 
 
 def test_general_settings_last_data_source_default():

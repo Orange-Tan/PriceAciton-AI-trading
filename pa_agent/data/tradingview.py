@@ -12,9 +12,9 @@ from pa_agent.data.base import (
 from pa_agent.data.datetime_ts import datetime_to_ts_ms
 from pa_agent.data.bar_close_wait import is_bar_still_forming
 from pa_agent.data.market_defaults import (
-    equity_tv_auto_probe_plan,
     is_tv_exchange_auto,
     resolve_tv_fetch_pair,
+    tv_auto_probe_plan,
 )
 from pa_agent.data.tv_symbol_lookup import TvSymbolNotFoundError, is_tv_name_input
 from pa_agent.data.tradingview_errors import format_tradingview_fetch_error
@@ -174,19 +174,19 @@ class TradingViewSource(DataSource):
             raise last_exc
         return None
 
-    def _fetch_equity_auto_exchange(
+    def _fetch_tv_auto_probe(
         self,
         *,
         symbol: str,
+        plan: list[tuple[str, str]],
         interval: object,
         n_bars: int,
     ) -> tuple[object, str]:
-        """Try HKEX / SSE / SZSE (per probe plan) until one returns bars."""
-        plan = equity_tv_auto_probe_plan(symbol)
+        """Try each (exchange, symbol) in *plan* until one returns bars."""
         if not plan:
             raise DataSourceTransientError(
                 f"TradingView 无法识别品种「{symbol}」；"
-                "请用 A 股 6 位代码、港股代码（如 1810）或已支持的股票名称"
+                "请用 A 股 6 位代码、港股代码（如 1810）、外汇/黄金代码或已支持的股票名称"
             )
         last_exc: BaseException | None = None
         tried: list[str] = []
@@ -228,15 +228,15 @@ class TradingViewSource(DataSource):
         req_exchange = self._exchange
         exchange = req_exchange or ""
         fetch_symbol = user_symbol
-        auto_equity = is_tv_exchange_auto(req_exchange) and bool(
-            equity_tv_auto_probe_plan(user_symbol)
-        )
+        auto_probe = is_tv_exchange_auto(req_exchange)
+        probe_plan = tv_auto_probe_plan(user_symbol) if auto_probe else []
         try:
             from tvDatafeed import Interval  # type: ignore[import]
             interval = getattr(Interval, _TF_MAP[self._timeframe])
-            if auto_equity:
-                df, exchange = self._fetch_equity_auto_exchange(
+            if auto_probe and probe_plan:
+                df, exchange = self._fetch_tv_auto_probe(
                     symbol=user_symbol,
+                    plan=probe_plan,
                     interval=interval,
                     n_bars=n + 1,
                 )

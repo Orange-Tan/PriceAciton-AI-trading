@@ -178,6 +178,7 @@ class MainWindow(QMainWindow):
         self._demo_auto_next_armed = False
         self._demo_waiting_flow_playback = False
         self._startup_api_key_check_done = False
+        self._startup_tv_connectivity_check_done = False
         self._symbol_switch_timer: QTimer | None = None
         self._pending_symbol_switch: tuple[str, str] | None = None
         # RefreshLoop runs in its own QThread
@@ -289,27 +290,20 @@ class MainWindow(QMainWindow):
         )
         ctrl_layout.addWidget(self._data_source_combo)
 
-        from pa_agent.data.market_defaults import (
-            GOLD_TV_EXCHANGE,
-            normalize_gold_tv_exchange,
-        )
-
-        _last_tv_exchange = GOLD_TV_EXCHANGE
-        if _settings is not None:
-            _last_tv_exchange = normalize_gold_tv_exchange(
-                getattr(_settings.general, "last_tradingview_exchange", GOLD_TV_EXCHANGE)
-            )
+        # TradingView exchange is forced to «auto» whenever the data source is TV.
+        # We still keep the field visible for clarity, but it is not user-editable.
 
         self._tv_exchange_label = QLabel("交易所:")
         self._tv_exchange_combo = QComboBox()
-        self._tv_exchange_combo.setEditable(True)
+        self._tv_exchange_combo.setEditable(False)
         self._tv_exchange_combo.setMinimumWidth(96)
         self._tv_exchange_combo.setToolTip(
             "现货黄金（已实测可用）：\n"
             "· OANDA / PEPPERSTONE / FOREXCOM + XAUUSD\n"
             "· TVC / CAPITALCOM + GOLD（勿用 TVC:XAUUSD，无效）\n"
             "A 股 / 港股 / 名称（AkShare 不可用时）：\n"
-            "· 「（自动）」：A 股试 SSE/SZSE，港股试 HKEX\n"
+            "· 「（自动）」：黄金/外汇依次试 OANDA、PEPPERSTONE、FOREXCOM、FX、TVC、CAPITALCOM；"
+            "A 股试 SSE/SZSE，港股试 HKEX\n"
             "· 港股代码勿加前导零（1810 非 01810）；可输入名称如 小米集团\n"
             "· 自定义别名：config/tv_symbol_aliases.json"
         )
@@ -317,14 +311,10 @@ class MainWindow(QMainWindow):
 
         for ex in TV_EXCHANGE_PRESETS:
             self._tv_exchange_combo.addItem(ex if ex else "（自动）", ex)
-        if _last_tv_exchange:
-            if self._tv_exchange_combo.findData(_last_tv_exchange) < 0:
-                self._tv_exchange_combo.addItem(_last_tv_exchange, _last_tv_exchange)
-            idx_ex = self._tv_exchange_combo.findData(_last_tv_exchange)
-            if idx_ex >= 0:
-                self._tv_exchange_combo.setCurrentIndex(idx_ex)
-            else:
-                self._tv_exchange_combo.setCurrentText(_last_tv_exchange)
+        # Force TV exchange to auto by default.
+        idx_ex = self._tv_exchange_combo.findData("")
+        if idx_ex >= 0:
+            self._tv_exchange_combo.setCurrentIndex(idx_ex)
         self._tv_exchange_combo.currentIndexChanged.connect(
             self._on_tv_exchange_changed
         )
@@ -574,13 +564,25 @@ class MainWindow(QMainWindow):
         ):
             if w is not None:
                 w.setVisible(visible)
-                w.setEnabled(visible)
+                # Forced rule: when TV is active, exchange is always «auto».
+                w.setEnabled(False if visible else False)
+
+    def _force_tv_exchange_auto(self) -> None:
+        """Force TradingView exchange UI to «auto» (empty string)."""
+        combo = getattr(self, "_tv_exchange_combo", None)
+        if combo is None:
+            return
+        idx = combo.findData("")
+        if idx < 0:
+            return
+        combo.blockSignals(True)
+        combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
 
     def _apply_gold_defaults_for_data_source(self, kind: str) -> None:
         """Reset symbol/exchange to defaults when switching data source."""
         from pa_agent.data.market_defaults import (
             A_SHARE_DEFAULT_TIMEFRAME,
-            GOLD_TV_EXCHANGE,
             normalize_gold_symbol_for_kind,
         )
 
@@ -594,11 +596,7 @@ class MainWindow(QMainWindow):
             if self._tf_combo.currentText() not in ("1h", "4h", "1d"):
                 self._tf_combo.setCurrentText(A_SHARE_DEFAULT_TIMEFRAME)
         if kind == "tradingview":
-            idx = self._tv_exchange_combo.findData(GOLD_TV_EXCHANGE)
-            if idx >= 0:
-                self._tv_exchange_combo.blockSignals(True)
-                self._tv_exchange_combo.setCurrentIndex(idx)
-                self._tv_exchange_combo.blockSignals(False)
+            self._force_tv_exchange_auto()
 
     def _apply_tv_exchange_to_source(self, data_source: Any) -> None:
         from pa_agent.data.tradingview import TradingViewSource
@@ -625,6 +623,8 @@ class MainWindow(QMainWindow):
             return
         if self._current_data_source_kind() != "tradingview":
             return
+        # Forced rule: ignore any attempt to change away from auto.
+        self._force_tv_exchange_auto()
         from pa_agent.data.market_defaults import is_partial_tv_symbol_input
 
         sym_raw = self._symbol_combo.currentText().strip()
@@ -715,6 +715,32 @@ class MainWindow(QMainWindow):
                 self._tf_combo.setCurrentText(items[0])
         self._tf_combo.blockSignals(False)
 
+    def _ensure_tradingview_reachable(self) -> bool:
+        """Probe TV; if unreachable show dialog and optionally fall back to MT5."""
+        from pa_agent.data.tradingview_connectivity import check_tradingview_connectivity
+        from pa_agent.gui.tv_connectivity_dialog import show_tv_connectivity_blocked_dialog
+
+        ok, detail = check_tradingview_connectivity()
+        if ok:
+            return True
+        if detail:
+            logger.info("TradingView unreachable after retries: %s", detail)
+        show_tv_connectivity_blocked_dialog(self)
+        # Local machine cannot use TV; always fall back to MT5 (cloud button opens wiki).
+        self._select_data_source_kind("mt5", switch=True)
+        return False
+
+    def _select_data_source_kind(self, kind: str, *, switch: bool) -> None:
+        """Set data-source combo to *kind*; optionally run full switch."""
+        idx = self._data_source_combo.findData(kind)
+        if idx < 0:
+            return
+        self._data_source_combo.blockSignals(True)
+        self._data_source_combo.setCurrentIndex(idx)
+        self._data_source_combo.blockSignals(False)
+        if switch and kind != self._current_data_source_kind():
+            self._switch_data_source(kind)
+
     def _on_data_source_combo_changed(self, index: int) -> None:
         """Switch K-line data source (MT5 / TradingView)."""
         if getattr(self, "_switching", False):
@@ -728,6 +754,8 @@ class MainWindow(QMainWindow):
         if kind == self._current_data_source_kind():
             return
         prev_index = self._data_source_combo.findData(self._current_data_source_kind())
+        if kind == "tradingview" and not self._ensure_tradingview_reachable():
+            return
         try:
             self._switch_data_source(kind)
         except Exception as exc:  # noqa: BLE001
@@ -769,6 +797,8 @@ class MainWindow(QMainWindow):
             self._active_data_source_kind = kind
             self._sync_tv_exchange_visibility()
             self._apply_gold_defaults_for_data_source(kind)
+            if kind == "tradingview":
+                self._force_tv_exchange_auto()
 
             symbol = self._symbol_combo.currentText().strip()
             timeframe = self._tf_combo.currentText()
@@ -783,6 +813,7 @@ class MainWindow(QMainWindow):
             self._populate_symbol_combo_for_source()
             self._populate_timeframe_combo_for_source()
             if kind == "tradingview":
+                self._force_tv_exchange_auto()
                 self._persist_tradingview_exchange()
 
             if hasattr(self, "_chart_widget"):
@@ -2542,6 +2573,14 @@ class MainWindow(QMainWindow):
             return
         self._startup_api_key_check_done = True
         QTimer.singleShot(0, self._on_startup_api_key_check)
+        if not self._startup_tv_connectivity_check_done:
+            self._startup_tv_connectivity_check_done = True
+            QTimer.singleShot(0, self._on_startup_tv_connectivity_check)
+
+    def _on_startup_tv_connectivity_check(self) -> None:
+        if self._current_data_source_kind() != "tradingview":
+            return
+        self._ensure_tradingview_reachable()
 
     def _on_startup_api_key_check(self) -> None:
         self._refresh_api_key_ui_state()

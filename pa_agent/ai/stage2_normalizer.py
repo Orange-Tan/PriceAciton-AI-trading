@@ -6,9 +6,188 @@ import logging
 from typing import Any
 
 from pa_agent.ai.trace_normalize import normalize_stage2_traces
-from pa_agent.util.price_tick import normalize_breakout_entry_price
+from pa_agent.util.price_tick import (
+    normalize_breakout_basis_extreme,
+    normalize_breakout_entry_price,
+    parse_k_seq,
+)
 
 logger = logging.getLogger(__name__)
+
+_TRADE_ORDER_TYPES = frozenset({"限价单", "突破单", "市价单"})
+_NO_ORDER_PRICE_FIELDS = (
+    "order_direction",
+    "entry_price",
+    "take_profit_price",
+    "stop_loss_price",
+    "entry_basis_bar",
+    "entry_basis_extreme",
+    "entry_rule",
+)
+
+
+def _trace_node_answer(trace: Any, node_id: str) -> str | None:
+    if not isinstance(trace, list):
+        return None
+    for item in trace:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("node_id", "")).strip() == node_id:
+            return str(item.get("answer", "") or "").strip()
+    return None
+
+
+def _section14_violated(trace: Any) -> bool:
+    if not isinstance(trace, list):
+        return False
+    for item in trace:
+        if not isinstance(item, dict):
+            continue
+        nid = str(item.get("node_id", "")).strip()
+        if nid.startswith("14") and str(item.get("answer", "")).strip() == "是":
+            return True
+    return False
+
+
+def _clear_decision_to_no_order(decision: dict[str, Any]) -> None:
+    decision["order_type"] = "不下单"
+    for field in _NO_ORDER_PRICE_FIELDS:
+        decision[field] = None
+    decision["estimated_win_rate"] = None
+
+
+def _set_trace_node_answer(
+    trace: Any,
+    node_id: str,
+    answer: str,
+    *,
+    reason_suffix: str = "",
+) -> None:
+    if not isinstance(trace, list):
+        return
+    for item in trace:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("node_id", "")).strip() != node_id:
+            continue
+        item["answer"] = answer
+        if reason_suffix:
+            base = str(item.get("reason", "") or "").strip()
+            item["reason"] = f"{base}{reason_suffix}".strip()
+        return
+
+
+def _coerce_decision_no_order(out: dict[str, Any]) -> bool:
+    """When trace/terminal reject a trade, clear decision prices (common model slip)."""
+    decision = out.get("decision")
+    if not isinstance(decision, dict):
+        return False
+    if decision.get("order_type") not in _TRADE_ORDER_TYPES:
+        return False
+
+    trace = out.get("decision_trace")
+    terminal = out.get("terminal")
+    outcome = (
+        str(terminal.get("outcome", "")).strip()
+        if isinstance(terminal, dict)
+        else ""
+    )
+
+    triggers: list[str] = []
+    if _trace_node_answer(trace, "10.3") == "否":
+        triggers.append("10.3=否")
+    if outcome in ("wait", "reject"):
+        triggers.append(f"terminal.outcome={outcome}")
+    if _section14_violated(trace):
+        triggers.append("§14触犯")
+
+    if not triggers:
+        return False
+
+    _clear_decision_to_no_order(decision)
+    logger.debug("Coerced decision to 不下单 (%s)", ", ".join(triggers))
+    return True
+
+
+def _normalize_signal_entry_bar_chain(bar_analysis: dict[str, Any], decision: dict[str, Any]) -> bool:
+    """Signal K must be strictly older than entry K (larger seq); pending entry exempt."""
+    if decision.get("order_type") not in _TRADE_ORDER_TYPES:
+        return False
+    signal_bar = bar_analysis.get("signal_bar")
+    entry_bar = bar_analysis.get("entry_bar")
+    if not isinstance(signal_bar, dict) or not isinstance(entry_bar, dict):
+        return False
+
+    strength = str(entry_bar.get("strength", "") or "").strip().lower()
+    freshness = str(entry_bar.get("freshness", "") or "").strip().lower()
+    pending = (
+        strength == "not_triggered"
+        or not entry_bar.get("bar")
+        or freshness in ("pending", "stale", "invalid")
+    )
+    if pending:
+        entry_bar["bar"] = None
+        entry_bar["strength"] = "not_triggered"
+        entry_bar.setdefault("freshness", "pending")
+        if entry_bar.get("follow_through") in (None, "", False):
+            entry_bar["follow_through"] = "pending"
+        return False
+
+    signal_seq = parse_k_seq(signal_bar.get("bar"))
+    entry_seq = parse_k_seq(entry_bar.get("bar"))
+    if signal_seq is None or entry_seq is None:
+        return False
+    if signal_seq > entry_seq:
+        return False
+
+    signal_bar["bar"] = f"K{entry_seq + 1}"
+    logger.debug(
+        "signal_bar K%s -> K%s (must be older than entry K%s)",
+        signal_seq,
+        entry_seq + 1,
+        entry_seq,
+    )
+    return True
+
+
+def _coerce_decision_when_trade_metrics_fail(
+    out: dict[str, Any],
+    *,
+    decision_stance: str | None = None,
+) -> bool:
+    """After breakout entry snap, reject orders that still fail RR / trader equation."""
+    decision = out.get("decision")
+    if not isinstance(decision, dict) or decision.get("order_type") not in _TRADE_ORDER_TYPES:
+        return False
+    if decision.get("entry_price") is None:
+        return False
+
+    from pa_agent.util.trade_metrics import validate_order_trade_metrics
+
+    metric_errors = validate_order_trade_metrics(
+        decision, decision_stance=decision_stance
+    )
+    if not metric_errors:
+        return False
+
+    summary = metric_errors[0]
+    _clear_decision_to_no_order(decision)
+    _set_trace_node_answer(
+        out.get("decision_trace"),
+        "10.3",
+        "否",
+        reason_suffix=f"（程序按 decision 三价校验未通过：{summary}，已改为不下单。）",
+    )
+    terminal = out.get("terminal")
+    if isinstance(terminal, dict):
+        terminal["outcome"] = "reject"
+        terminal["node_id"] = "10.3"
+        terminal.setdefault(
+            "label",
+            "交易者方程/盈亏比未达标，不下单",
+        )
+    logger.debug("Coerced decision to 不下单 (trade metrics: %s)", summary)
+    return True
 
 
 def _normalize_next_bar_prediction(prediction: dict[str, Any]) -> None:
@@ -81,16 +260,19 @@ def normalize_stage2(
     *,
     normalization_mode: str = "strict",
     kline_frame: Any = None,
+    decision_stance: str | None = None,
 ) -> dict[str, Any]:
     """Return a copy of *obj* with decision_trace quirks corrected."""
     out = copy.deepcopy(obj)
     frame_max = _max_bar_seq_from_frame(kline_frame)
-    normalize_stage2_traces(
-        out,
-        normalization_mode=normalization_mode,
-        default_max_seq=frame_max,
-    )
+    _coerce_decision_no_order(out)
     decision = out.get("decision")
+    if isinstance(decision, dict) and normalize_breakout_basis_extreme(decision):
+        logger.debug(
+            "breakout entry_basis_extreme aligned to %s for %s",
+            decision.get("entry_basis_extreme"),
+            decision.get("order_direction"),
+        )
     if isinstance(decision, dict) and normalize_breakout_entry_price(
         decision, kline_frame=kline_frame
     ):
@@ -98,6 +280,13 @@ def normalize_stage2(
             "breakout entry_price adjusted to basis extreme ± 1 tick (basis=%s)",
             decision.get("entry_basis_bar"),
         )
+    _coerce_decision_when_trade_metrics_fail(out, decision_stance=decision_stance)
+    normalize_stage2_traces(
+        out,
+        normalization_mode=normalization_mode,
+        default_max_seq=frame_max,
+    )
+    decision = out.get("decision")
     if isinstance(decision, dict) and decision.get("order_type") == "不下单":
         # A no-order decision has no executable trade; tolerate model-provided
         # win-rate estimates in legacy payloads by clearing them before schema
@@ -105,6 +294,10 @@ def normalize_stage2(
         decision["estimated_win_rate"] = None
 
     bar_analysis = out.get("bar_analysis")
+    decision = out.get("decision")
+    if isinstance(bar_analysis, dict) and isinstance(decision, dict):
+        if _normalize_signal_entry_bar_chain(bar_analysis, decision):
+            pass
     if isinstance(bar_analysis, dict):
         signal_bar = bar_analysis.get("signal_bar")
         if isinstance(signal_bar, dict) and not signal_bar.get("bar"):

@@ -6,6 +6,7 @@ from pa_agent.ai.stage2_normalizer import normalize_stage2
 from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
 from pa_agent.util.price_tick import (
     infer_price_tick_from_frame,
+    normalize_breakout_basis_extreme,
     normalize_breakout_entry_price,
     round_to_tick,
 )
@@ -53,6 +54,18 @@ def test_normalize_breakout_entry_at_high_bumps_up() -> None:
     assert decision["entry_price"] == round_to_tick(4556.595 + 0.001, 0.001)
 
 
+def test_normalize_short_breakout_extreme_high_to_low() -> None:
+    decision = {
+        "order_type": "突破单",
+        "order_direction": "做空",
+        "entry_basis_extreme": "high",
+        "entry_basis_bar": "K3",
+        "entry_price": 3.42,
+    }
+    assert normalize_breakout_basis_extreme(decision)
+    assert decision["entry_basis_extreme"] == "low"
+
+
 def test_stage2_normalizer_passes_breakout_price_check() -> None:
     frame = _frame(high=104.0)
     obj = normalize_stage2(
@@ -63,8 +76,9 @@ def test_stage2_normalizer_passes_breakout_price_check() -> None:
                 "entry_basis_bar": "K1",
                 "entry_basis_extreme": "high",
                 "entry_price": 104.0,
-                "take_profit_price": 110.0,
+                "take_profit_price": 120.0,
                 "stop_loss_price": 99.0,
+                "estimated_win_rate": 55,
             },
         },
         kline_frame=frame,
