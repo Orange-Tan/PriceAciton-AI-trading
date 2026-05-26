@@ -129,6 +129,19 @@ _GENERIC_ANSWER: dict[str, str] = {
 }
 
 _BAR_RANGE_ALIASES = frozenset({"全局", "全图", "整体", "全部", "all"})
+_PENDING_BAR_RANGE_VALUES = frozenset(
+    {
+        "pending",
+        "tbd",
+        "n/a",
+        "na",
+        "等待触发",
+        "待触发",
+        "未触发",
+        "尚无",
+        "等待",
+    }
+)
 _NULLISH_STRINGS = frozenset({"", "null", "none", "nil", "n/a"})
 
 
@@ -193,10 +206,37 @@ def _comma_separated_bar_range(compact: str) -> str | None:
     return f"K{older}" if older == newer else f"K{older}-K{newer}"
 
 
+def _bar_range_is_canonical(text: str) -> bool:
+    compact = str(text or "").strip().upper().replace(" ", "")
+    if not compact or compact in ("不适用", "—", "-"):
+        return True
+    return bool(_BAR_RANGE_RE.match(compact) or _SINGLE_BAR_RE.match(compact))
+
+
+def _bar_range_from_reason(
+    item: dict[str, Any],
+    *,
+    default_max_seq: int | None = None,
+) -> str | None:
+    cited = _bar_seqs_from_reason_text(str(item.get("reason", "") or ""))
+    if not cited:
+        return None
+    older, newer = max(cited), min(cited)
+    if default_max_seq and default_max_seq >= 1:
+        cited = {s for s in cited if 1 <= s <= default_max_seq}
+        if not cited:
+            return None
+        older, newer = max(cited), min(cited)
+    return f"K{older}" if older == newer else f"K{older}-K{newer}"
+
+
 def fix_bar_range_string(text: str, *, default_max_seq: int | None = None) -> str:
     """Canonicalize bar_range: order, aliases, spacing."""
     raw = str(text).strip()
     if not raw:
+        return ""
+
+    if raw.lower() in _PENDING_BAR_RANGE_VALUES:
         return ""
 
     if raw in _BAR_RANGE_ALIASES or raw.lower() in {"global", "all"}:
@@ -307,9 +347,36 @@ def _coerce_bar_range(
         ans = "不适用"
 
     br = item.get("bar_range")
+    br_text = str(br or "").strip()
+    if br_text.lower() in _PENDING_BAR_RANGE_VALUES:
+        inferred = _bar_range_from_reason(item, default_max_seq=default_max_seq)
+        if inferred:
+            item["bar_range"] = inferred
+            logger.debug("bar_range %r -> %s (node %s, from reason)", br, inferred, nid)
+            _expand_bar_range_for_reason_citations(item, default_max_seq=default_max_seq)
+            return
+        if skipped or ans == "不适用":
+            item["bar_range"] = "不适用"
+            return
+        if prior_bar_range and prior_bar_range not in ("不适用", "—"):
+            item["bar_range"] = prior_bar_range
+            logger.debug(
+                "bar_range %r -> copied %s (node %s)",
+                br,
+                prior_bar_range,
+                nid,
+            )
+            return
+
     if _is_nullish(br):
         if skipped or ans == "不适用":
             item["bar_range"] = "不适用"
+            return
+        inferred = _bar_range_from_reason(item, default_max_seq=default_max_seq)
+        if inferred:
+            item["bar_range"] = inferred
+            logger.debug("bar_range null -> %s (node %s, from reason)", inferred, nid)
+            _expand_bar_range_for_reason_citations(item, default_max_seq=default_max_seq)
             return
         if prior_bar_range and prior_bar_range not in ("不适用", "—"):
             item["bar_range"] = prior_bar_range
@@ -331,9 +398,21 @@ def _coerce_bar_range(
         return
 
     fixed = fix_bar_range_string(str(br), default_max_seq=default_max_seq)
-    if fixed != str(br).strip():
+    if fixed != br_text:
         logger.debug("bar_range %s -> %s (node %s)", br, fixed, nid)
     item["bar_range"] = fixed
+    if not _bar_range_is_canonical(item["bar_range"]):
+        inferred = _bar_range_from_reason(item, default_max_seq=default_max_seq)
+        if inferred:
+            item["bar_range"] = inferred
+            logger.debug(
+                "bar_range %r -> %s (node %s, repaired non-canonical)",
+                br,
+                inferred,
+                nid,
+            )
+        elif skipped or ans == "不适用":
+            item["bar_range"] = "不适用"
     _expand_bar_range_for_reason_citations(item, default_max_seq=default_max_seq)
 
 

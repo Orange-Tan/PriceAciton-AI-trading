@@ -14,6 +14,40 @@ from pa_agent.orchestrator.two_stage import TwoStageOrchestrator
 from pa_agent.util.threading import CancelToken, OrchestratorEvent
 
 
+def test_httpx_read_error_stage1(frame, pending_writer, assembler, exp_reader):
+    """httpx.ReadError (e.g. WinError 10054 mid-stream) → Stage1Failed + partial save."""
+    try:
+        import httpx
+    except ImportError:
+        return
+
+    client = MagicMock()
+    client.stream_chat.side_effect = httpx.ReadError(
+        "[WinError 10054] 远程主机强迫关闭了一个现有的连接。"
+    )
+
+    validator = schema_test_validator()
+    orchestrator = TwoStageOrchestrator(
+        client=client,
+        assembler=assembler,
+        router=route_strategy_files,
+        validator=validator,
+        pending_writer=pending_writer,
+        exp_reader=exp_reader,
+    )
+
+    events: list[OrchestratorEvent] = []
+    orchestrator.submit(
+        frame=frame,
+        cancel_token=CancelToken(),
+        on_event=events.append,
+    )
+
+    assert OrchestratorEvent.Stage1Failed in events
+    pending_writer.save_partial.assert_called_once()
+    assert pending_writer.save_partial.call_args[0][1] == "network_error"
+
+
 def test_network_timeout_stage1(frame, pending_writer, assembler, exp_reader):
     """APITimeoutError on stage1 → Stage1Failed emitted."""
     client = MagicMock()

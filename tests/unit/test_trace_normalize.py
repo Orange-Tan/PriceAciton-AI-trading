@@ -20,6 +20,20 @@ def test_fix_reversed_bar_range() -> None:
     assert fix_bar_range_string("K50-K1") == "K50-K1"
 
 
+def test_pending_bar_range_inferred_from_reason() -> None:
+    """Regression: pending entry bar_range on §9.7 -> K{n} from reason text."""
+    item = {
+        "node_id": "9.7",
+        "question": "入场棒是否强势且有跟随？",
+        "answer": "不适用",
+        "reason": "入场棒尚未触发，挂突破单等待K3低点被跌破。",
+        "bar_range": "pending",
+        "skipped": False,
+    }
+    normalize_trace_item(item, default_max_seq=50, normalization_mode="strict")
+    assert item["bar_range"] == "K3"
+
+
 def test_fix_comma_separated_bar_range() -> None:
     assert fix_bar_range_string("K1,K7") == "K7-K1"
     assert fix_bar_range_string("K7、K1") == "K7-K1"
