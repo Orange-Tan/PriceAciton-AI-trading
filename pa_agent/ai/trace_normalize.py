@@ -255,6 +255,12 @@ def fix_bar_range_string(text: str, *, default_max_seq: int | None = None) -> st
             capped = _cap_bar_seq(a, default_max_seq)
             return f"K{capped}"
         if a < b:
+            logger.warning(
+                "bar_range=%r has reversed order (K%d before K%d); "
+                "K1=newest, K{N}=older. Auto-fixing to K%d-K%d but this "
+                "may indicate the model misinterprets bar numbering direction.",
+                text, a, b, b, a,
+            )
             a, b = b, a
         a = _cap_bar_seq(a, default_max_seq)
         b = _cap_bar_seq(b, default_max_seq)
@@ -527,6 +533,26 @@ def normalize_trace_list(
 ) -> list[Any] | None:
     if not isinstance(trace, list):
         return trace
+
+    # Reorder by chapter: AI may output nodes in any order; the correct
+    # canonical order is by node_id prefix (3.x → 4.x → ... → 14).
+    _CHAPTER_ORDER: dict[str, int] = {
+        "3.": 30, "4.": 40, "5.": 50, "6.": 60,
+        "7.": 70, "8.": 80, "9.": 90, "10.": 100,
+        "11.": 110, "12.": 120, "13.": 130, "14": 140,
+    }
+
+    def _chapter_rank(item: Any) -> int:
+        if not isinstance(item, dict):
+            return 999
+        nid = str(item.get("node_id", ""))
+        for prefix, rank in _CHAPTER_ORDER.items():
+            if nid.startswith(prefix):
+                return rank
+        return 500  # unrecognised nodes go in the middle
+
+    trace.sort(key=_chapter_rank)
+
     max_seq = default_max_seq or infer_max_bar_seq_from_trace(trace)
     last_br: str | None = None
     lenient = normalization_mode == "lenient"

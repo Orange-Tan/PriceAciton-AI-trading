@@ -1,10 +1,13 @@
 """Semantic validation for gate_trace / decision_trace (beyond schema/enums)."""
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 from pa_agent.ai.decision_tree import load_decision_tree
+
+logger = logging.getLogger(__name__)
 
 _K_REF_RE = re.compile(r"K\s*(\d+)", re.IGNORECASE)
 _BOILERPLATE_REASONS = frozenset(
@@ -41,6 +44,12 @@ def _bar_seqs_from_range(bar_range: str) -> set[int]:
     m = re.match(r"^K(\d+)-K(\d+)$", text)
     if m:
         a, b = int(m.group(1)), int(m.group(2))
+        if a < b:
+            logger.warning(
+                "bar_range=%r has reversed order (K%d-K%d); K1=newest, K{N}=older. "
+                "Auto-corrected but this may indicate model confusion.",
+                text, a, b,
+            )
         lo, hi = min(a, b), max(a, b)
         return set(range(lo, hi + 1))
     m1 = re.match(r"^K(\d+)$", text)

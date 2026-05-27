@@ -74,15 +74,15 @@ def format_tradingview_fetch_error(
                 f"请用 {TV_HK_EXCHANGE} + {code}（勿加前导零，如 1810 非 01810）；"
                 "或输入已支持名称如「小米集团」"
             )
-        if is_tv_name_input(sym):
-            return (
-                f"TradingView 无数据（名称 {sym}）："
-                "请改用代码，或在 config/tv_symbol_aliases.json 添加别名"
-            )
         if not ex:
             return (
                 f"TradingView 无数据（品种 {sym}，未填交易所）："
                 "黄金 OANDA+XAUUSD；A 股 SSE/SZSE+6 位；港股 HKEX+代码或名称"
+            )
+        if is_tv_name_input(sym):
+            return (
+                f"TradingView 无数据（名称 {sym}）："
+                "请改用代码，或在 config/tv_symbol_aliases.json 添加别名"
             )
         hint = "OANDA + XAUUSD"
         if ex == "TVC":

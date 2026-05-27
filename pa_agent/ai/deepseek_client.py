@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from pa_agent.util.threading import CancelToken
 
 from pa_agent.config.settings import AIProviderSettings
-from pa_agent.security.secret_store import mask_secret
+from pa_agent.util.mask_secret import mask_secret
 
 try:
     from openai import OpenAI as _OpenAI  # type: ignore[import]

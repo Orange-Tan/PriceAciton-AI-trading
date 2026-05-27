@@ -54,6 +54,16 @@ def datetime_to_ts_ms(dt: object) -> int:
     return datetime_to_ts_ms(parsed)
 
 
+def ts_open_to_ms(ts_open: float) -> float:
+    """Normalize bar open time to epoch milliseconds (canonical ``KlineBar.ts_open``)."""
+    ts = float(ts_open)
+    if ts <= 0:
+        return ts
+    if ts < 1e10:
+        return ts * 1000.0
+    return ts
+
+
 def format_epoch_for_display(ts_open: float, *, short: bool = False) -> str:
     """Format bar open epoch without applying the host local timezone offset."""
     sec = float(ts_open)

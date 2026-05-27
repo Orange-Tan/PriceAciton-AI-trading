@@ -20,6 +20,12 @@ from pa_agent.records.schema import AnalysisRecord
 
 logger = logging.getLogger(__name__)
 
+_KLINE_INDICATOR_NOTE = (
+    "说明：下表仅含最近 N 根已收盘 K 线；几何特征亦基于此 N 根。"
+    "EMA20/ATR14 由程序在更老缓冲 K 线上预热后重算，与外盘图表「全历史延续」"
+    "指标可能略有差异，勿逐点对比。"
+)
+
 # ── Language (both stages, thinking + final output) ───────────────────────────
 
 _LANGUAGE_ZH_RULE = """
@@ -110,7 +116,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
   "bar_analysis": {
     "always_in": "long|short|neutral",
     "last_closed_bar": "K1",
-    "bar_type": "trend_bull|trend_bear|doji|inside|outside_bull|outside_bear|other",
+    "bar_type": "trend_bull|trend_bear|doji|inside|outside_bull|outside_bear|flat|other",
     "signal_bar": {
       "bar": "K2",
       "quality": "strong|medium|weak|invalid",
@@ -123,7 +129,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
     {
       "bar": "K1",
       "role": "structure|signal|entry|confirmation|noise|trap|climax|test",
-      "bar_type": "trend_bull|trend_bear|doji|inside|outside_bull|outside_bear|other",
+      "bar_type": "trend_bull|trend_bear|doji|inside|outside_bull|outside_bear|flat|other",
       "context_effect": "strengthens_bull|weakens_bull|strengthens_bear|weakens_bear|neutral|transition",
       "follow_through": "yes|no|pending|failed",
       "trapped_side": "bulls|bears|both|none|unknown",
@@ -179,6 +185,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 **每条 gate_trace / decision_trace 必须包含 bar_range（K线依据，由你自行判断）：**
 - **程序不会替你填写**；你必须根据「本节点实际引用了哪些 K 线」写出序号范围
 - 格式：`K{较老序号}-K{较新序号}` 或单根 `K1`（**序号1=最新已收盘**，序号越大越早）
+- **⚠️ bar_range 禁止出现 K0**：K0 是当前未收盘棒，不在 frame 中。如需讨论"下一根K线"请写在 reason 中，bar_range 只能引用 K1~K{max}
 - **每个节点的 bar_range 应不同**（除非该节点确实与上一节点使用完全相同窗口）；禁止所有节点照抄同一个范围
 - 区间格式必须为 **K{较老}-K{较新}**（如 K4-K1），**禁止** K1-K4；单根写 K1；全图分析可写「全局」（程序会展开）
 - **reason 里写到的每一根 K 线**（如「K4 之后」「对比 K2」）都必须落在该条 **bar_range** 内；勿在 bar_range=K2 的 reason 里单独提 K4——应写 **K4-K2** 或 **K4-K1**，或 reason 只谈 K2
@@ -240,7 +247,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
   "bar_analysis": {
     "always_in": "long|short|neutral",
     "last_closed_bar": "K1",
-    "bar_type": "trend_bull|trend_bear|doji|inside|outside_bull|outside_bear|other",
+    "bar_type": "trend_bull|trend_bear|doji|inside|outside_bull|outside_bear|flat|other",
     "signal_bar": {
       "bar": "K2 或 null（计划型挂单尚无已收盘信号棒时为 null）",
       "quality": "strong|medium|weak|invalid",
@@ -279,6 +286,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 ```
 
 说明：decision_trace 需输出完整决策路径（通常多条）；每条 trace 的 **bar_range 必须由你根据该节点实际使用的 K 线填写**，不得照抄示例。
+**⚠️ bar_range 禁止出现 K0**（K0 是未收盘棒，不在 frame 中；如需讨论下一根 K 线写在 reason 里）。
 **每条 trace 的 answer 只能是以下五选一**：`是`、`否`、`中性`、`等待`、`不适用`。
 禁止写「部分符合」「部分是」「上涨通道」等；模糊或分类细节写在 **reason**（方向类节点可另填 **branch**）。
 
@@ -580,12 +588,15 @@ class PromptAssembler:
                 f"{bar.low:<9.4f} | {bar.close:<9.4f} | {yang_yin:<4} | {bar.volume:<9.0f} | "
                 f"{ema_str:<10} | {atr_str}"
             )
+        lines.append(_KLINE_INDICATOR_NOTE)
         return "\n".join(lines)
 
     @staticmethod
     def _render_kline_feature_table(frame: KlineFrame, limit: int | None = None) -> str:
         """Render方案 A single-bar geometry features for prompt grounding."""
+        shown = limit if limit is not None else len(frame.bars)
         lines = [
+            f"（几何特征：最近 {shown} 根已收盘 K 线；多棒形态已用完整窗口计算）",
             "序号 | 类型          | 实体比 | 上影比 | 下影比 | 收盘位置 | Range/ATR | EMA关系 | 与前棒重叠 | ii/iii | ioi | 微双 | 缺口 | EMA缺口数 | 近5突破 | 后续",
             "-----+---------------+--------+--------+--------+----------+-----------+---------+------------+--------+-----+------+-------+-----------+---------+------",
         ]
@@ -607,6 +618,7 @@ class PromptAssembler:
                 f"{feat.breakout_prev:<7} | "
                 f"{feat.follow_through_1_2}"
             )
+        lines.append(_KLINE_INDICATOR_NOTE)
         return "\n".join(lines)
 
     # ── Stage 1 ───────────────────────────────────────────────────────────────
@@ -683,7 +695,8 @@ class PromptAssembler:
             f"## K线数据(序号1=最新已收盘K线,序号越大越早;不含当前未收盘K线;"
             f"阳阴列由程序按收盘价与开盘价计算:收盘>开盘=阳线,收盘<开盘=阴线,相等=平)\n\n"
             f"{kline_table}\n\n"
-            "## K线几何特征(程序预计算，仅作客观辅助；类型为单棒分类，不替代周期判断)\n\n"
+            "## K线几何特征(程序预计算，仅作客观辅助；类型为单棒分类，不替代周期判断；"
+            "基于当前 N 根已收盘 K 线，指标非全历史延续)\n\n"
             f"{feature_table}\n\n"
             f"请根据以上数据，严格输出阶段一 JSON 诊断结果。\n\n"
             f"{_STAGE1_TAIL_REMINDER}"
@@ -741,11 +754,13 @@ class PromptAssembler:
             f"```json\n{json.dumps(previous_summary, ensure_ascii=False, indent=2)}\n```\n\n"
             f"## 新增 K线数据(共{new_count}根，序号1=最新已收盘；含阳阴列)\n\n"
             f"{new_kline_table}\n\n"
-            f"## 新增 K线几何特征(共{new_count}根)\n\n"
+            f"## 新增 K线几何特征(共{new_count}根；多棒形态按完整{n_bars}根窗口计算，"
+            f"与前棒重叠/内包/ioi 以完整表为准)\n\n"
             f"{new_feature_table}\n\n"
             f"## 当前完整 K线数据(共{n_bars}根，用于必要时复核整体结构；含阳阴列)\n\n"
             f"{full_kline_table}\n\n"
-            f"## 当前完整 K线几何特征(用于逐棒辅助，不替代周期判断)\n\n"
+            f"## 当前完整 K线几何特征(用于逐棒辅助，不替代周期判断；"
+            f"基于当前 N 根已收盘 K 线，指标非全历史延续)\n\n"
             f"{full_feature_table}\n\n"
             "请基于上一轮结论、新增K线和当前完整K线，严格输出更新后的阶段一 JSON 诊断结果。\n\n"
             f"{_STAGE1_TAIL_REMINDER}"
@@ -910,7 +925,8 @@ class PromptAssembler:
         kline_block = (
             f"## K线数据(与阶段一相同, 共{n_bars}根，含阳阴列；各节点 bar_range 由你据实填写)\n\n"
             f"{kline_table}\n\n"
-            "## K线几何特征(程序预计算，仅作逐棒客观辅助；不得替代交易者方程)\n\n"
+            "## K线几何特征(程序预计算，仅作逐棒客观辅助；不得替代交易者方程；"
+            "基于当前 N 根已收盘 K 线，指标非全历史延续)\n\n"
             f"{feature_table}\n\n"
             if include_kline_table
             else f"## K线数据\n\n沿用上一轮阶段一用户消息中的同一份 K线数据，共 {n_bars} 根；各节点 bar_range 由你据实填写。\n\n"

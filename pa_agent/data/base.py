@@ -13,13 +13,40 @@ from typing import Sequence
 class KlineBar:
     """A single OHLCV bar with sequence number and closed flag."""
     seq: int           # 1 = newest (including forming bar), N = oldest
-    ts_open: float     # Unix timestamp (seconds) of bar open
+    ts_open: float     # Unix timestamp in milliseconds (UTC) of bar open
     open: float
     high: float
     low: float
     close: float
     volume: float
     closed: bool       # False for the currently-forming bar
+
+
+def normalize_kline_bar(bar: KlineBar) -> KlineBar:
+    """Ensure canonical ``ts_open`` (ms), ``high >= low``, and ``low <= close <= high``."""
+    from pa_agent.data.datetime_ts import ts_open_to_ms
+
+    ts_ms = ts_open_to_ms(bar.ts_open)
+    high = max(bar.high, bar.low)
+    low = min(bar.high, bar.low)
+    close = max(low, min(high, bar.close))
+    if (
+        high == bar.high
+        and low == bar.low
+        and close == bar.close
+        and ts_ms == bar.ts_open
+    ):
+        return bar
+    return KlineBar(
+        seq=bar.seq,
+        ts_open=ts_ms,
+        open=bar.open,
+        high=high,
+        low=low,
+        close=close,
+        volume=bar.volume,
+        closed=bar.closed,
+    )
 
 
 # ── IndicatorBundle ───────────────────────────────────────────────────────────

@@ -78,6 +78,23 @@ def seconds_until_bar_closes(
     return int(math.ceil(remaining_ms / 1000))
 
 
+def reference_now_ms(
+    *,
+    now_ms: int | None = None,
+    data_source: object | None = None,
+) -> int:
+    """Wall-clock for forming-bar checks: broker/server time when available, else local."""
+    if now_ms is not None:
+        return int(now_ms)
+    if data_source is not None:
+        server_time_ms = getattr(data_source, "server_time_ms", None)
+        if callable(server_time_ms):
+            t = server_time_ms()
+            if t is not None:
+                return int(t)
+    return int(time.time() * 1000)
+
+
 def _looks_like_ashare_symbol(symbol: str | None) -> bool:
     from pa_agent.data.market_defaults import normalize_ashare_tv_code
 
@@ -109,9 +126,9 @@ def is_bar_still_forming(
     duration_s = timeframe_to_seconds(timeframe)
     if duration_s is None:
         return True
-    ts_open = int(bar.ts_open)
-    if ts_open < 10_000_000_000:
-        ts_open *= 1000
+    from pa_agent.data.datetime_ts import ts_open_to_ms
+
+    ts_open = int(ts_open_to_ms(bar.ts_open))
     close_ms = ts_open + duration_s * 1000
     return int(now_ms) < close_ms
 

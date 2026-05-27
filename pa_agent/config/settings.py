@@ -116,11 +116,9 @@ logger = logging.getLogger(__name__)
 def load_settings(path: Path | None = None) -> "Settings":
     """Load settings from *path* (default: SETTINGS_JSON_PATH).
 
-    Decrypts api_key_encrypted → api_key in memory.
     Returns default Settings and writes them to disk if the file is absent.
     """
     from pa_agent.config.paths import SETTINGS_JSON_PATH
-    from pa_agent.security.secret_store import SecretStore
 
     path = path or SETTINGS_JSON_PATH
 
@@ -150,35 +148,19 @@ def load_settings(path: Path | None = None) -> "Settings":
     provider.pop("pricing", None)
     raw["provider"] = provider
 
-    encrypted = provider.get("api_key_encrypted", "")
-    if encrypted:
-        try:
-            raw.setdefault("provider", {})["api_key"] = SecretStore.decrypt(encrypted)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to decrypt api_key (%s); leaving blank", exc)
-            raw.setdefault("provider", {})["api_key"] = ""
+    # Migrate legacy encrypted key: drop it, api_key already in provider dict
+    raw.setdefault("provider", {}).setdefault("api_key", "")
 
     return Settings.model_validate(raw)
 
 
 def save_settings(settings: "Settings", path: Path | None = None) -> None:
-    """Persist settings to *path* (default: SETTINGS_JSON_PATH).
-
-    Encrypts api_key → api_key_encrypted; never writes plaintext api_key.
-    """
+    """Persist settings to *path* (default: SETTINGS_JSON_PATH)."""
     from pa_agent.config.paths import SETTINGS_JSON_PATH
-    from pa_agent.security.secret_store import SecretStore
 
     path = path or SETTINGS_JSON_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
 
     data = settings.model_dump()
-
-    plaintext = data.get("provider", {}).get("api_key", "")
-    if plaintext:
-        data["provider"]["api_key_encrypted"] = SecretStore.encrypt(plaintext)
-    else:
-        data["provider"]["api_key_encrypted"] = ""
-    data["provider"].pop("api_key", None)
 
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

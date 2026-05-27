@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from pa_agent.data.base import DataSource, DataSourceTransientError, KlineBar
+from pa_agent.data.base import DataSource, DataSourceTransientError, KlineBar, normalize_kline_bar
 from pa_agent.data.datetime_ts import datetime_to_ts_ms
 
 logger = logging.getLogger(__name__)
@@ -228,15 +228,17 @@ def _rows_to_kline_bars(rows_newest_first: list[dict[str, Any]], n: int) -> list
     for i, row in enumerate(rows_newest_first[:n]):
         ts_ms = int(row["ts_open"])
         bars.append(
-            KlineBar(
-                seq=i + 1,
-                ts_open=float(ts_ms),
-                open=row["open"],
-                high=row["high"],
-                low=row["low"],
-                close=row["close"],
-                volume=row["volume"],
-                closed=row.get("closed", i != 0),
+            normalize_kline_bar(
+                KlineBar(
+                    seq=i + 1,
+                    ts_open=float(ts_ms),
+                    open=row["open"],
+                    high=row["high"],
+                    low=row["low"],
+                    close=row["close"],
+                    volume=row["volume"],
+                    closed=row.get("closed", i != 0),
+                )
             )
         )
     return bars

@@ -30,6 +30,50 @@ TV_GOLD_SYMBOL_BY_EXCHANGE: dict[str, str] = {
 
 _CRYPTO_HINTS = ("BTC", "ETH", "USDT", "SOL", "DOGE", "BNB", "XRP", "CRYPTO")
 
+# Crypto exchanges on TradingView (tvDatafeed exchange ids)
+TV_CRYPTO_EXCHANGES: tuple[str, ...] = (
+    "BINANCE",
+    "BITSTAMP",
+    "COINBASE",
+    "BYBIT",
+    "OKX",
+    "BITFINEX",
+    "HUOBI",
+)
+
+# Common crypto pairs and their likely exchange on TradingView
+_CRYPTO_SYMBOL_EXCHANGE_HINTS: dict[str, str] = {
+    "BTCUSDT": "BINANCE",
+    "ETHUSDT": "BINANCE",
+    "BTCUSD": "BITSTAMP",
+    "ETHUSD": "BITSTAMP",
+    "SOLUSDT": "BINANCE",
+    "BNBUSDT": "BINANCE",
+    "XRPUSDT": "BINANCE",
+    "DOGEUSDT": "BINANCE",
+}
+
+# Major index tickers on TradingView — (exchange, probe_order)
+# These need specific exchanges; forex/gold auto-probe will never find them.
+_KNOWN_INDEX_TICKERS: dict[str, list[tuple[str, str]]] = {
+    # S&P 500
+    "SPX": [("SP", "SPX"), ("NYSE", "SPX"), ("CBOT", "SPX"), ("TVC", "SPX")],
+    # Nasdaq 100
+    "NDX": [("NASDAQ", "NDX"), ("TVC", "NDX")],
+    # Dow Jones Industrial Average
+    "DJI": [("DJ", "DJI"), ("NYSE", "DJI"), ("TVC", "DJI")],
+    # CBOE Volatility Index
+    "VIX": [("CBOT", "VIX"), ("CBOE", "VIX"), ("TVC", "VIX")],
+    # S&P 500 futures (mini)
+    "ES1!": [("CME_MINI", "ES1!"), ("CME", "ES1!")],
+    # Nasdaq 100 futures (mini)
+    "NQ1!": [("CME_MINI", "NQ1!"), ("CME", "NQ1!")],
+    # Dow futures (mini)
+    "YM1!": [("CBOT", "YM1!"), ("CME", "YM1!")],
+    # Russell 2000
+    "RUT": [("NYSE", "RUT"), ("TVC", "RUT")],
+}
+
 # tvDatafeed exchange ids for China A-shares / Hong Kong (TradingView)
 TV_ASHARE_EXCHANGES: frozenset[str] = frozenset({"SSE", "SZSE"})
 TV_HK_EXCHANGE = "HKEX"
@@ -171,7 +215,7 @@ def tv_forex_auto_probe_plan(symbol: str) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for ex in TV_EXCHANGE_PRESETS:
-        if not ex or ex in TV_EQUITY_EXCHANGES:
+        if not ex or ex in TV_EQUITY_EXCHANGES or ex in TV_CRYPTO_EXCHANGES:
             continue
         if sym in _GOLD_TV_SYMBOLS:
             feed = TV_GOLD_SYMBOL_BY_EXCHANGE.get(ex)
@@ -198,21 +242,40 @@ def equity_tv_auto_probe_plan(symbol: str) -> list[tuple[str, str]]:
     """Ordered (exchange, symbol) attempts for auto-detect equity feeds."""
     from pa_agent.data.tv_symbol_lookup import lookup_tv_symbol_by_name, is_tv_name_input
 
+    # 1. Known index tickers (SPX, NDX, VIX, futures, etc.)
+    upper = (symbol or "").strip().upper()
+    if upper in _KNOWN_INDEX_TICKERS:
+        return _KNOWN_INDEX_TICKERS[upper]
+
+    # 2. Company name lookup (Chinese or lowercase English)
     if is_tv_name_input(symbol):
         hit = lookup_tv_symbol_by_name(symbol)
         if hit is not None:
             return [hit]
         return []
 
+    # 3. A-share numeric codes
     code_a = normalize_ashare_tv_code(symbol)
     if _is_ashare_tv_code(code_a):
         first = infer_ashare_tv_exchange(code_a)
         second = "SZSE" if first == "SSE" else "SSE"
         return [(first, code_a), (second, code_a)]
 
+    # 4. HK stock codes
     code_h = normalize_hk_tv_code(symbol)
     if _is_hk_tv_code(code_h):
         return [(TV_HK_EXCHANGE, code_h)]
+
+    # 5. Crypto pairs
+    if is_likely_crypto_symbol(upper):
+        hint_ex = _CRYPTO_SYMBOL_EXCHANGE_HINTS.get(upper)
+        pairs: list[tuple[str, str]] = []
+        if hint_ex:
+            pairs.append((hint_ex, upper))
+        for ex in TV_CRYPTO_EXCHANGES:
+            if ex != hint_ex:
+                pairs.append((ex, upper))
+        return pairs
 
     return []
 
@@ -303,14 +366,20 @@ def resolve_tv_fetch_pair(exchange: str, symbol: str) -> tuple[str, str]:
     Does not rewrite the user's symbol/exchange in the UI. Name lookup is used
     only for the API call when the user typed a company name.
     """
-    from pa_agent.data.tv_symbol_lookup import is_tv_name_input, resolve_tv_symbol_name
+    from pa_agent.data.tv_symbol_lookup import (
+        is_tv_name_input,
+        lookup_tv_symbol_by_name,
+    )
 
     ex = (exchange or "").strip().upper()
     sym = (symbol or "").strip()
     if is_tv_exchange_auto(ex):
         return "", sym
     if is_tv_name_input(sym):
-        return resolve_tv_symbol_name(sym)
+        hit = lookup_tv_symbol_by_name(sym)
+        if hit is not None:
+            return hit
+        # Name lookup failed — fall through to ticker path
     return ex, sym
 
 
@@ -318,25 +387,55 @@ def resolve_tv_pair(
     exchange: str,
     symbol: str,
 ) -> tuple[str, str, bool]:
-    """Resolve TradingView exchange/symbol for names, A/HK shares, or gold/forex."""
-    from pa_agent.data.tv_symbol_lookup import is_tv_name_input, resolve_tv_symbol_name
+    """Resolve TradingView exchange/symbol for names, A/HK shares, indices, or gold/forex."""
+    from pa_agent.data.tv_symbol_lookup import (
+        is_tv_name_input,
+        lookup_tv_symbol_by_name,
+    )
 
     sym = (symbol or "").strip()
-    if is_tv_name_input(sym):
-        ex_res, code = resolve_tv_symbol_name(sym)
-        ex_in = (exchange or "").strip().upper()
-        if is_tv_exchange_auto(ex_in):
-            return ex_res, code, True
-        if ex_in in TV_EQUITY_EXCHANGES and ex_in != ex_res:
-            return ex_res, code, True
-        return ex_res, code, True
+    ex_in = (exchange or "").strip().upper()
 
+    # 1. Company name lookup (Chinese or lowercase English)
+    if is_tv_name_input(sym):
+        hit = lookup_tv_symbol_by_name(sym)
+        if hit is not None:
+            ex_res, code = hit
+            return ex_res, code, True
+        # Name lookup failed — fall through
+
+    # 2. Known index tickers (SPX, NDX, VIX, futures, etc.)
+    upper = sym.upper()
+    if upper in _KNOWN_INDEX_TICKERS:
+        plan = _KNOWN_INDEX_TICKERS[upper]
+        if is_tv_exchange_auto(ex_in):
+            # Auto: use the first (best) exchange from the plan
+            return plan[0][0], plan[0][1], True
+        # User specified an exchange — find it in the plan or use first
+        for ex_try, sym_try in plan:
+            if ex_try == ex_in:
+                return ex_try, sym_try, False
+        # User's exchange not in plan; trust them and pass through
+        return ex_in, sym, False
+
+    # 3. A-share numeric codes
     ashare = resolve_tv_ashare_pair(exchange, symbol)
     if ashare is not None:
         return ashare
+
+    # 4. HK stock codes
     hk = resolve_tv_hk_pair(exchange, symbol)
     if hk is not None:
         return hk
+
+    # 5. Crypto pairs — avoid gold/forex fallback
+    if is_likely_crypto_symbol(upper):
+        if is_tv_exchange_auto(ex_in):
+            hint_ex = _CRYPTO_SYMBOL_EXCHANGE_HINTS.get(upper, TV_CRYPTO_EXCHANGES[0])
+            return hint_ex, upper, True
+        return ex_in, upper, False
+
+    # 6. Gold / forex fallback
     return resolve_tv_gold_pair(exchange, symbol)
 
 

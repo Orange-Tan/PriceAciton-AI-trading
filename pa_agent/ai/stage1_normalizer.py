@@ -60,12 +60,14 @@ _CONTEXT_EFFECT_ALIASES: dict[str, str] = {
     "strengthen_bear": "strengthens_bear",
     "strengthens_bull": "strengthens_bull",
     "strengthens_bear": "strengthens_bear",
+    "strengthens_bulls": "strengthens_bull",   # AI typo: extra 's'
+    "strengthens_bears": "strengthens_bear",   # AI typo: extra 's'
     "weakens_bull": "weakens_bull",
     "weakens_bear": "weakens_bear",
     "weaken_bull": "weakens_bull",
     "weaken_bear": "weakens_bear",
-    "weakens_bull": "weakens_bull",
-    "weakens_bear": "weakens_bear",
+    "weakens_bulls": "weakens_bull",           # AI typo: extra 's'
+    "weakens_bears": "weakens_bear",           # AI typo: extra 's'
     "neutral": "neutral",
     "transition": "transition",
 }

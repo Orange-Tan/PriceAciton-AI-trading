@@ -7,9 +7,9 @@ import time
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_PROBE_TIMEOUT_S = 12.0
+_DEFAULT_PROBE_TIMEOUT_S = 20.0
 _DEFAULT_PROBE_ATTEMPTS = 3
-_DEFAULT_RETRY_DELAY_S = 2.0
+_DEFAULT_RETRY_DELAY_S = 3.0
 
 
 def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from pa_agent.records.pending_writer import PendingWriter
-from pa_agent.security.secret_store import mask_secret
+from pa_agent.util.mask_secret import mask_secret
 
 
 # ---------------------------------------------------------------------------

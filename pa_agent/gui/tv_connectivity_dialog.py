@@ -12,11 +12,18 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-TV_CLOUD_SERVER_WIKI_URL = "https://my.feishu.cn/wiki/FuqnwkPwdiCLhQkPloKc7r1lntg"
+TV_CLOUD_SERVER_WIKI_URL = "https://www.rainyun.com/Nzc2Njg0_"
 
 _MESSAGE = (
-    "当前设备无法连接外网，因此无法使用 TradingView 作为 K 线数据来源。\n\n"
-    "建议在香港云服务器上部署并运行本程序，即可正常连接 TradingView 拉取行情。"
+    "当前设备无法连接 TradingView 数据服务，将无法获取以下 K 线数据：\n"
+    "  · A 股（上证 SSE、深证 SZSE）\n"
+    "  · 港股（HKEX）\n"
+    "  · 美股及指数（NYSE、NASDAQ、SP）\n"
+    "  · 外汇、贵金属、商品期货\n"
+    "  · 加密货币（BINANCE、OKX 等）\n\n"
+    "解决方案：\n"
+    "  · 使用云服务器部署本程序（推荐）—— 云服务器可正常连接 TradingView\n"
+    "  · 或切换回 MT5 数据源，仅使用 MT5 提供的品种数据"
 )
 
 

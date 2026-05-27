@@ -22,7 +22,7 @@ import pytest
 
 from pa_agent.records.pending_writer import PendingWriter
 from pa_agent.records.schema import AnalysisRecord, FollowupTurn, RecordMeta
-from pa_agent.security.secret_store import mask_secret
+from pa_agent.util.mask_secret import mask_secret
 
 # A realistic-looking API key long enough that mask_secret produces a meaningful
 # masked form (all but last 4 chars become '*').

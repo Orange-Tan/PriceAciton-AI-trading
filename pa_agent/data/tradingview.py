@@ -8,6 +8,7 @@ from pa_agent.data.base import (
     DataSource,
     DataSourceTransientError,
     KlineBar,
+    normalize_kline_bar,
 )
 from pa_agent.data.datetime_ts import datetime_to_ts_ms
 from pa_agent.data.bar_close_wait import is_bar_still_forming
@@ -21,8 +22,8 @@ from pa_agent.data.tradingview_errors import format_tradingview_fetch_error
 
 logger = logging.getLogger(__name__)
 
-_TV_FETCH_RETRIES = 3
-_TV_FETCH_RETRY_SLEEP_S = 1.2
+_TV_FETCH_RETRIES = 2
+_TV_FETCH_RETRY_SLEEP_S = 0.5
 
 # Map our timeframe strings to tvDatafeed Interval enum names
 _TF_MAP: dict[str, str] = {
@@ -52,6 +53,11 @@ TV_EXCHANGE_PRESETS: tuple[str, ...] = (
     "SSE",
     "SZSE",
     "HKEX",
+    "SP",
+    "NYSE",
+    "NASDAQ",
+    "CBOT",
+    "CME_MINI",
     "",
 )
 
@@ -67,6 +73,8 @@ class TradingViewSource(DataSource):
         self._symbol: str = ""
         self._timeframe: str = ""
         self._exchange: str = ""
+        # Callback for status updates during auto-probe: fn(symbol, exchange, label)
+        self.on_probe_status = None
 
     @property
     def exchange(self) -> str:
@@ -148,6 +156,10 @@ class TradingViewSource(DataSource):
         n_bars: int,
     ):
         """Call tvDatafeed get_hist with retries (timeouts / empty are common)."""
+        logger.debug(
+            "TradingView get_hist: symbol=%s, exchange=%s, interval=%s, n_bars=%d",
+            symbol, exchange, interval, n_bars,
+        )
         last_exc: BaseException | None = None
         for attempt in range(1, _TV_FETCH_RETRIES + 1):
             try:
@@ -159,6 +171,10 @@ class TradingViewSource(DataSource):
                 )
                 if df is not None and not df.empty:
                     return df
+                logger.warning(
+                    "TradingView get_hist attempt %s/%s returned empty data: symbol=%s, exchange=%s, interval=%s",
+                    attempt, _TV_FETCH_RETRIES, symbol, exchange, interval,
+                )
                 last_exc = None
             except Exception as exc:
                 last_exc = exc
@@ -186,13 +202,21 @@ class TradingViewSource(DataSource):
         if not plan:
             raise DataSourceTransientError(
                 f"TradingView 无法识别品种「{symbol}」；"
-                "请用 A 股 6 位代码、港股代码（如 1810）、外汇/黄金代码或已支持的股票名称"
+                "请用 A 股 6 位代码、港股代码（如 1810）、"
+                "指数代码（如 SPX、NDX、VIX）、"
+                "外汇/黄金代码或已支持的股票名称"
             )
         last_exc: BaseException | None = None
         tried: list[str] = []
         for exchange, code in plan:
             label = f"{exchange}:{code}"
             tried.append(label)
+            # Notify GUI about current probe attempt
+            if self.on_probe_status is not None:
+                try:
+                    self.on_probe_status(symbol, exchange, label)
+                except Exception:  # noqa: BLE001
+                    pass
             try:
                 df = self._fetch_hist_with_retry(
                     symbol=code,
@@ -301,7 +325,7 @@ class TradingViewSource(DataSource):
                         bar, self._timeframe, symbol=self._symbol
                     ),
                 )
-            bars.append(bar)
+            bars.append(normalize_kline_bar(bar))
             if len(bars) >= n:
                 break
 

@@ -47,8 +47,12 @@ def compute_kline_geometry_features(
 
     The function intentionally stays lightweight: it classifies objective single-
     and two/three-bar facts without inferring trends, MTRs, wedges, or trade calls.
+
+    When *limit* is set (e.g. incremental new-bar rows), features are still computed
+    on the full frame so multi-bar fields (overlap, inside, ioi) keep correct
+    previous-bar context; only the newest *limit* rows are returned.
     """
-    bars = frame.bars[:limit] if limit is not None else frame.bars
+    bars = frame.bars
     features: list[KlineGeometryFeature] = []
     for idx, bar in enumerate(bars):
         atr = frame.indicators.atr14[idx] if idx < len(frame.indicators.atr14) else math.nan
@@ -69,6 +73,8 @@ def compute_kline_geometry_features(
                 ema_values=frame.indicators.ema20,
             )
         )
+    if limit is not None:
+        return features[:limit]
     return features
 
 
@@ -95,7 +101,7 @@ def _feature_for_bar(
         body_ratio = body / full_range
         upper_wick_ratio = (high - max(open_, close)) / full_range
         lower_wick_ratio = (min(open_, close) - low) / full_range
-        close_position = (close - low) / full_range
+        close_position = max(0.0, min(1.0, (close - low) / full_range))
     else:
         body_ratio = None
         upper_wick_ratio = None
@@ -285,11 +291,13 @@ def _follow_through_1_2(bars: tuple[KlineBar, ...], idx: int) -> str:
     opposite = 0
     for nbar in newer:
         if direction > 0:
+            # 多头信号棒：收盘继续走高 = 有跟随；收盘跌破开盘价 = 反向失败。
             same += int(nbar.close > bar.close)
-            opposite += int(nbar.close < bar.low)
+            opposite += int(nbar.close < bar.open)
         else:
+            # 空头信号棒：收盘继续走低 = 有跟随；收盘高于开盘价 = 反向失败。
             same += int(nbar.close < bar.close)
-            opposite += int(nbar.close > bar.high)
+            opposite += int(nbar.close > bar.open)
     if same > 0:
         return "yes"
     if opposite > 0:

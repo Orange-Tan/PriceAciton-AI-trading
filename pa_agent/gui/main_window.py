@@ -188,7 +188,6 @@ class MainWindow(QMainWindow):
         self._refresh_thread: QThread | None = None
         self._setup_ui()
         self._connect_event_bus()
-        self._start_refresh_loop()
         self._update_ai_mode_label()
         self._sync_submit_button_state()
 
@@ -311,10 +310,40 @@ class MainWindow(QMainWindow):
         )
         from pa_agent.data.tradingview import TV_EXCHANGE_PRESETS
 
+        # Display labels with category hints (crypto exchanges get no suffix)
+        _EXCHANGE_LABELS: dict[str, str] = {
+            "SSE":       "SSE（A股）",
+            "SZSE":      "SZSE（A股）",
+            "HKEX":      "HKEX（港股）",
+            "NYSE":      "NYSE（美股）",
+            "NASDAQ":    "NASDAQ（美股）",
+            "SP":        "SP（美股指数）",
+            "OANDA":     "OANDA（外汇）",
+            "PEPPERSTONE": "PEPPERSTONE（外汇）",
+            "FOREXCOM":  "FOREXCOM（外汇）",
+            "FX":        "FX（外汇）",
+            "TVC":       "TVC（商品/指数）",
+            "CAPITALCOM": "CAPITALCOM（商品/外汇）",
+            "CBOT":      "CBOT（期货）",
+            "CME_MINI":  "CME_MINI（期货）",
+            "":          "（自动）",
+        }
+
         for ex in TV_EXCHANGE_PRESETS:
-            self._tv_exchange_combo.addItem(ex if ex else "（自动）", ex)
-        # Force TV exchange to auto by default.
-        idx_ex = self._tv_exchange_combo.findData("")
+            label = _EXCHANGE_LABELS.get(ex, ex)
+            self._tv_exchange_combo.addItem(label, ex)
+        # Restore saved exchange from settings, default to auto.
+        saved_ex = ""
+        try:
+            from pa_agent.config.settings import load_settings
+            from pa_agent.config.paths import SETTINGS_JSON_PATH
+            _s = load_settings(SETTINGS_JSON_PATH)
+            saved_ex = getattr(_s.general, 'last_tradingview_exchange', '') or ''
+        except Exception:
+            pass
+        idx_ex = self._tv_exchange_combo.findData(saved_ex)
+        if idx_ex < 0:
+            idx_ex = self._tv_exchange_combo.findData("")
         if idx_ex >= 0:
             self._tv_exchange_combo.setCurrentIndex(idx_ex)
         self._tv_exchange_combo.currentIndexChanged.connect(
@@ -350,6 +379,13 @@ class MainWindow(QMainWindow):
         self._sync_tv_exchange_visibility()
 
         ctrl_layout.addStretch()
+
+        self._fetch_data_btn = QPushButton("获取数据")
+        self._fetch_data_btn.setObjectName("primaryButton")
+        self._fetch_data_btn.setMinimumWidth(90)
+        self._fetch_data_btn.setToolTip("开始从当前数据源持续拉取 K 线数据并实时更新图表")
+        self._fetch_data_btn.clicked.connect(self._on_fetch_data_clicked)
+        ctrl_layout.addWidget(self._fetch_data_btn)
 
         self._wait_close_checkbox = QCheckBox("等待最新K线收盘后再提交分析")
         self._wait_close_checkbox.setObjectName("waitCloseCheckbox")
@@ -393,6 +429,13 @@ class MainWindow(QMainWindow):
         )
         self._resume_chart_btn.clicked.connect(self._on_resume_chart_refresh)
         ctrl_layout.addWidget(self._resume_chart_btn)
+
+        self._fit_chart_btn = QPushButton("恢复图表")
+        self._fit_chart_btn.setToolTip(
+            "自动调整图表缩放，将 K 线和价格线适配到可视区域"
+        )
+        self._fit_chart_btn.clicked.connect(self._on_fit_chart)
+        ctrl_layout.addWidget(self._fit_chart_btn)
 
         self._decision_badge = QLabel("")
         self._decision_badge.setObjectName("mutedLabel")
@@ -564,7 +607,7 @@ class MainWindow(QMainWindow):
         return text.upper()
 
     def _sync_tv_exchange_visibility(self) -> None:
-        """Show exchange field only for TradingView."""
+        """Show exchange field only for TradingView, allow manual selection."""
         visible = (
             self._current_data_source_kind() == "tradingview"
             and not getattr(self, "_demo_mode", False)
@@ -575,8 +618,7 @@ class MainWindow(QMainWindow):
         ):
             if w is not None:
                 w.setVisible(visible)
-                # Forced rule: when TV is active, exchange is always «auto».
-                w.setEnabled(False if visible else False)
+                w.setEnabled(visible)
 
     def _force_tv_exchange_auto(self) -> None:
         """Force TradingView exchange UI to «auto» (empty string)."""
@@ -606,14 +648,28 @@ class MainWindow(QMainWindow):
         if kind == "akshare":
             if self._tf_combo.currentText() not in ("1h", "4h", "1d"):
                 self._tf_combo.setCurrentText(A_SHARE_DEFAULT_TIMEFRAME)
-        if kind == "tradingview":
-            self._force_tv_exchange_auto()
 
     def _apply_tv_exchange_to_source(self, data_source: Any) -> None:
         from pa_agent.data.tradingview import TradingViewSource
 
         if isinstance(data_source, TradingViewSource):
             data_source.set_exchange(self._tv_exchange_text())
+
+    def _on_tv_probe_status(self, symbol: str, exchange: str, label: str) -> None:
+        """Callback from TradingViewSource auto-probe: show current exchange being tried.
+        
+        Called from worker thread; use invokeMethod to update GUI on main thread.
+        """
+        from PyQt6.QtCore import Qt, QMetaObject, Q_ARG
+        timeframe = self._tf_combo.currentText() if hasattr(self, "_tf_combo") else ""
+        msg = f"TV 自动探测 {label} {timeframe}…"
+        # Update status bar on main thread to avoid race with other updates
+        QMetaObject.invokeMethod(
+            self._status_bar,
+            "showMessage",
+            Qt.ConnectionType.QueuedConnection,
+            Q_ARG(str, msg)
+        )
 
     def _persist_tradingview_exchange(self) -> None:
         settings = getattr(self._ctx, "settings", None)
@@ -634,18 +690,21 @@ class MainWindow(QMainWindow):
             return
         if self._current_data_source_kind() != "tradingview":
             return
-        # Forced rule: ignore any attempt to change away from auto.
-        self._force_tv_exchange_auto()
         from pa_agent.data.market_defaults import is_partial_tv_symbol_input
 
         sym_raw = self._symbol_combo.currentText().strip()
         if is_partial_tv_symbol_input(sym_raw):
             return
+        ex_val = self._tv_exchange_text()
+        logger.info("TV exchange changed → %r (raw combo data=%r)",
+                     ex_val, self._tv_exchange_combo.currentData())
         self._persist_tradingview_exchange()
         data_source = getattr(self._ctx, "data_source", None)
         self._apply_tv_exchange_to_source(data_source)
+        # Stop any running refresh — user must click "获取数据" to re-fetch
+        self._stop_refresh_loop()
         timeframe = self._tf_combo.currentText()
-        ex_show = self._tv_exchange_text() or "自动"
+        ex_show = ex_val or "自动"
         if data_source is not None and getattr(data_source, "_connected", False):
             try:
                 data_source.unsubscribe()
@@ -727,19 +786,8 @@ class MainWindow(QMainWindow):
         self._tf_combo.blockSignals(False)
 
     def _ensure_tradingview_reachable(self) -> bool:
-        """Probe TV; if unreachable show dialog and optionally fall back to MT5."""
-        from pa_agent.data.tradingview_connectivity import check_tradingview_connectivity
-        from pa_agent.gui.tv_connectivity_dialog import show_tv_connectivity_blocked_dialog
-
-        ok, detail = check_tradingview_connectivity()
-        if ok:
-            return True
-        if detail:
-            logger.info("TradingView unreachable after retries: %s", detail)
-        show_tv_connectivity_blocked_dialog(self)
-        # Local machine cannot use TV; always fall back to MT5 (cloud button opens wiki).
-        self._select_data_source_kind("mt5", switch=True)
-        return False
+        """Always allow switching to TV; connectivity is checked on-demand when user clicks '获取数据'."""
+        return True
 
     def _select_data_source_kind(self, kind: str, *, switch: bool) -> None:
         """Set data-source combo to *kind*; optionally run full switch."""
@@ -808,13 +856,29 @@ class MainWindow(QMainWindow):
             self._active_data_source_kind = kind
             self._sync_tv_exchange_visibility()
             self._apply_gold_defaults_for_data_source(kind)
+
+            # Restore saved TV exchange before applying to data source
             if kind == "tradingview":
-                self._force_tv_exchange_auto()
+                settings = getattr(self._ctx, "settings", None)
+                saved_ex = ""
+                if settings is not None:
+                    saved_ex = getattr(settings.general, 'last_tradingview_exchange', '') or ''
+                idx = self._tv_exchange_combo.findData(saved_ex)
+                if idx < 0:
+                    idx = self._tv_exchange_combo.findData("")
+                if idx >= 0:
+                    self._tv_exchange_combo.blockSignals(True)
+                    self._tv_exchange_combo.setCurrentIndex(idx)
+                    self._tv_exchange_combo.blockSignals(False)
 
             symbol = self._symbol_combo.currentText().strip()
             timeframe = self._tf_combo.currentText()
 
             new_source = create_data_source(kind)
+            # Wire auto-probe status callback for TV
+            from pa_agent.data.tradingview import TradingViewSource
+            if isinstance(new_source, TradingViewSource):
+                new_source.on_probe_status = self._on_tv_probe_status
             new_source.connect()
             self._apply_tv_exchange_to_source(new_source)
             new_source.subscribe(symbol, timeframe)
@@ -824,7 +888,6 @@ class MainWindow(QMainWindow):
             self._populate_symbol_combo_for_source()
             self._populate_timeframe_combo_for_source()
             if kind == "tradingview":
-                self._force_tv_exchange_auto()
                 self._persist_tradingview_exchange()
 
             if hasattr(self, "_chart_widget"):
@@ -847,9 +910,9 @@ class MainWindow(QMainWindow):
 
             label = data_source_label(kind)
             if kind == "tradingview":
+                ex_display = self._tv_exchange_text() or "自动"
                 self._status_bar.showMessage(
-                    f"已切换至 {label} 现货黄金："
-                    f"{self._tv_exchange_text() or 'OANDA'} · "
+                    f"已切换至 {label} {ex_display} · "
                     f"{self._symbol_combo.currentText()} {self._tf_combo.currentText()}"
                 )
             else:
@@ -863,7 +926,6 @@ class MainWindow(QMainWindow):
                 self._symbol_combo.currentText(),
                 self._tf_combo.currentText(),
             )
-            self._start_refresh_loop()
             self._update_symbol_data_alert()
             self._refresh_chart_once()
         finally:
@@ -976,6 +1038,40 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage("图表已恢复实时更新")
         self._refresh_chart_once()
 
+    def _on_fetch_data_clicked(self) -> None:
+        """Start (or restart) continuous data refresh for the current symbol/timeframe."""
+        data_source = getattr(self._ctx, "data_source", None)
+        if data_source is None or not getattr(data_source, "_connected", False):
+            self._status_bar.showMessage("数据源未连接，请先切换数据来源")
+            return
+        # For TradingView, probe connectivity on-demand (not at startup)
+        if self._current_data_source_kind() == "tradingview":
+            from pa_agent.data.tradingview_connectivity import check_tradingview_connectivity
+            ok, detail = check_tradingview_connectivity()
+            if not ok:
+                if detail:
+                    logger.info("TradingView unreachable: %s", detail)
+                from pa_agent.gui.tv_connectivity_dialog import show_tv_connectivity_blocked_dialog
+                choice = show_tv_connectivity_blocked_dialog(self)
+                if choice == "mt5":
+                    self._select_data_source_kind("mt5", switch=True)
+                return
+            # Brief pause to let the probe's WebSocket fully disconnect before
+            # the refresh loop opens its own connection (avoids TV rate-limiting)
+            import time as _time
+            _time.sleep(1.5)
+        # Stop any existing loop first so we can start fresh
+        self._stop_refresh_loop()
+        self._set_chart_refresh_paused(False)
+        self._start_refresh_loop()
+
+    def _on_fit_chart(self) -> None:
+        """Auto-fit chart view to show recent bars with proper price range."""
+        chart = getattr(self, "_chart_widget", None)
+        if chart is not None:
+            chart.fit_view()
+            self._status_bar.showMessage("图表已恢复默认缩放")
+
     def _auto_resume_chart_after_analysis_enabled(self) -> bool:
         settings = getattr(self._ctx, "settings", None)
         if settings is None:
@@ -1008,6 +1104,12 @@ class MainWindow(QMainWindow):
         """Show semi-virtual forming bar on chart when live refresh is active."""
         return not self._chart_refresh_paused
 
+    def _reference_now_ms(self) -> int:
+        """Broker/server time when available (MT5), else local — for forming-bar semantics."""
+        from pa_agent.data.bar_close_wait import reference_now_ms
+
+        return reference_now_ms(data_source=getattr(self._ctx, "data_source", None))
+
     def _bars_sufficient_for_analysis(self, bars: list[Any], bar_count: int) -> bool:
         """True when *bars* can build an analysis frame of *bar_count* closed bars."""
         from pa_agent.data.bar_close_wait import has_forming_bar_at_head
@@ -1016,7 +1118,12 @@ class MainWindow(QMainWindow):
             return False
         timeframe = self._tf_combo.currentText()
         symbol = self._symbol_combo.currentText().strip()
-        if has_forming_bar_at_head(bars, timeframe, symbol=symbol):
+        if has_forming_bar_at_head(
+            bars,
+            timeframe,
+            symbol=symbol,
+            now_ms=self._reference_now_ms(),
+        ):
             return len(bars) >= bar_count + 1
         return True
 
@@ -1030,7 +1137,9 @@ class MainWindow(QMainWindow):
         fresh = self._last_frame_ready_bars
         if not fresh or not self._bars_sufficient_for_analysis(fresh, bar_count):
             return None
-        need = bar_count + 5
+        from pa_agent.data.snapshot import INDICATOR_WARMUP_BARS
+
+        need = bar_count + INDICATOR_WARMUP_BARS + 5
         return list(fresh[:need]) if len(fresh) >= need else list(fresh)
 
     def _pull_chart_frame_from_source(
@@ -1169,6 +1278,7 @@ class MainWindow(QMainWindow):
                 bars,
                 self._tf_combo.currentText(),
                 symbol=self._symbol_combo.currentText().strip(),
+                now_ms=self._reference_now_ms(),
             )
             if ts is not None:
                 self._last_forming_ts_open = ts
@@ -1221,6 +1331,9 @@ class MainWindow(QMainWindow):
             return
 
         self._clear_pending_bar_close_wait()
+
+        # Stop any running refresh — user must click "获取数据" to re-fetch
+        self._stop_refresh_loop()
 
         from pa_agent.data.market_defaults import is_partial_tv_symbol_input
 
@@ -1341,6 +1454,16 @@ class MainWindow(QMainWindow):
         """Cancel pending wait if user unchecks the option."""
         if self._wait_close_checkbox.isChecked():
             self._refresh_last_forming_ts()
+            # UX: checking this option implies "submit after the next bar close".
+            # Auto-trigger the same flow as clicking 「提交分析」 so the user does not
+            # need to click twice.
+            if (
+                not self._analysis_in_progress
+                and not self._pending_submit_after_close
+                and not getattr(self, "_switching", False)
+                and not getattr(self, "_demo_mode", False)
+            ):
+                self._begin_submit_analysis(force_incremental=False)
         else:
             if self._pending_submit_after_close:
                 self._clear_pending_bar_close_wait()
@@ -1360,6 +1483,7 @@ class MainWindow(QMainWindow):
             bars,
             self._tf_combo.currentText(),
             symbol=self._symbol_combo.currentText().strip(),
+            now_ms=self._reference_now_ms(),
         )
         if ts is not None:
             self._last_forming_ts_open = ts
@@ -1367,7 +1491,6 @@ class MainWindow(QMainWindow):
     def _forming_bar_seconds_remaining(self) -> int | None:
         """Seconds until the relevant forming bar closes."""
         from pa_agent.data.bar_close_wait import seconds_until_bar_closes
-        from pa_agent.util.timefmt import now_local_ms
 
         if self._pending_submit_after_close:
             ts = self._wait_forming_ts
@@ -1379,14 +1502,9 @@ class MainWindow(QMainWindow):
             return None
         if ts is None or not tf:
             return None
-        now_ms: int | None = None
-        data_source = getattr(self._ctx, "data_source", None)
-        server_time_ms = getattr(data_source, "server_time_ms", None)
-        if callable(server_time_ms):
-            now_ms = server_time_ms()
-        if now_ms is None:
-            now_ms = now_local_ms()
-        return seconds_until_bar_closes(int(ts), tf, now_ms=now_ms)
+        return seconds_until_bar_closes(
+            int(ts), tf, now_ms=self._reference_now_ms()
+        )
 
     def _update_wait_close_countdown_display(self) -> None:
         """Update checkbox-adjacent countdown and status bar while waiting."""
@@ -1433,6 +1551,7 @@ class MainWindow(QMainWindow):
             bars,
             timeframe,
             symbol=symbol,
+            now_ms=self._reference_now_ms(),
         ):
             return
         bar_count = self._pending_submit_bar_count
@@ -1481,7 +1600,12 @@ class MainWindow(QMainWindow):
             self._status_bar.showMessage("数据不足，请等待图表刷新后再提交")
             return False
 
-        forming_ts = current_forming_ts(bars_raw, timeframe, symbol=symbol)
+        forming_ts = current_forming_ts(
+            bars_raw,
+            timeframe,
+            symbol=symbol,
+            now_ms=self._reference_now_ms(),
+        )
         if forming_ts is None:
             submit_hint = "提交增量分析" if force_incremental else "提交分析"
             self._status_bar.showMessage(f"最新K线已收盘，正在{submit_hint}…")
@@ -1902,7 +2026,11 @@ class MainWindow(QMainWindow):
         from pa_agent.gui.snapshot_worker import SnapshotFetchWorker
 
         self._status_bar.showMessage("正在后台获取K线…")
-        worker = SnapshotFetchWorker(data_source, bar_count + 5, parent=None)
+        from pa_agent.data.snapshot import INDICATOR_WARMUP_BARS
+
+        worker = SnapshotFetchWorker(
+            data_source, bar_count + INDICATOR_WARMUP_BARS + 5, parent=None
+        )
         self._snapshot_fetch_worker = worker
 
         def _on_bars(bars: list) -> None:
@@ -2834,11 +2962,16 @@ class MainWindow(QMainWindow):
         n = bar_count if bar_count is not None else self._analysis_bar_count()
         symbol = self._symbol_combo.currentText().strip()
         timeframe = self._tf_combo.currentText()
+        now_ms = self._reference_now_ms()
         if not bars_raw:
             return None
         if include_forming:
-            return build_live_frame(bars_raw, n, symbol, timeframe)
-        return build_display_frame(bars_raw, n, symbol, timeframe)
+            return build_live_frame(
+                bars_raw, n, symbol, timeframe, now_ms=now_ms
+            )
+        return build_display_frame(
+            bars_raw, n, symbol, timeframe, now_ms=now_ms
+        )
 
     def _take_snapshot(
         self,

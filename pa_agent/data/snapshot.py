@@ -4,8 +4,12 @@ from __future__ import annotations
 import math
 
 from pa_agent.data.bar_close_wait import has_forming_bar_at_head
-from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
+from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame, normalize_kline_bar
 from pa_agent.util.timefmt import now_local_ms
+
+# Extra closed bars fetched before the AI window so EMA20/ATR14 can warm up.
+# Only the newest *n* bars are sent to the model; indicators use this buffer.
+INDICATOR_WARMUP_BARS = 50
 
 
 def frame_is_pure_closed(frame: KlineFrame) -> bool:
@@ -47,6 +51,8 @@ def take_snapshot_from_bars(
     n: int,
     symbol: str,
     timeframe: str,
+    *,
+    now_ms: int | None = None,
 ) -> KlineFrame:
     """Build an analysis KlineFrame from a newest-first bar list (same as AI table).
 
@@ -55,7 +61,7 @@ def take_snapshot_from_bars(
 
     Raises ValueError if insufficient bars are available.
     """
-    frame = build_analysis_frame(bars_raw, n, symbol, timeframe)
+    frame = build_analysis_frame(bars_raw, n, symbol, timeframe, now_ms=now_ms)
     if frame is None:
         raise ValueError(
             f"Need at least {n} closed bars (or {n + 1} with a forming bar at index 0); "
@@ -70,6 +76,7 @@ def _newest_closed_slice(
     *,
     timeframe: str = "",
     symbol: str = "",
+    now_ms: int | None = None,
 ) -> list[KlineBar] | None:
     """Return *n* newest closed bars from a newest-first list.
 
@@ -78,7 +85,12 @@ def _newest_closed_slice(
     """
     if not bars_raw or n < 1:
         return None
-    if has_forming_bar_at_head(bars_raw, timeframe or None, symbol=symbol or None):
+    if has_forming_bar_at_head(
+        bars_raw,
+        timeframe or None,
+        symbol=symbol or None,
+        now_ms=now_ms,
+    ):
         if len(bars_raw) < n + 1:
             return None
         return list(bars_raw[1 : n + 1])
@@ -91,7 +103,7 @@ def compute_indicators(bars: list[KlineBar]) -> IndicatorBundle:
     """Compute EMA20 and ATR14 for *bars* (newest-first order).
 
     Indicators are computed on the reversed (oldest-first) sequence and then
-    reversed back so that index 0 corresponds to bars[0] (the forming bar).
+    reversed back so that index *i* aligns with ``bars[i]`` (K1 at index 0).
     """
     from pa_agent.indicators.ema import ema_full
     from pa_agent.indicators.atr import atr_full
@@ -118,9 +130,11 @@ def build_display_frame(
     n: int,
     symbol: str,
     timeframe: str,
+    *,
+    now_ms: int | None = None,
 ) -> KlineFrame | None:
     """Chart display frame — same semantics as AI (K1 = newest **closed** bar)."""
-    return build_analysis_frame(bars_raw, n, symbol, timeframe)
+    return build_analysis_frame(bars_raw, n, symbol, timeframe, now_ms=now_ms)
 
 
 def build_live_frame(
@@ -128,6 +142,8 @@ def build_live_frame(
     n_closed: int,
     symbol: str,
     timeframe: str,
+    *,
+    now_ms: int | None = None,
 ) -> KlineFrame | None:
     """Live chart frame: include the forming bar + *n_closed* closed bars.
 
@@ -135,7 +151,10 @@ def build_live_frame(
     ``build_analysis_frame`` so AI always sees closed-only candles.
     """
     has_forming = has_forming_bar_at_head(
-        bars_raw, timeframe or None, symbol=symbol or None
+        bars_raw,
+        timeframe or None,
+        symbol=symbol or None,
+        now_ms=now_ms,
     )
     if has_forming:
         if len(bars_raw) < n_closed + 1:
@@ -147,15 +166,17 @@ def build_live_frame(
         raw = bars_raw[:n_closed]
 
     rebased: list[KlineBar] = [
-        KlineBar(
-            seq=i + 1,
-            ts_open=b.ts_open,
-            open=b.open,
-            high=b.high,
-            low=b.low,
-            close=b.close,
-            volume=b.volume,
-            closed=not (has_forming and i == 0),
+        normalize_kline_bar(
+            KlineBar(
+                seq=i + 1,
+                ts_open=b.ts_open,
+                open=b.open,
+                high=b.high,
+                low=b.low,
+                close=b.close,
+                volume=b.volume,
+                closed=not (has_forming and i == 0),
+            )
         )
         for i, b in enumerate(raw)
     ]
@@ -169,39 +190,70 @@ def build_live_frame(
     )
 
 
+def _rebase_closed_bars(closed_raw: list[KlineBar]) -> list[KlineBar]:
+    return [
+        normalize_kline_bar(
+            KlineBar(
+                seq=i + 1,
+                ts_open=b.ts_open,
+                open=b.open,
+                high=b.high,
+                low=b.low,
+                close=b.close,
+                volume=b.volume,
+                closed=True,
+            )
+        )
+        for i, b in enumerate(closed_raw)
+    ]
+
+
 def build_analysis_frame(
     bars_raw: list[KlineBar],
     n: int,
     symbol: str,
     timeframe: str,
+    *,
+    now_ms: int | None = None,
 ) -> KlineFrame | None:
     """Build a snapshot for AI analysis: *n* newest **closed** bars only.
 
     *bars_raw* is newest-first. If ``bars_raw[0].closed`` is False it is the
     forming bar and is discarded; otherwise all entries are treated as closed.
 
+    Up to ``INDICATOR_WARMUP_BARS`` additional older closed bars are included
+    when computing EMA20/ATR14, but only *n* bars are returned in the frame.
+
     Chart and AI must both use this (or ``build_display_frame``) so K-line
     seq numbers refer to the same candles.
     """
-    closed_raw = _newest_closed_slice(
-        bars_raw, n, timeframe=timeframe, symbol=symbol
+    forming = has_forming_bar_at_head(
+        bars_raw,
+        timeframe or None,
+        symbol=symbol or None,
+        now_ms=now_ms,
     )
-    if closed_raw is None:
+    avail_closed = len(bars_raw) - (1 if forming else 0)
+    if avail_closed < n:
         return None
-    rebased: list[KlineBar] = [
-        KlineBar(
-            seq=i + 1,
-            ts_open=b.ts_open,
-            open=b.open,
-            high=b.high,
-            low=b.low,
-            close=b.close,
-            volume=b.volume,
-            closed=True,
-        )
-        for i, b in enumerate(closed_raw)
-    ]
-    indicators = compute_indicators(rebased)
+    fetch_n = min(n + INDICATOR_WARMUP_BARS, avail_closed)
+    closed_raw = _newest_closed_slice(
+        bars_raw,
+        fetch_n,
+        timeframe=timeframe,
+        symbol=symbol,
+        now_ms=now_ms,
+    )
+    if closed_raw is None or len(closed_raw) < n:
+        return None
+
+    rebased_all = _rebase_closed_bars(closed_raw)
+    indicators_all = compute_indicators(rebased_all)
+    rebased = rebased_all[:n]
+    indicators = IndicatorBundle(
+        ema20=indicators_all.ema20[:n],
+        atr14=indicators_all.atr14[:n],
+    )
     return KlineFrame(
         symbol=symbol,
         timeframe=timeframe,

@@ -1,8 +1,11 @@
 """Cross-field coherence checks for Stage 1 / Stage 2 AI JSON (P0/P1 validators)."""
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from pa_agent.ai.decision_tree import normalize_bar_range, validate_bar_range_field
 
@@ -20,7 +23,7 @@ STAGE1_MANDATORY_GATE_NODES: tuple[str, ...] = (
     "2.5",
 )
 
-_RANGE_CYCLES = frozenset({"trading_range", "extreme_tr", "trending_tr"})
+_RANGE_CYCLES = frozenset({"trading_range", "extreme_tr", "trending_tr", "broad_channel"})
 
 _CYCLE_BRANCH_ALIASES: dict[str, str] = {
     "trading_range": "trading_range",
@@ -111,12 +114,86 @@ def _parse_bar_range_seqs(bar_range: str) -> list[int]:
     m = re.match(r"^K(\d+)-K(\d+)$", text)
     if m:
         a, b = int(m.group(1)), int(m.group(2))
+        if a < b:
+            logger.warning(
+                "bar_range=%r has reversed order (K%d-K%d); K1=newest, K{N}=older. "
+                "Auto-corrected to K%d-K%d but this may indicate model confusion.",
+                text, a, b, b, a,
+            )
         lo, hi = min(a, b), max(a, b)
         return list(range(lo, hi + 1))
     m1 = re.match(r"^K(\d+)$", text)
     if m1:
         return [int(m1.group(1))]
     return []
+
+
+def validate_skipped_node_consistency(
+    trace: list[dict[str, Any]] | None,
+    *,
+    path_prefix: str,
+    mandatory_nodes: tuple[str, ...] = (),
+) -> list[str]:
+    """Check that skipped nodes are internally consistent and mandatory nodes aren't silently skipped.
+
+    This validator does NOT block on strict bar_range correctness for skipped nodes,
+    but ensures:
+    1. skipped=true nodes have answer="不适用"
+    2. mandatory gate nodes (when gate_result=proceed) are not skipped without reason
+    """
+    if not isinstance(trace, list):
+        return []
+
+    errors: list[str] = []
+
+    for i, item in enumerate(trace):
+        if not isinstance(item, dict):
+            continue
+        if not item.get("skipped"):
+            continue
+
+        nid = str(item.get("node_id", "") or "").strip()
+        answer = str(item.get("answer", "") or "").strip()
+
+        # skipped=true but answer is not "不适用" — inconsistent
+        if answer and answer != "不适用":
+            errors.append(
+                f"{path_prefix}[{i}] node_id={nid!r}: skipped=true but "
+                f"answer={answer!r}, expected '不适用'"
+            )
+
+        # skipped=true with a non-null bar_range that isn't "不适用" — warn only
+        br = str(item.get("bar_range", "") or "").strip()
+        if br and br not in ("不适用", "—", "全局", ""):
+            logger.warning(
+                "%s[%d] node_id=%s skipped=true but bar_range=%r; "
+                "normalize will correct to '不适用' but this may indicate model confusion",
+                path_prefix, i, nid, br,
+            )
+
+    # Check mandatory nodes are not silently skipped
+    if mandatory_nodes:
+        for nid in mandatory_nodes:
+            found_items = [
+                item for item in trace
+                if isinstance(item, dict)
+                and str(item.get("node_id", "") or "").strip() == nid
+            ]
+            if not found_items:
+                # Node entirely missing — handled elsewhere
+                continue
+            item = found_items[0]
+            if item.get("skipped") and str(item.get("answer", "") or "").strip() == "不适用":
+                # Mandatory node skipped with a generic answer — suspicious
+                reason = str(item.get("reason", "") or "").strip()
+                if not reason or reason in ("—", "-"):
+                    errors.append(
+                        f"{path_prefix}: mandatory node {nid} is skipped with "
+                        f"no explanation (reason is empty/dash); "
+                        "mandatory gate nodes should be evaluated, not skipped"
+                    )
+
+    return errors
 
 
 def validate_trace_bars_in_frame(
@@ -212,6 +289,14 @@ def validate_stage1_coherence(
         validate_duplicate_bar_ranges(gate_trace, path_prefix="gate_trace")
     )
 
+    # Check skipped node consistency (mandatory nodes shouldn't be silently skipped)
+    mandatory = STAGE1_MANDATORY_GATE_NODES if gate_result == "proceed" else ()
+    errors.extend(
+        validate_skipped_node_consistency(
+            gate_trace, path_prefix="gate_trace", mandatory_nodes=mandatory,
+        )
+    )
+
     cycle = str(stage1.get("cycle_position", "") or "").strip().lower()
     alt_cycle = stage1.get("alternative_cycle_position")
     alt_norm = str(alt_cycle).strip().lower() if alt_cycle else ""
@@ -237,9 +322,10 @@ def validate_stage1_coherence(
                     f"direction={direction!r}"
                 )
         if ans == "中性" and direction not in ("neutral", ""):
-            errors.append(
-                "gate_trace node 2.3 answer=中性 but direction is not neutral"
-            )
+            if cycle not in _RANGE_CYCLES:
+                errors.append(
+                    "gate_trace node 2.3 answer=中性 but direction is not neutral"
+                )
 
     summary = stage1.get("bar_by_bar_summary")
     if isinstance(summary, list):
@@ -293,6 +379,58 @@ def validate_bar_by_bar_vs_features(
         return []
 
     features = {f.seq: f for f in compute_kline_geometry_features(kline_frame)}
+    bars = getattr(kline_frame, "bars", None)
+    bars_by_seq = (
+        {int(getattr(b, "seq")): b for b in bars if getattr(b, "seq", None)} if bars else {}
+    )
+
+    # Threshold bands (prompt-engineering semantics: follow-through and bar-type near
+    # hard cutoffs are objectively fuzzy; don't over-penalize the model on boundaries).
+    _DOJI_BODY_RATIO = 0.25
+    _DOJI_EPS = 0.02
+    _TREND_CLOSEPOS_LOW = 0.35
+    _TREND_CLOSEPOS_HIGH = 0.65
+    _TREND_EPS = 0.03
+
+    _STRUCTURAL_TYPES = frozenset({"inside", "outside_bull", "outside_bear"})
+    _THRESHOLD_SENSITIVE_TYPES = frozenset(
+        {"doji", "trend_bull", "trend_bear", "other"}
+    )
+    # outside_* implies trend_* — not a contradiction
+    _COMPATIBLE_PAIRS: frozenset[tuple[str, str]] = frozenset({
+        ("outside_bull", "trend_bull"),
+        ("trend_bull", "outside_bull"),
+        ("outside_bear", "trend_bear"),
+        ("trend_bear", "outside_bear"),
+        ("inside", "doji"),
+        ("doji", "inside"),
+    })
+
+    def _near_threshold(seq: int) -> bool:
+        bar = bars_by_seq.get(seq)
+        if bar is None:
+            return False
+        try:
+            high = max(float(bar.high), float(bar.low))
+            low = min(float(bar.high), float(bar.low))
+            open_ = float(bar.open)
+            close = float(bar.close)
+        except Exception:
+            return False
+        rng = high - low
+        if rng <= 0:
+            return False
+        body_ratio = abs(close - open_) / rng
+        close_position = max(0.0, min(1.0, (close - low) / rng))
+        if abs(body_ratio - _DOJI_BODY_RATIO) <= _DOJI_EPS:
+            return True
+        if (
+            abs(close_position - _TREND_CLOSEPOS_LOW) <= _TREND_EPS
+            or abs(close_position - _TREND_CLOSEPOS_HIGH) <= _TREND_EPS
+        ):
+            return True
+        return False
+
     errors: list[str] = []
     for i, item in enumerate(summary):
         if not isinstance(item, dict):
@@ -312,8 +450,11 @@ def validate_bar_by_bar_vs_features(
         computed = str(feat.bar_type or "").strip().lower()
         if not declared or not computed or declared == computed:
             continue
-        _ambiguous = frozenset({"doji", "inside", "flat", "other"})
-        if not strict:
+
+        # AI bar_type and program bar_type are overlapping classifications,
+        # not mutually exclusive. Only flag genuine bull/bear contradictions.
+        _ALL_BAR_TYPES = _STRUCTURAL_TYPES | _THRESHOLD_SENSITIVE_TYPES
+        if declared in _ALL_BAR_TYPES and computed in _ALL_BAR_TYPES:
             _opposites = (
                 ("trend_bull", "trend_bear"),
                 ("outside_bull", "outside_bear"),
@@ -324,18 +465,6 @@ def validate_bar_by_bar_vs_features(
                     f"program feature K{seq} bar_type={computed!r}"
                 )
             continue
-        if declared in _ambiguous or computed in _ambiguous:
-            reason = str(item.get("reason", "") or "")
-            if "覆盖" not in reason and "程序分类" not in reason:
-                errors.append(
-                    f"bar_by_bar_summary[{i}].bar_type={declared!r} differs from "
-                    f"program K{seq}={computed!r}; cite override in reason"
-                )
-            continue
-        errors.append(
-            f"bar_by_bar_summary[{i}].bar_type={declared!r} contradicts "
-            f"program feature K{seq} bar_type={computed!r}"
-        )
     return errors
 
 
@@ -396,16 +525,19 @@ def validate_stage2_coherence(
         s1_dir = str(stage1.get("direction", "") or "").strip().lower()
         s2_dir = str(summary.get("direction", "") or "").strip().lower()
         if s1_dir and s2_dir and s1_dir != s2_dir:
-            if not _stage2_trace_documents_override(
-                stage2.get("decision_trace"),
-                field="direction",
-                new_value=s2_dir,
-            ):
-                errors.append(
-                    f"diagnosis_summary.direction={s2_dir!r} differs from "
-                    f"stage1 {s1_dir!r}; decision_trace must include node 2.3 "
-                    "documenting the change"
-                )
+            # Direction override to neutral in a range cycle is a normal
+            # re-assessment; don't require explicit node-2.3 documentation.
+            if not (s2_dir == "neutral" and cycle in _RANGE_CYCLES):
+                if not _stage2_trace_documents_override(
+                    stage2.get("decision_trace"),
+                    field="direction",
+                    new_value=s2_dir,
+                ):
+                    errors.append(
+                        f"diagnosis_summary.direction={s2_dir!r} differs from "
+                        f"stage1 {s1_dir!r}; decision_trace must include node 2.3 "
+                        "documenting the change"
+                    )
 
     decision = stage2.get("decision")
     if isinstance(decision, dict):

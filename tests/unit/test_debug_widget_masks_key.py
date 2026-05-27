@@ -11,7 +11,7 @@ import pytest
 # Guard: skip the whole module if PyQt6 is not available
 pytest.importorskip("PyQt6")
 
-from pa_agent.security.secret_store import mask_secret
+from pa_agent.util.mask_secret import mask_secret
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

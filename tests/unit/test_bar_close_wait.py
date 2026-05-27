@@ -68,6 +68,30 @@ def test_stale_unclosed_flag_after_bar_period_not_forming() -> None:
     assert forming_bar_has_closed(ts_open, [head], "15m", now_ms=now_ms)
 
 
+def test_forming_closed_with_server_now_when_local_lags() -> None:
+    """MT5 clock skew: server time must drive forming detection, not local lag."""
+    offset_ms = 3 * 3600 * 1000
+    ts_open = 1_700_000_000_000
+    duration_ms = 5 * 60 * 1000
+    server_now = ts_open + duration_ms + 1000
+    local_now = server_now - offset_ms
+    head = _bar(ts_open)
+    assert is_bar_still_forming(head, "5m", now_ms=local_now)
+    assert not is_bar_still_forming(head, "5m", now_ms=server_now)
+    assert has_forming_bar_at_head([head], "5m", now_ms=local_now)
+    assert not has_forming_bar_at_head([head], "5m", now_ms=server_now)
+
+
+def test_reference_now_ms_uses_server_time_ms() -> None:
+    from pa_agent.data.bar_close_wait import reference_now_ms
+
+    class _Src:
+        def server_time_ms(self) -> int:
+            return 9_999_888_777
+
+    assert reference_now_ms(data_source=_Src()) == 9_999_888_777
+
+
 def test_active_intraday_bar_still_forming() -> None:
     ts_open = 1_700_000_000_000
     now_ms = ts_open + 5 * 60 * 1000

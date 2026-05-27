@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pa_agent.config.paths import RECORDS_PENDING_DIR
-from pa_agent.data.datetime_ts import format_epoch_for_display
+from pa_agent.data.datetime_ts import format_epoch_for_display, ts_open_to_ms
 from pa_agent.data.base import KlineFrame
 from pa_agent.records.schema import AnalysisRecord
 
-_TS_EPS = 1e-3  # seconds tolerance for bar open time matching
+_TS_EPS_MS = 1.0  # milliseconds tolerance for bar open time matching
 
 
 @dataclass(frozen=True)
@@ -20,11 +20,6 @@ class IncrementalBarDelta:
     new_count: int
     anchor_ts_open: float
     new_bar_ts_opens: tuple[float, ...]
-
-
-def _normalize_ts(value: object) -> float:
-    ts = float(value)
-    return ts / 1000.0 if ts > 1e12 else ts
 
 
 def format_bar_ts(ts_open: float) -> str:
@@ -89,16 +84,16 @@ def compute_incremental_bar_delta(
         return None
 
     anchor_raw = previous_record.kline_data[0]["ts_open"]
-    anchor = _normalize_ts(anchor_raw)
+    anchor = ts_open_to_ms(anchor_raw)
 
     anchor_seen = False
     new_ts: list[float] = []
     for bar in frame.bars:
-        ts = _normalize_ts(bar.ts_open)
-        if abs(ts - anchor) <= _TS_EPS:
+        ts = ts_open_to_ms(bar.ts_open)
+        if abs(ts - anchor) <= _TS_EPS_MS:
             anchor_seen = True
             continue
-        if ts > anchor + _TS_EPS:
+        if ts > anchor + _TS_EPS_MS:
             new_ts.append(bar.ts_open)
 
     if not anchor_seen:

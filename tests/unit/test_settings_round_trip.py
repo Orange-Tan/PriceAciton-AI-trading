@@ -6,28 +6,7 @@ from pathlib import Path
 from pa_agent.config.settings import Settings, load_settings, save_settings
 
 
-@pytest.fixture()
-def fake_secret_store(monkeypatch):
-    """Replace SecretStore with a trivial ROT0 (identity) cipher for tests."""
-    import pa_agent.config.settings as settings_mod
-    import pa_agent.security.secret_store as ss_mod
-
-    class _FakeStore:
-        @staticmethod
-        def encrypt(s: str) -> str:
-            return f"ENC:{s}"
-
-        @staticmethod
-        def decrypt(s: str) -> str:
-            if not s.startswith("ENC:"):
-                raise ValueError("bad ciphertext")
-            return s[4:]
-
-    monkeypatch.setattr(ss_mod, "SecretStore", _FakeStore)
-    return _FakeStore
-
-
-def test_defaults(tmp_path, fake_secret_store):
+def test_defaults(tmp_path):
     """load_settings on a missing file returns defaults and creates the file."""
     p = tmp_path / "settings.json"
     s = load_settings(p)
@@ -45,7 +24,7 @@ def test_defaults(tmp_path, fake_secret_store):
     assert p.exists(), "defaults should be written to disk"
 
 
-def test_round_trip(tmp_path, fake_secret_store):
+def test_round_trip(tmp_path):
     """save → load preserves all fields."""
     p = tmp_path / "settings.json"
     original = Settings()
@@ -59,19 +38,18 @@ def test_round_trip(tmp_path, fake_secret_store):
     assert loaded.provider.model == original.provider.model
 
 
-def test_no_plaintext_key_on_disk(tmp_path, fake_secret_store):
-    """The saved JSON must not contain the plaintext API key."""
+def test_api_key_present_on_disk(tmp_path):
+    """The saved JSON contains the plaintext API key."""
     p = tmp_path / "settings.json"
     s = Settings()
     s.provider.api_key = "sk-super-secret-key"
     save_settings(s, p)
     raw = p.read_text(encoding="utf-8")
     data = json.loads(raw)
-    assert "api_key" not in data.get("provider", {}), "plaintext api_key field must not be saved"
-    assert data["provider"]["api_key_encrypted"] == "ENC:sk-super-secret-key"
+    assert data["provider"]["api_key"] == "sk-super-secret-key"
 
 
-def test_corrupt_json_returns_defaults(tmp_path, fake_secret_store):
+def test_corrupt_json_returns_defaults(tmp_path):
     """Corrupt settings.json falls back to defaults without raising."""
     p = tmp_path / "settings.json"
     p.write_text("{not valid json", encoding="utf-8")
@@ -79,12 +57,12 @@ def test_corrupt_json_returns_defaults(tmp_path, fake_secret_store):
     assert s.provider.model == "claude-sonnet-4-6"
 
 
-def test_missing_encrypted_key_leaves_api_key_blank(tmp_path, fake_secret_store):
-    """If api_key_encrypted is absent, api_key stays empty string."""
+def test_missing_api_key_leaves_api_key_blank(tmp_path):
+    """If api_key is absent, api_key stays empty string."""
     p = tmp_path / "settings.json"
     data = Settings().model_dump()
-    data["provider"].pop("api_key_encrypted", None)
     data["provider"].pop("api_key", None)
+    data["provider"].pop("api_key_encrypted", None)
     p.write_text(json.dumps(data), encoding="utf-8")
     s = load_settings(p)
     assert s.provider.api_key == ""

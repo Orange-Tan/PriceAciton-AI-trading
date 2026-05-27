@@ -18,7 +18,8 @@ def test_countdown_inflates_when_local_lags_server_by_3h() -> None:
     rem_local = seconds_until_bar_closes(ts_open, "5m", now_ms=local_now)
 
     assert rem_server == 100  # 300 - 200
-    assert rem_local == rem_server + 10800
+    # Modulo-based countdown is robust to constant ts_open/now offset (same remainder).
+    assert rem_local == rem_server
 
 
 def test_mt5_server_time_ms_prefers_time_msc() -> None:

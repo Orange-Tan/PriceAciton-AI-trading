@@ -54,9 +54,9 @@ STAGE1_DETECTED_PATTERNS_GUIDE = """
 | mtr | 主要趋势反转结构已成型（常与 reversal_attempt 同现） | 文件15（叠加） |
 | final_flag | 趋势末段 final flag / 末端旗形 | 文件15（叠加） |
 | h1 / h2 / l1 / l2 | 计数入场结构（High1/High2/Low1/Low2） | 文件19-H1H2-L1L2计数.txt |
-| breakout_test | 突破后回测突破位、突破测试棒 | 文件18-突破失败与突破测试.txt |
-| breakout_pullback | 突破失败后的再次失败（突破回踩）顺势机会 | 文件18 |
-| breakout_failure / failed_breakout | 普通突破失败、假突破 | 文件18、文件22 |
+| breakout_test | 突破后回测突破位、突破测试棒 | 程序自动加载（按 key 路由） |
+| breakout_pullback | 突破失败后的再次失败（突破回踩）顺势机会 | 程序自动加载（按 key 路由） |
+| breakout_failure / failed_breakout | 普通突破失败、假突破 | 程序自动加载（按 key 路由） |
 | always_in / ail / ais / 20gb / gap_bar | Always In、20GB、缺口棒等 | 文件20-AlwaysIn与20GB.txt |
 | barbwire / wire / overlap / middle_range | 铁丝网、重叠、区间中部 | 文件21-铁丝网与无交易环境.txt |
 | failed_signal / magnet / trapped_traders | 信号失败后磁力位、交易者被套 | 文件22-信号失败后的磁力位.txt |

@@ -240,10 +240,34 @@ def _normalize_next_bar_prediction(prediction: dict[str, Any]) -> None:
             normalized[key] = max(0, min(100, value))
         prediction["probabilities"] = normalized
 
-        # 5. direction = argmax (R3.3, break ties by literal order)
+        # 5. direction = argmax (R3.3) — respect model choice on ties
         order = ("bullish", "bearish", "neutral")
         max_value = max(normalized[k] for k in order)
-        prediction["direction"] = next(k for k in order if normalized[k] == max_value)
+        tied_winners = [k for k in order if normalized[k] == max_value]
+        model_direction = str(prediction.get("direction") or "").strip().lower()
+
+        if len(tied_winners) > 1:
+            # Tie: preserve model's choice if it's one of the winners
+            if model_direction in tied_winners:
+                pass  # keep model's semantic choice
+            else:
+                # Model direction not in tied set — override with first winner
+                logger.warning(
+                    "next_bar_prediction direction=%r not in tied winners %s "
+                    "(probs=%s); overriding to %r",
+                    model_direction, tied_winners, normalized, tied_winners[0],
+                )
+                prediction["direction"] = tied_winners[0]
+        else:
+            # Clear winner
+            expected = tied_winners[0]
+            if model_direction != expected:
+                logger.debug(
+                    "next_bar_prediction direction %r -> %r (argmax of %s)",
+                    model_direction, expected, normalized,
+                )
+                prediction["direction"] = expected
+            # else: model direction matches argmax, no change needed
     # else: unparseable probabilities with unpredictable=False — leave for validator
 
 
@@ -288,9 +312,10 @@ def normalize_stage2(
     )
     decision = out.get("decision")
     if isinstance(decision, dict) and decision.get("order_type") == "不下单":
-        # A no-order decision has no executable trade; tolerate model-provided
-        # win-rate estimates in legacy payloads by clearing them before schema
-        # validation while keeping price-field mistakes strict.
+        # A no-order decision must satisfy the schema "then" branch:
+        # all price fields + direction must be null.
+        for field in _NO_ORDER_PRICE_FIELDS:
+            decision[field] = None
         decision["estimated_win_rate"] = None
 
     bar_analysis = out.get("bar_analysis")

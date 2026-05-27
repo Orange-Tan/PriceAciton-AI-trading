@@ -12,7 +12,7 @@ import logging.handlers
 from typing import List
 
 from pa_agent.config.paths import LOG_FILE_PATH
-from pa_agent.security.secret_store import mask_secret
+from pa_agent.util.mask_secret import mask_secret
 
 # ── Module-level state ────────────────────────────────────────────────────────
 

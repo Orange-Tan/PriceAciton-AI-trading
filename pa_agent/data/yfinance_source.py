@@ -14,6 +14,7 @@ from pa_agent.data.base import (
     DataSource,
     DataSourceTransientError,
     KlineBar,
+    normalize_kline_bar,
 )
 
 logger = logging.getLogger(__name__)
@@ -153,16 +154,20 @@ class YFinanceSource(DataSource):
         for i, row in enumerate(df.itertuples(index=False)):
             ts_ms = _row_ts_ms(row)
             # bars[0] is the forming (most recent, possibly unclosed) bar
-            bars.append(KlineBar(
-                seq=i + 1,
-                ts_open=ts_ms,
-                open=float(row.Open),
-                high=float(row.High),
-                low=float(row.Low),
-                close=float(row.Close),
-                volume=float(getattr(row, "Volume", 0.0)),
-                closed=(i != 0),
-            ))
+            bars.append(
+                normalize_kline_bar(
+                    KlineBar(
+                        seq=i + 1,
+                        ts_open=ts_ms,
+                        open=float(row.Open),
+                        high=float(row.High),
+                        low=float(row.Low),
+                        close=float(row.Close),
+                        volume=float(getattr(row, "Volume", 0.0)),
+                        closed=(i != 0),
+                    )
+                )
+            )
             if len(bars) >= n:
                 break
 

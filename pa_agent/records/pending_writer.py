@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from pa_agent.records.schema import AnalysisRecord, FollowupTurn
-from pa_agent.security.secret_store import mask_secret
+from pa_agent.util.mask_secret import mask_secret
 
 
 def _default_logger() -> logging.Logger:

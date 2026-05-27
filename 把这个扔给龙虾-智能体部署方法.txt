@@ -63,7 +63,11 @@ MT5 必须在运行部署和启动智能体时保持打开且已登录状态。
 - -i 指定清华源，避免默认源网络问题
 - 会自动安装 pyproject.toml 中列出的所有依赖：
   PyQt6, pyqtgraph, numpy, pandas, openai, tiktoken,
-  jsonschema, pydantic, MetaTrader5, cryptography, pywin32
+  jsonschema, pydantic, MetaTrader5, tvDatafeed,
+  cryptography, pywin32
+
+  注意：tvDatafeed 是 TradingView 数据源的核心依赖，
+  从 GitHub 安装（git+https），网络环境需能访问 GitHub。
 
 验收：逐个检查核心包是否可导入
 
@@ -78,6 +82,7 @@ MT5 必须在运行部署和启动智能体时保持打开且已登录状态。
   python -c "import MetaTrader5; print('MetaTrader5 OK')"
   python -c "import cryptography; print('cryptography OK')"
   python -c "import win32crypt; print('pywin32 OK')"
+  python -c "from tvDatafeed import TvDatafeed; print('tvDatafeed OK')"
 
 预期输出：每行均显示 "xxx OK"
 
@@ -108,18 +113,60 @@ MT5 必须在运行部署和启动智能体时保持打开且已登录状态。
     pip install MetaTrader5==5.0.45 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
   - 必须确保 MT5 终端已安装，否则 Python 包虽能装上但运行时会报错
 
-问题 4：pywin32 安装后报 ImportError
+问题 4：tvDatafeed 安装失败（git clone 超时 / 网络不可达）
+说明：tvDatafeed 是 TradingView 数据源的核心依赖，
+  从 GitHub 安装（git+https://github.com/rongardF/tvdatafeed.git），
+  国内网络可能无法直接克隆。
+解决：
+  方案 A — 配置 git 代理（如果已有代理）：
+    git config --global http.proxy http://127.0.0.1:7890
+    git config --global https.proxy http://127.0.0.1:7890
+    pip install git+https://github.com/rongardF/tvdatafeed.git
+
+  方案 B — 手动下载 + 本地安装：
+    浏览器打开 https://github.com/rongardF/tvdatafeed
+    → Code → Download ZIP → 解压到本地
+    → cd 到解压目录 → pip install .
+
+  方案 C — 如果仅需 MT5 数据源，可忽略此错误（不影响 MT5 功能）：
+    注：TradingView 数据源将不可用，但不影响 MT5 数据源。
+
+  方案 D — 使用 gitee 镜像（如存在）：
+    搜索 gitee 上是否有 tvdatafeed 镜像仓库，克隆后用 pip install . 安装。
+
+问题 4.5：tvDatafeed 安装后，TradingView 数据拉取全部报 "Connection to remote host was lost"
+原因：tvDatafeed 2.1.0 存在一个已知 bug —— 其 WebSocket headers 参数传的是 JSON 字符串
+  而非 Python dict，导致 websocket-client ≥1.8 版本拒绝握手（HTTP 400）。
+解决：找到 tvDatafeed 安装目录下的 main.py，修改一行代码。
+
+  定位文件：
+    python -c "import tvDatafeed; import os; print(os.path.dirname(tvDatafeed.__file__))"
+  输出类似：C:\Program Files\Python313\Lib\site-packages\tvDatafeed
+
+  编辑该目录下的 main.py，找到第 35 行附近的：
+    __ws_headers = json.dumps({"Origin": "https://data.tradingview.com"})
+  改为：
+    __ws_headers = {"Origin": "https://data.tradingview.com"}
+
+  改完后验证：
+    python -c "from tvDatafeed import TvDatafeed, Interval; df = TvDatafeed().get_hist('XAUUSD', 'OANDA', Interval.in_daily, n_bars=2); print('OK:', len(df), 'bars')"
+  预期输出：OK: 2 bars
+
+  说明：此 bug 仅在 websocket-client ≥1.8 时触发。如果你用的是旧版 websocket-client，
+  可能不受影响，但建议一并修复以兼容未来升级。
+
+问题 5：pywin32 安装后报 ImportError
 解决：安装后需执行 post-install 脚本：
     python "%USERPROFILE%\AppData\Local\Programs\Python\Python311\Scripts\pywin32_postinstall.py" -install
   注意：上面的路径要根据实际 Python 安装位置调整，可以用以下命令找到：
     python -c "import os, win32api; print(os.path.dirname(win32api.__file__))"
   然后到该目录的 Scripts 子目录下找 pywin32_postinstall.py
 
-问题 5：pyqtgraph 与 PyQt6 版本不兼容
+问题 6：pyqtgraph 与 PyQt6 版本不兼容
 解决：指定兼容版本：
     pip install pyqtgraph>=0.13 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 
-问题 6：numpy 版本冲突
+问题 7：numpy 版本冲突
 解决：
     pip install numpy>=1.26 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 
@@ -216,7 +263,10 @@ bat 文件必须放在项目根目录（与 run.py 同级），且使用 GBK 编
 6.4 最终验收清单
 
   [ ] python --version 输出 3.11+
-  [ ] 所有核心包导入测试通过（11 个 OK）
+  [ ] 所有核心包导入测试通过（12 个 OK）
+  [ ] TradingView 连通性测试通过（若使用 TV 数据源）：
+      python -c "from tvDatafeed import TvDatafeed, Interval; df = TvDatafeed().get_hist('XAUUSD', 'OANDA', Interval.in_daily, n_bars=2); print('TV OK:', len(df), 'bars')"
+      预期输出：TV OK: 2 bars（若失败，见第三步故障排查 问题 4.5）
   [ ] python -c "from pa_agent.main import main; print('Import OK')" 输出 Import OK
   [ ] python run.py 窗口正常弹出
   [ ] 运行智能体.bat 双击窗口正常弹出
@@ -236,6 +286,26 @@ bat 文件必须放在项目根目录（与 run.py 同级），且使用 GBK 编
 - 点击保存
 
 API Key 会被 DPAPI 加密存储在 config/settings.json 中，不会明文保存。
+
+================================================================
+  附：TradingView 数据源使用说明
+================================================================
+
+1. 刷新间隔设置
+   在 GUI 设置页面中可配置"刷新间隔(毫秒)"（refresh_interval_ms），默认 1000ms。
+   该值在 TradingView 数据源下同样生效，但注意：TradingView nologin 模式
+   对高频请求有限流，建议日线设 3000-5000ms，分钟线可设 1000-2000ms。
+   PA_Agent 内置了防重叠调用和指数退避机制，连续失败时会自动延长等待时间。
+
+2. "获取数据"按钮
+   TradingView 数据源不会在启动或切换品种时自动拉取数据。
+   需手动点击工具栏中的"获取数据"按钮，之后会进入持续刷新模式。
+   切换品种或周期后可再次点击按钮以重新拉取。
+
+3. 交易所选择
+   下拉框中的交易所已按类别标注（如 SSE（A股）、HKEX（港股）、BINANCE 等），
+   加密类交易所无后缀标注。
+   不确定交易所时可选择"（自动）"，程序会自动探测。
 
 ================================================================
   附：常见运行时问题

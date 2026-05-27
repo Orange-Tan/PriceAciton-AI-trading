@@ -18,6 +18,7 @@ from pa_agent.data.base import (
     DataSource,
     DataSourceTransientError,
     KlineBar,
+    normalize_kline_bar,
 )
 
 logger = logging.getLogger(__name__)
@@ -237,16 +238,20 @@ class MT5Source(DataSource):
                     vol = float(rate["real_volume"])
                 except (ValueError, KeyError):
                     vol = 0.0
-            bars.append(KlineBar(
-                seq=i + 1,
-                ts_open=ts_ms,
-                open=float(rate["open"]),
-                high=float(rate["high"]),
-                low=float(rate["low"]),
-                close=float(rate["close"]),
-                volume=vol,
-                closed=(i != 0),  # i=0 is the newest (forming) bar
-            ))
+            bars.append(
+                normalize_kline_bar(
+                    KlineBar(
+                        seq=i + 1,
+                        ts_open=ts_ms,
+                        open=float(rate["open"]),
+                        high=float(rate["high"]),
+                        low=float(rate["low"]),
+                        close=float(rate["close"]),
+                        volume=vol,
+                        closed=(i != 0),  # i=0 is the newest (forming) bar
+                    )
+                )
+            )
             if len(bars) >= n:
                 break
 

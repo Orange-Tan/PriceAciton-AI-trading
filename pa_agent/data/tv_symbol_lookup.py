@@ -139,7 +139,9 @@ def is_tv_name_input(symbol: str) -> bool:
     upper = s.upper()
     if upper in ("XAUUSD", "GOLD", "XAGUSD", "EURUSD", "GBPUSD"):
         return False
-    if re.fullmatch(r"[A-Za-z0-9.\-]+", s) and any(c.isalpha() for c in s):
+    # Only all-lowercase English is likely a name (e.g. "xiaomi");
+    # uppercase / mixed-case short strings are ticker symbols (e.g. "SPX", "NDX").
+    if re.fullmatch(r"[a-z0-9.\-]+", s) and any(c.isalpha() for c in s):
         return len(s) >= 3
     if re.search(r"[\u4e00-\u9fff]", s):
         return True

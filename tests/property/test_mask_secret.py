@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from hypothesis import given, settings as h_settings
 from hypothesis import strategies as st
-from pa_agent.security.secret_store import mask_secret
+from pa_agent.util.mask_secret import mask_secret
 
 
 @given(st.text(min_size=4))

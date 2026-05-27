@@ -17,9 +17,10 @@ class AtrState:
 
 def _true_range(high: float, low: float, prev_close: float) -> float:
     """Compute True Range for a single bar."""
+    hl = abs(high - low)
     if math.isnan(prev_close):
-        return high - low
-    return max(high - low, abs(high - prev_close), abs(low - prev_close))
+        return hl
+    return max(hl, abs(high - prev_close), abs(low - prev_close))
 
 
 def atr_full(

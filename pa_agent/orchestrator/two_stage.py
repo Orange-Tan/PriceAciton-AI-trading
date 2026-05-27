@@ -188,7 +188,7 @@ def _build_empty_record(
     # Build masked provider snapshot
     ai_provider: dict[str, Any] = {}
     if settings is not None:
-        from pa_agent.security.secret_store import mask_secret
+        from pa_agent.util.mask_secret import mask_secret
         p = settings.provider
         ai_provider = {
             "model": p.model,

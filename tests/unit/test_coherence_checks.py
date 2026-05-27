@@ -6,6 +6,7 @@ import json
 import pytest
 
 from pa_agent.ai.coherence_checks import (
+    validate_bar_by_bar_vs_features,
     validate_incremental_stage1_coherence,
     validate_stage1_coherence,
     validate_stage2_coherence,
@@ -153,3 +154,70 @@ def test_validator_accepts_full_stage1_fixture() -> None:
         "stage1", json.dumps(s1, ensure_ascii=False), kline_frame=_frame()
     )
     assert isinstance(result, Ok)
+
+
+def test_bar_type_mismatch_near_threshold_does_not_error_in_strict() -> None:
+    """Near hard cutoffs (doji/trend thresholds), strict mode should not over-error."""
+    # Build a bar with body_ratio ~= 0.25 (doji cutoff).
+    # Range=10, body=2.6 -> 0.26 (within eps 0.02).
+    frame = KlineFrame(
+        symbol="XAUUSD",
+        timeframe="15m",
+        bars=(
+            KlineBar(
+                seq=1,
+                ts_open=1,
+                open=100.0,
+                high=110.0,
+                low=100.0,
+                close=102.6,
+                volume=1.0,
+                closed=True,
+            ),
+        ),
+        snapshot_ts_local_ms=1,
+        indicators=IndicatorBundle(ema20=(100.0,), atr14=(10.0,)),
+    )
+    stage1 = {
+        "bar_by_bar_summary": [{"bar": "K1", "bar_type": "trend_bull", "reason": "x"}]
+    }
+    # Program would likely classify as doji (body_ratio <= 0.25) or other; we tolerate mismatch.
+    errs = validate_bar_by_bar_vs_features(stage1, kline_frame=frame, strict=True)
+    assert errs == []
+
+
+def test_structural_inside_outside_mismatch_still_errors_in_strict() -> None:
+    frame = KlineFrame(
+        symbol="XAUUSD",
+        timeframe="15m",
+        bars=(
+            # K1 inside K2
+            KlineBar(
+                seq=1,
+                ts_open=2,
+                open=105.0,
+                high=109.0,
+                low=101.0,
+                close=106.0,
+                volume=1.0,
+                closed=True,
+            ),
+            KlineBar(
+                seq=2,
+                ts_open=1,
+                open=100.0,
+                high=110.0,
+                low=100.0,
+                close=109.0,
+                volume=1.0,
+                closed=True,
+            ),
+        ),
+        snapshot_ts_local_ms=1,
+        indicators=IndicatorBundle(ema20=(100.0, 100.0), atr14=(10.0, 10.0)),
+    )
+    stage1 = {
+        "bar_by_bar_summary": [{"bar": "K1", "bar_type": "trend_bull", "reason": "x"}]
+    }
+    errs = validate_bar_by_bar_vs_features(stage1, kline_frame=frame, strict=True)
+    assert any("contradicts" in e for e in errs)

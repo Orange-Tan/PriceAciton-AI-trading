@@ -351,6 +351,36 @@ def test_incremental_stage1_prompt_includes_previous_record_and_new_bars(
     assert "normal_channel" in user
     assert "当前完整 K线数据" in user
     assert "当前完整 K线几何特征" in user
+    assert "完整窗口计算" in user
+    assert "指标非全历史延续" in user
+
+
+def test_stage1_prompt_has_kline_indicator_disclaimer(assembler: PromptAssembler) -> None:
+    """Stage 1 user prompt and tables warn that indicators are window-recomputed."""
+    frame = _make_frame()
+    messages = assembler.build_stage1(frame)
+    user = messages[1]["content"]
+    assert "指标非全历史延续" in user
+    assert "勿逐点对比" in user
+
+
+def test_stage2_prompt_has_kline_indicator_disclaimer(assembler: PromptAssembler) -> None:
+    frame = _make_frame()
+    messages = assembler.build_stage2(frame, {}, [], [])
+    user = messages[1]["content"]
+    assert "指标非全历史延续" in user
+
+
+def test_render_kline_feature_table_limit_uses_full_window_header(
+    assembler: PromptAssembler,
+) -> None:
+    """Incremental «新增» feature table: header notes full-window computation."""
+    frame = _make_frame(5)
+    table = assembler._render_kline_feature_table(frame, limit=2)
+    assert "完整窗口计算" in table
+    assert "勿逐点对比" in table
+    assert table.count("序号 | 类型") == 1
+    assert "K2" in table or " 2 " in table
 
 
 # ── T13: Prompt assembler tests for next_bar_prediction ──────────────────────

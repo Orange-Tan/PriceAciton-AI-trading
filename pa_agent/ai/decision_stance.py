@@ -100,7 +100,7 @@ def build_decision_stance_guidance(stance: str | None) -> str:
         )
     else:
         profile = (
-            "【极度激进】= 在 **10.3 可通过且未触犯 §14** 时，"
+            "【极度激进】= 强制产出交易；在 **10.3 可通过且未触犯 §14** 时，"
             "必须给出具体进场方案，禁止因犹豫而输出「不下单」。\n"
             "- **拟下单路径**（仅当 10.3 判「是」且 terminal.outcome=trade 时生效）："
             "order_type 为「限价单」「突破单」「市价单」之一，"

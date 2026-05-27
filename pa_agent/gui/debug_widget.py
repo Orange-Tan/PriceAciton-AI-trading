@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from pa_agent.security.secret_store import mask_secret
+from pa_agent.util.mask_secret import mask_secret
 from pa_agent.config.paths import RECORDS_PENDING_DIR
 
 logger = logging.getLogger(__name__)

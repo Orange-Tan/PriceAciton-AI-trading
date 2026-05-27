@@ -9,6 +9,7 @@ from pa_agent.data.datetime_ts import (
     datetime_to_ts_ms,
     format_epoch_for_display,
     naive_local_to_utc,
+    ts_open_to_ms,
 )
 
 
@@ -34,6 +35,11 @@ def test_pandas_timestamp_aware_converts_to_utc_ms():
     pd = pytest.importorskip("pandas")
     ts = pd.Timestamp("2024-06-15 08:30:00", tz="America/New_York")
     assert datetime_to_ts_ms(ts) == 1_718_454_600_000
+
+
+def test_ts_open_to_ms_seconds_and_milliseconds() -> None:
+    assert ts_open_to_ms(1_718_454_600) == 1_718_454_600_000.0
+    assert ts_open_to_ms(1_718_454_600_000) == 1_718_454_600_000.0
 
 
 def test_format_epoch_for_display_no_local_shift():
