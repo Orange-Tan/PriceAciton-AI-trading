@@ -99,6 +99,19 @@ def _strip_fences(text: str) -> str:
     if not t:
         return t
 
+    # ── 清洗模型输出的非标准 Unicode 引号 / 控制字符 ──
+    _SMART_QUOTE_MAP = {
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u2013": "-",
+        "\u2014": "-",
+    }
+    for bad, good in _SMART_QUOTE_MAP.items():
+        t = t.replace(bad, good)
+    t = "".join(ch for ch in t if ch >= " " or ch in "\t\n\r")
+
     # Fully fenced ```json ... ```
     if t.startswith("```"):
         m = _FENCE_RE.search(t)

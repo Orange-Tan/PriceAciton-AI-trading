@@ -511,16 +511,18 @@ def validate_stage2_coherence(
         s1_cycle = str(stage1.get("cycle_position", "") or "").strip().lower()
         s2_cycle = str(summary.get("cycle_position", "") or "").strip().lower()
         if s1_cycle and s2_cycle and s1_cycle != s2_cycle:
-            if not _stage2_trace_documents_override(
-                stage2.get("decision_trace"),
-                field="cycle_position",
-                new_value=s2_cycle,
-            ):
-                errors.append(
-                    f"diagnosis_summary.cycle_position={s2_cycle!r} differs from "
-                    f"stage1 {s1_cycle!r}; decision_trace must include node 1.2 "
-                    "documenting the change"
-                )
+            # 模糊匹配：s2_cycle 包含 s1_cycle 或反之，说明模型在阶段一基础上做了细化/扩展
+            if not (s1_cycle in s2_cycle or s2_cycle in s1_cycle):
+                if not _stage2_trace_documents_override(
+                    stage2.get("decision_trace"),
+                    field="cycle_position",
+                    new_value=s2_cycle,
+                ):
+                    errors.append(
+                        f"diagnosis_summary.cycle_position={s2_cycle!r} differs from "
+                        f"stage1 {s1_cycle!r}; decision_trace must include node 1.2 "
+                        "documenting the change"
+                    )
 
         s1_dir = str(stage1.get("direction", "") or "").strip().lower()
         s2_dir = str(summary.get("direction", "") or "").strip().lower()
