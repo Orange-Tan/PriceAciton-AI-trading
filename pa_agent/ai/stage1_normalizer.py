@@ -297,6 +297,14 @@ def normalize_stage1(
     out = copy.deepcopy(obj)
     lenient = normalization_mode == "lenient"
 
+    # ── DecisionNodeEngine: fill §1.1/§2.3/§2.4 (before strategy_files routing) ──
+    if kline_frame is not None:
+        try:
+            from pa_agent.ai.decision_nodes import DecisionNodeEngine
+            DecisionNodeEngine.apply_stage1(out, kline_frame)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("DecisionNodeEngine.apply_stage1 failed: %s", exc)
+
     if "strategy_files_needed" not in out or out.get("strategy_files_needed") is None:
         alt = out.pop("recommended_strategy_files", None)
         if alt is not None:

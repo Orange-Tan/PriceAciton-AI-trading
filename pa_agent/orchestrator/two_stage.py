@@ -349,6 +349,22 @@ class TwoStageOrchestrator:
             on_event(OrchestratorEvent.Cancelled)
             return record
 
+        # ── Step 2.5: Preflight data gate (before Stage1Started) ─────────────
+        from pa_agent.ai.decision_nodes import check_preflight_data
+        pf = check_preflight_data(frame)
+        if not pf.ok:
+            record = record.model_copy(update={
+                "exception": {
+                    "type": "insufficient_data",
+                    "stage": "preflight",
+                    "failed_check": pf.failed_check,
+                    "message": pf.reason,
+                }
+            })
+            self._pending_writer.save_partial(record, "insufficient_data")
+            on_event(OrchestratorEvent.InsufficientData)
+            return record
+
         # ── Step 3: Stage 1 started ───────────────────────────────────────────
         on_event(OrchestratorEvent.Stage1Started)
 

@@ -11,8 +11,6 @@ from pa_agent.ai.decision_tree import normalize_bar_range, validate_bar_range_fi
 
 # Stage-one gate nodes required when gate_result=proceed (prompt §0–§2).
 STAGE1_MANDATORY_GATE_NODES: tuple[str, ...] = (
-    "0.1",
-    "0.2",
     "1.1",
     "1.2",
     "1.3",
@@ -250,6 +248,53 @@ def validate_duplicate_bar_ranges(
             "each node should cite the K-lines it actually used"
         ]
     return []
+
+
+def auto_fix_bar_by_bar_types(
+    stage1: dict[str, Any],
+    *,
+    kline_frame: Any = None,
+) -> list[str]:
+    """Auto-correct bar_type in bar_by_bar_summary when it contradicts program features.
+
+    Mutates stage1 in-place: replaces the contradicting bar_type with the program value.
+    Returns a list of correction messages for logging.
+    """
+    if kline_frame is None:
+        return []
+    summary = stage1.get("bar_by_bar_summary")
+    if not isinstance(summary, list):
+        return []
+
+    from pa_agent.ai.kline_features import compute_kline_geometry_features
+
+    features = {f.seq: f for f in compute_kline_geometry_features(kline_frame)}
+    _opposites = frozenset({
+        ("trend_bull", "trend_bear"),
+        ("trend_bear", "trend_bull"),
+        ("outside_bull", "outside_bear"),
+        ("outside_bear", "outside_bull"),
+    })
+    corrections: list[str] = []
+    for item in summary:
+        if not isinstance(item, dict):
+            continue
+        bar_label = str(item.get("bar", "") or "")
+        m = _BAR_FIELD_RE.search(bar_label)
+        if not m:
+            continue
+        seq = int(m.group(1))
+        feat = features.get(seq)
+        if feat is None:
+            continue
+        declared = str(item.get("bar_type", "") or "").strip().lower()
+        computed = str(feat.bar_type or "").strip().lower()
+        if declared and computed and (declared, computed) in _opposites:
+            item["bar_type"] = computed
+            corrections.append(
+                f"auto-fixed bar_by_bar_summary K{seq}.bar_type: {declared!r} → {computed!r}"
+            )
+    return corrections
 
 
 def validate_stage1_coherence(
@@ -529,7 +574,7 @@ def validate_stage2_coherence(
         if s1_dir and s2_dir and s1_dir != s2_dir:
             # Direction override to neutral in a range cycle is a normal
             # re-assessment; don't require explicit node-2.3 documentation.
-            if not (s2_dir == "neutral" and cycle in _RANGE_CYCLES):
+            if not (s2_dir == "neutral" and s2_cycle in _RANGE_CYCLES):
                 if not _stage2_trace_documents_override(
                     stage2.get("decision_trace"),
                     field="direction",

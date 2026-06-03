@@ -31,6 +31,22 @@ class AIUsage:
     completion_tokens: int = 0
     total_tokens: int = 0
 
+    @property
+    def cache_hit_rate(self) -> float:
+        """Fraction of prompt tokens served from KV cache (0.0–1.0).
+
+        DeepSeek 硬盘缓存命中率。值越高，费用越低。
+        0.0 = 无缓存命中；1.0 = 全部命中缓存。
+        """
+        if self.prompt_tokens <= 0:
+            return 0.0
+        return self.cached_prompt_tokens / self.prompt_tokens
+
+    @property
+    def cache_miss_tokens(self) -> int:
+        """Prompt tokens that were NOT served from cache (billed at full rate)."""
+        return max(0, self.prompt_tokens - self.cached_prompt_tokens)
+
 
 @dataclass
 class AIReply:
@@ -329,6 +345,8 @@ class DeepSeekClient:
             "usage": {
                 "prompt_tokens": usage.prompt_tokens,
                 "cached_prompt_tokens": usage.cached_prompt_tokens,
+                "cache_miss_tokens": usage.cache_miss_tokens,
+                "cache_hit_rate_pct": round(usage.cache_hit_rate * 100, 1),
                 "completion_tokens": usage.completion_tokens,
                 "total_tokens": usage.total_tokens,
             },
@@ -339,6 +357,18 @@ class DeepSeekClient:
             "DeepSeekClient.chat done: latency=%.0f ms tokens=%d/%d",
             latency_ms, usage.prompt_tokens, usage.completion_tokens,
         )
+
+        # Log KV-cache hit rate so operators can monitor savings.
+        # DeepSeek硬盘缓存：prompt_cache_hit_tokens 是命中缓存的 token 数。
+        if usage.prompt_tokens > 0:
+            hit_rate = usage.cached_prompt_tokens / usage.prompt_tokens * 100
+            self._log.info(
+                "KV-cache: hit=%d miss=%d total_prompt=%d hit_rate=%.1f%%",
+                usage.cached_prompt_tokens,
+                usage.prompt_tokens - usage.cached_prompt_tokens,
+                usage.prompt_tokens,
+                hit_rate,
+            )
 
         return AIReply(
             content=content,
@@ -506,6 +536,8 @@ class DeepSeekClient:
             "usage": {
                 "prompt_tokens": usage.prompt_tokens,
                 "cached_prompt_tokens": usage.cached_prompt_tokens,
+                "cache_miss_tokens": usage.cache_miss_tokens,
+                "cache_hit_rate_pct": round(usage.cache_hit_rate * 100, 1),
                 "completion_tokens": usage.completion_tokens,
                 "total_tokens": usage.total_tokens,
             },
@@ -521,6 +553,17 @@ class DeepSeekClient:
             _thinking_on,
             _effort,
         )
+
+        # Log KV-cache hit rate for stream calls as well.
+        if usage.prompt_tokens > 0:
+            hit_rate = usage.cached_prompt_tokens / usage.prompt_tokens * 100
+            self._log.info(
+                "KV-cache: hit=%d miss=%d total_prompt=%d hit_rate=%.1f%%",
+                usage.cached_prompt_tokens,
+                usage.prompt_tokens - usage.cached_prompt_tokens,
+                usage.prompt_tokens,
+                hit_rate,
+            )
         if not content.strip():
             self._log.warning(
                 "API returned empty content (model=%s base_url=%s). "

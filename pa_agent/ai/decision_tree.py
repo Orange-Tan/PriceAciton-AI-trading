@@ -245,6 +245,8 @@ _BRANCH_DISPLAY_ZH = {
     "path_a": "路径A",
     "path_b": "路径B",
     "path_c": "路径C",
+    "AIL": "Always In 多头",
+    "AIS": "Always In 空头",
 }
 
 

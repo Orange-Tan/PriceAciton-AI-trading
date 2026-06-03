@@ -101,15 +101,16 @@ def _strip_fences(text: str) -> str:
 
     # ── 清洗模型输出的非标准 Unicode 引号 / 控制字符 ──
     _SMART_QUOTE_MAP = {
-        "\u201c": '"',
-        "\u201d": '"',
-        "\u2018": "'",
-        "\u2019": "'",
-        "\u2013": "-",
-        "\u2014": "-",
+        "\u201c": '"',   # " → "
+        "\u201d": '"',   # " → "
+        "\u2018": "'",   # ' → '
+        "\u2019": "'",   # ' → '
+        "\u2013": "-",   # en-dash
+        "\u2014": "-",   # em-dash
     }
     for bad, good in _SMART_QUOTE_MAP.items():
         t = t.replace(bad, good)
+    # 去掉除 \t \n \r 外的控制字符（0x00-0x1f 除了这三个）
     t = "".join(ch for ch in t if ch >= " " or ch in "\t\n\r")
 
     # Fully fenced ```json ... ```
@@ -368,6 +369,7 @@ class JsonValidator:
                 normalization_mode=norm_mode,
                 kline_frame=kline_frame,
                 decision_stance=decision_stance,
+                stage1_json=stage1_json,
             )
 
         # ── Schema validation (b and c) ───────────────────────────────────────
@@ -398,12 +400,19 @@ class JsonValidator:
         if stage == "stage1":
             from pa_agent.ai.decision_tree import validate_gate_result_consistency
             from pa_agent.ai.coherence_checks import (
+                auto_fix_bar_by_bar_types,
                 validate_incremental_stage1_coherence,
                 validate_stage1_coherence,
             )
 
             for msg in validate_gate_result_consistency(obj):
                 invalid.append(f"gate:{msg}")
+            # Auto-correct contradicting bar_type values before validation so
+            # minor model slips (writing trend_bull when program says trend_bear)
+            # don't cause the whole analysis to fail.
+            for msg in auto_fix_bar_by_bar_types(obj, kline_frame=kline_frame):
+                import logging as _logging
+                _logging.getLogger(__name__).info("stage1 %s", msg)
             for msg in validate_stage1_coherence(
                 obj,
                 kline_frame=kline_frame,
@@ -450,6 +459,9 @@ class JsonValidator:
                 invalid.append(f"signal_chain:{msg}")
 
             for msg in self._check_next_bar_prediction(obj):
+                invalid.append(msg)
+
+            for msg in self._check_next_cycle_prediction(obj):
                 invalid.append(msg)
 
             for msg in self._check_trade_metrics(obj, decision_stance=decision_stance):
@@ -625,6 +637,71 @@ class JsonValidator:
                 f"K{basis}.low={float(bar.low):.6g}"
             ]
         return []
+
+    @staticmethod
+    def _check_next_cycle_prediction(obj: dict) -> list[str]:
+        """Cross-field validation for next_cycle_prediction.
+
+        Returns error message list; caller adds each to invalid_fields.
+        """
+        from pa_agent.ai.cycle_enums import CYCLE_ENUM, CYCLE_ORDER
+
+        pred = obj.get("next_cycle_prediction")
+        if pred is None:
+            return []  # Missing field is backward-compatible (R5.1)
+        if not isinstance(pred, dict):
+            return ["next_cycle_prediction: must be an object when present"]
+
+        errors: list[str] = []
+        unpredictable = bool(pred.get("unpredictable", False))
+
+        if unpredictable:
+            if pred.get("cycle") is not None:
+                errors.append("next_cycle_prediction.cycle: must be null when unpredictable=true")
+            if pred.get("direction") is not None:
+                errors.append("next_cycle_prediction.direction: must be null when unpredictable=true")
+            if pred.get("probabilities") is not None:
+                errors.append("next_cycle_prediction.probabilities: must be null when unpredictable=true")
+            return errors
+
+        # unpredictable=false path
+        cycle = pred.get("cycle")
+        if cycle not in CYCLE_ENUM:
+            errors.append(
+                f"next_cycle_prediction.cycle: {cycle!r} is not a valid cycle enum value; "
+                f"expected one of {list(CYCLE_ENUM)}"
+            )
+
+        probs = pred.get("probabilities")
+        if not isinstance(probs, dict):
+            return errors + ["next_cycle_prediction.probabilities: must be an object when unpredictable=false"]
+
+        for key in CYCLE_ORDER:
+            value = probs.get(key)
+            if not isinstance(value, int) or not (0 <= value <= 100):
+                errors.append(
+                    f"next_cycle_prediction.probabilities.{key}: must be int in [0, 100]"
+                )
+        if errors:
+            return errors
+
+        # Sum constraint [99, 101]
+        total = sum(probs[k] for k in CYCLE_ORDER)
+        if not (99 <= total <= 101):
+            errors.append(
+                f"next_cycle_prediction.probabilities: sum={total}, must satisfy 99 <= sum <= 101"
+            )
+
+        # cycle = argmax (accept any tied winner)
+        max_value = max(probs[k] for k in CYCLE_ORDER)
+        tied_winners = [k for k in CYCLE_ORDER if probs[k] == max_value]
+        if cycle not in tied_winners:
+            errors.append(
+                f"next_cycle_prediction.cycle: expected one of {tied_winners} "
+                f"(argmax of probabilities), got {cycle!r}"
+            )
+
+        return errors
 
     @staticmethod
     def _check_next_bar_prediction(obj: dict) -> list[str]:
