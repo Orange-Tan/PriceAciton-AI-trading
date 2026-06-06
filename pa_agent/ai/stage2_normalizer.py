@@ -38,14 +38,40 @@ def _trace_node_answer(trace: Any, node_id: str) -> str | None:
 
 
 def _section14_violated(trace: Any) -> bool:
+    """Return True only when §14 answer is 是 AND the reason text confirms a violation.
+
+    Background: §14 question is "是否触犯禁止行为清单？"
+      answer=是  → violated (程序强制 order_type=不下单)
+      answer=否  → not violated (can proceed)
+
+    Some models incorrectly write answer=是 to mean "I completed the scan (no violations)".
+    To guard against this common mistake we cross-check the reason text: if it contains
+    explicit denial phrases (未触犯 / 未违反 / 无触犯 / 通过) we do NOT treat it as a
+    violation.  This is a safety hatch — the prompt now clearly specifies answer=否 for
+    the no-violation case, so future outputs should be correct.
+    """
+    _DENIAL_PHRASES = ("未触犯", "未违反", "无触犯", "无违规", "通过扫描", "扫描通过", "无禁止", "未触发")
     if not isinstance(trace, list):
         return False
     for item in trace:
         if not isinstance(item, dict):
             continue
         nid = str(item.get("node_id", "")).strip()
-        if nid.startswith("14") and str(item.get("answer", "")).strip() == "是":
-            return True
+        if not nid.startswith("14"):
+            continue
+        if str(item.get("answer", "")).strip() != "是":
+            continue
+        # answer=是: check reason for denial phrases before treating as violation
+        reason = str(item.get("reason", "") or "")
+        if any(phrase in reason for phrase in _DENIAL_PHRASES):
+            # AI wrote answer=是 but reason says no violation — ignore (AI used wrong answer)
+            logger.debug(
+                "_section14_violated: node %s answer=是 but reason contains denial phrase; "
+                "treating as NOT violated (AI should use answer=否 for no-violation)",
+                nid,
+            )
+            continue
+        return True
     return False
 
 

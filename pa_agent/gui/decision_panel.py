@@ -323,13 +323,10 @@ class DecisionPanel(QWidget):
         self._reasoning_edit.setObjectName("answerPane")
         self._reasoning_edit.setStyleSheet(_REASON_EDIT_CSS)
         self._reasoning_edit.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        self._reasoning_edit.setMinimumHeight(80)
-        self._reasoning_edit.setMaximumHeight(200)
-        layout.addWidget(self._reasoning_edit)
-
-        layout.addStretch(1)
+        self._reasoning_edit.setMinimumHeight(120)
+        layout.addWidget(self._reasoning_edit, stretch=1)
 
         self.clear()
 

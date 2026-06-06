@@ -75,9 +75,31 @@ LOCKED_NODES: frozenset[str] = frozenset({"1.1", "9.1"})
 
 OVERRIDABLE_NODES: frozenset[str] = frozenset({
 
-    "2.3", "2.4", "9.2", "9.3", "11.1", "11.2", "11.3", "11.4",
+    "1.3", "2.3", "2.4", "2.5", "9.2", "9.3", "11.1", "11.2", "11.3", "11.4",
 
 })
+
+# Nodes where the AI is the primary judge and the program only provides reference data.
+# When the AI has already written one of these nodes in gate_trace, the program result
+# is appended to the AI node's reason as supplementary data instead of replacing it.
+# The program node is used as-is only when the AI omitted the node entirely.
+AI_PRIMARY_NODES: frozenset[str] = frozenset({"1.3", "2.5"})
+
+# §1.3 extreme chaos thresholds
+CHAOS_OVERLAP_THRESHOLD: float = 0.70      # mean overlap_prev_ratio above this → chaotic
+CHAOS_EMA_FLAT_ATR_RATIO: float = 0.05     # EMA slope dead-zone (×ATR) for "flat" check
+CHAOS_DIRECTION_SCORE_MAX: int = 1         # |direction score| ≤ this → no clear direction
+
+# §2.5 momentum strength thresholds
+MOMENTUM_OVERLAP_WEAK: float = 0.50       # above → weak momentum (lots of overlap)
+                                           # 0.50 is conservative: healthy trends show <0.3-0.4 overlap
+MOMENTUM_TREND_RATIO_STRONG: float = 1.5  # bull/bear trend bar ratio ≥ this → strong side
+MOMENTUM_PULLBACK_DEEP_ATR: float = 3.0   # pullback > this×ATR → deep (weak momentum)
+# M1 absolute floor: directional trend bars must be ≥ this fraction of ALL bars
+# in the near-term window.  Prevents "2 bear vs 1 bull = dominant" from triggering
+# when 5 out of 8 bars are doji/inside/other (market is hesitating, not trending).
+# Set to 0.50: if fewer than half the bars are trend bars, the market is hesitating.
+MOMENTUM_TREND_BAR_MIN_RATIO: float = 0.50  # ≥50% of all bars must be trend bars
 
 SAFETY_GATE_NODES: frozenset[str] = frozenset({"1.1", "10.3", "14"})
 
@@ -443,7 +465,144 @@ def judge_data_sufficiency(frame: Any) -> NodeFill:
 
 
 
+# ── MarketChaosJudge ──────────────────────────────────────────────────────────
+
+
+def judge_market_chaos(frame: Any) -> NodeFill:
+    """Judge §1.3: is the market in extreme chaos (extreme_tr)?
+
+    Per 市场诊断框架.txt: extreme_tr判定依赖模型综合判断，不设硬性量化门槛。
+    宁可稍晚输出，也不要过早输出而错过交易机会。
+
+    Therefore this function ALWAYS returns answer=否 (default conservative).
+    The reason text includes objective chaos signal counts so the AI has
+    concrete data to decide whether to submit a node_override with answer=是.
+
+    Three chaos signals assessed (each contributes 1 point to chaos_score):
+      C1: EMA slope essentially flat (|slope| < CHAOS_EMA_FLAT_ATR_RATIO × ATR)
+      C2: Mean bar overlap very high (≥ CHAOS_OVERLAP_THRESHOLD)
+      C3: No directional conviction (|simple_direction_score| ≤ CHAOS_DIRECTION_SCORE_MAX)
+
+    The program always outputs 否; AI should override to 是 only when all three
+    signals are strongly present AND its holistic reading confirms extreme chaos.
+    """
+    bars = getattr(frame, "bars", ()) or ()
+    indicators = getattr(frame, "indicators", None)
+    ema20 = tuple(getattr(indicators, "ema20", ()) or ())
+    atr14 = tuple(getattr(indicators, "atr14", ()) or ())
+
+    try:
+        n = max(int(getattr(b, "seq", 0)) for b in bars)
+    except (TypeError, ValueError):
+        n = len(bars)
+
+    W = min(ALWAYS_IN_WINDOW, n)  # use same 20-bar window for consistency
+    bar_range = f"K{W}-K1"
+
+    # ── C1: EMA slope flatness ────────────────────────────────────────────────
+    ema_flat = False
+    c1_desc = "EMA斜率:无法计算"
+    try:
+        if ema20 and len(ema20) >= 1 and not math.isnan(float(ema20[0])):
+            k = min(EMA_SLOPE_LOOKBACK, n - 1)
+            if k >= 1 and len(ema20) > k and not math.isnan(float(ema20[k])):
+                slope = float(ema20[0]) - float(ema20[k])
+                thr = 0.0
+                if atr14 and len(atr14) >= 1 and not math.isnan(float(atr14[0])):
+                    thr = CHAOS_EMA_FLAT_ATR_RATIO * float(atr14[0])
+                ema_flat = abs(slope) < thr
+                c1_desc = (
+                    f"EMA斜率({'平坦✓' if ema_flat else '有方向✗'}"
+                    f",d={slope:.4f},阈值±{thr:.4f})"
+                )
+    except (TypeError, ValueError):
+        pass
+
+    # ── C2: High overlap ──────────────────────────────────────────────────────
+    mean_overlap = _mean_overlap_ratio(bars, W)
+    high_overlap = mean_overlap is not None and mean_overlap >= CHAOS_OVERLAP_THRESHOLD
+    if mean_overlap is None:
+        c2_desc = "K线重叠:数据不足"
+    else:
+        c2_desc = (
+            f"K线重叠均值{mean_overlap:.2f}"
+            f"({'≥' if high_overlap else '<'}{CHAOS_OVERLAP_THRESHOLD}阈值,"
+            f"{'重叠高✓' if high_overlap else '重叠适中✗'})"
+        )
+
+    # ── C3: No directional conviction — reuse direction score from §2.3 ──────
+    # We compute a simplified 2-signal score here to avoid calling judge_direction
+    # twice; the full 5-signal §2.3 result will still be injected separately.
+    bull_tb, bear_tb = _count_trend_bars(bars, W)
+    total_tb = bull_tb + bear_tb
+    tb_score = 0
+    if total_tb >= 3:
+        if bull_tb >= TREND_BAR_DOMINANCE_RATIO * max(bear_tb, 1):
+            tb_score = 1
+        elif bear_tb >= TREND_BAR_DOMINANCE_RATIO * max(bull_tb, 1):
+            tb_score = -1
+
+    # EMA slope direction (simple ±1)
+    slope_score = 0
+    try:
+        if ema20 and len(ema20) >= 1 and not math.isnan(float(ema20[0])):
+            k = min(EMA_SLOPE_LOOKBACK, n - 1)
+            if k >= 1 and len(ema20) > k and not math.isnan(float(ema20[k])):
+                slope = float(ema20[0]) - float(ema20[k])
+                thr = 0.0
+                if atr14 and len(atr14) >= 1 and not math.isnan(float(atr14[0])):
+                    thr = CHAOS_EMA_FLAT_ATR_RATIO * float(atr14[0])
+                if slope > thr:
+                    slope_score = 1
+                elif slope < -thr:
+                    slope_score = -1
+    except (TypeError, ValueError):
+        pass
+
+    simple_score = tb_score + slope_score
+    no_direction = abs(simple_score) <= CHAOS_DIRECTION_SCORE_MAX
+    c3_desc = (
+        f"方向信号(趋势棒score={tb_score},EMA score={slope_score}→合计{simple_score},"
+        f"{'无明显方向✓' if no_direction else '方向明确✗'})"
+    )
+
+    # ── Decision ──────────────────────────────────────────────────────────────
+    # Per design doc: extreme_tr requires AI holistic judgement; program must NOT
+    # output 是 to avoid premature gate=wait that kills valid trade opportunities.
+    # Program always outputs 否; reason text provides the chaos_score data so AI
+    # can override with 是 when ALL three signals are convincingly present.
+    chaos_score = int(ema_flat) + int(high_overlap) + int(no_direction)
+
+    answer = "否"
+    if chaos_score == 3:
+        warning = (
+            f" ⚠️ 三项混乱指标全部触发（{chaos_score}/3），"
+            "如AI综合判断确认极端混乱，可在 node_overrides 中提交 §1.3=是 覆盖。"
+        )
+    elif chaos_score == 2:
+        warning = (
+            f" ⚠️ 两项混乱指标触发（{chaos_score}/3），"
+            "AI可结合整体K线结构判断是否构成极端混乱；若是，可提交 node_overrides §1.3=是。"
+        )
+    else:
+        warning = ""
+
+    reason = (
+        f"程序默认否（极端混乱需AI综合判断，不设硬性程序门槛）。"
+        f"客观混乱信号{chaos_score}/3：{c1_desc}；{c2_desc}；{c3_desc}。"
+        f"市场未被程序判定为极端混乱，继续方向判断。{warning}"
+    )
+
+    return NodeFill(
+        node_id="1.3",
+        answer=answer,
+        reason=reason,
+        bar_range=bar_range,
+    )
+
+
 # ── DirectionJudge helpers ────────────────────────────────────────────────────
+
 
 
 def _count_trend_bars(bars: Any, W: int) -> tuple[int, int]:
@@ -1010,6 +1169,49 @@ def judge_always_in(frame: Any) -> NodeFill:
     bull_core = above_ratio >= ALWAYS_IN_SAME_SIDE_RATIO and slope_sign > 0
     bear_core = below_ratio >= ALWAYS_IN_SAME_SIDE_RATIO and slope_sign < 0
 
+    # ── Short-window divergence check ────────────────────────────────────────
+    # When the full-window (20-bar) vote says AIL/AIS, check if the most recent
+    # N_short bars are diverging from that conclusion.  This surfaces "weakening
+    # structure" info in the reason text so the AI has concrete evidence when
+    # deciding whether to submit a §2.4 override.
+    N_short = 5
+    short_above = 0
+    short_below = 0
+    for i, bar in enumerate(list(bars)[:N_short]):
+        if i >= len(ema20):
+            break
+        try:
+            ema_val = float(ema20[i])
+            close_val = float(bar.close)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if math.isnan(ema_val):
+            continue
+        if close_val > ema_val:
+            short_above += 1
+        elif close_val < ema_val:
+            short_below += 1
+    short_valid = short_above + short_below
+    short_above_ratio = short_above / short_valid if short_valid > 0 else 0.0
+    short_below_ratio = short_below / short_valid if short_valid > 0 else 0.0
+
+    # Divergence: full-window says AIL but recent N_short bars mostly below EMA,
+    # or full-window says AIS but recent N_short bars mostly above EMA.
+    _DIVERGENCE_THRESHOLD = 0.4  # if recent same-side ratio drops below this, flag it
+    divergence_warning = ""
+    if bull_core and short_above_ratio < _DIVERGENCE_THRESHOLD and short_valid > 0:
+        divergence_warning = (
+            f"⚠️ 近{N_short}根K线中仅{short_above}根收盘高于EMA20"
+            f"（占比{short_above_ratio:.0%}），与全窗口AIL结论存在背离，"
+            "AIL结构已弱化，AI可依据此短窗口背离在 node_overrides 中提交覆盖。"
+        )
+    elif bear_core and short_below_ratio < _DIVERGENCE_THRESHOLD and short_valid > 0:
+        divergence_warning = (
+            f"⚠️ 近{N_short}根K线中仅{short_below}根收盘低于EMA20"
+            f"（占比{short_below_ratio:.0%}），与全窗口AIS结论存在背离，"
+            "AIS结构已弱化，AI可依据此短窗口背离在 node_overrides 中提交覆盖。"
+        )
+
     if bull_core:
         answer = "是"
         branch = "AIL"
@@ -1021,6 +1223,8 @@ def judge_always_in(frame: Any) -> NodeFill:
             f"{swing_desc}；{pullback_desc}。"
             f"判定为Always In Long（AIL）{strength}。"
         )
+        if divergence_warning:
+            reason += f" {divergence_warning}"
     elif bear_core:
         answer = "是"
         branch = "AIS"
@@ -1032,6 +1236,8 @@ def judge_always_in(frame: Any) -> NodeFill:
             f"{swing_desc}；{pullback_desc}。"
             f"判定为Always In Short（AIS）{strength}。"
         )
+        if divergence_warning:
+            reason += f" {divergence_warning}"
     else:
         answer = "否"
         branch = None
@@ -1051,9 +1257,140 @@ def judge_always_in(frame: Any) -> NodeFill:
     )
 
 
+# ── MomentumStrengthJudge ──────────────────────────────────────────────────────
+
+
+def judge_momentum_strength(frame: Any, direction: str = "neutral") -> NodeFill:
+    """Judge §2.5: is current momentum strong enough to support trend-following?
+
+    Uses a DUAL-WINDOW approach: near-term (8 bars) as primary judge of CURRENT
+    momentum, 20-bar background as supplementary reference only.
+    Momentum is a "current state" concept — recent bars dominate the assessment.
+
+    Three signals assessed over W_near (min(8, n)):
+      M1: Trend-bar dominance — ratio of direction-aligned to opposing trend bars
+      M2: Bar overlap — low overlap → strong momentum, high overlap → weak
+      M3: Pullback depth — shallow pullback (≤ MOMENTUM_PULLBACK_DEEP_ATR × ATR)
+
+    Scoring:
+      strong_count ≥ 2 → answer=是  (strong momentum, trend-following allowed)
+      strong_count == 1 → answer=中性 (moderate; branch=broad_channel; caution)
+      strong_count == 0 → answer=否  (weak; NOT gate=wait per §2.5 rules)
+
+    Since §2.5 is AI_PRIMARY, if AI already wrote this node the program result
+    becomes supplementary reference data appended to the AI node's reason.
+    """
+    bars = getattr(frame, "bars", ()) or ()
+    indicators = getattr(frame, "indicators", None)
+    ema20 = tuple(getattr(indicators, "ema20", ()) or ())
+    atr14 = tuple(getattr(indicators, "atr14", ()) or ())
+
+    try:
+        n = max(int(getattr(b, "seq", 0)) for b in bars)
+    except (TypeError, ValueError):
+        n = len(bars)
+
+    MOMENTUM_NEAR_WINDOW: int = 8
+    W_near = min(MOMENTUM_NEAR_WINDOW, n)
+    W_bg = min(ALWAYS_IN_WINDOW, n)
+    bar_range = f"K{W_near}-K1"
+
+    # ── M1: Trend-bar dominance (near-term) ──────────────────────────────────
+    bull_tb, bear_tb = _count_trend_bars(bars, W_near)
+    total_tb = bull_tb + bear_tb
+    total_bars_in_window = min(W_near, len(list(bars)))
+    # Absolute floor: directional trend bars must make up ≥ MOMENTUM_TREND_BAR_MIN_RATIO
+    # of ALL bars in the window.  Without this, 2 bear vs 1 bull in 8 bars triggers
+    # "dominant" even though 63% of bars are doji/inside (hesitation, not trend).
+    abs_floor_met = (
+        total_bars_in_window > 0
+        and total_tb / total_bars_in_window >= MOMENTUM_TREND_BAR_MIN_RATIO
+    )
+    m1_strong = False
+    if abs_floor_met:
+        if direction == "bullish" and bull_tb >= MOMENTUM_TREND_RATIO_STRONG * max(bear_tb, 1):
+            m1_strong = True
+        elif direction == "bearish" and bear_tb >= MOMENTUM_TREND_RATIO_STRONG * max(bull_tb, 1):
+            m1_strong = True
+        # direction=neutral: M1 cannot be "dominant" — if the program itself calls
+        # the direction neutral it means neither side leads convincingly.
+        # A 3:2 ratio in 8 bars is noise, not momentum.  Leave m1_strong=False.
+    abs_ratio_str = f"{total_tb}/{total_bars_in_window}={total_tb/max(total_bars_in_window,1):.0%}" if total_bars_in_window else "N/A"
+    m1_desc = (
+        f"近{W_near}根趋势棒（多{bull_tb}/空{bear_tb}，总趋势棒占比{abs_ratio_str}，"
+        f"方向={direction}，"
+        f"{'占优✓' if m1_strong else ('中性方向无占优✗' if direction == 'neutral' and abs_floor_met else '占比不足✗' if not abs_floor_met else '不占优✗')}）"
+    )
+
+    # ── M2: Bar overlap (near-term) ───────────────────────────────────────────
+    mean_overlap = _mean_overlap_ratio(bars, W_near)
+    m2_strong = mean_overlap is not None and mean_overlap < MOMENTUM_OVERLAP_WEAK
+    if mean_overlap is None:
+        m2_desc = "K线重叠:数据不足"
+    else:
+        m2_desc = (
+            f"近{W_near}根重叠均值{mean_overlap:.2f}"
+            f"({'<' if m2_strong else '≥'}{MOMENTUM_OVERLAP_WEAK}阈值,"
+            f"{'重叠低✓' if m2_strong else '重叠高✗'})"
+        )
+
+    # ── M3: Pullback depth (near-term) ────────────────────────────────────────
+    pullback_atr = _max_pullback_atr(bars, W_near, ema20, atr14)
+    if pullback_atr is None:
+        m3_strong = None
+        m3_desc = "回撤深度:ATR不可用"
+    else:
+        m3_strong = pullback_atr <= MOMENTUM_PULLBACK_DEEP_ATR
+        m3_desc = (
+            f"近{W_near}根最大回撤{pullback_atr:.2f}×ATR"
+            f"({'≤' if m3_strong else '>'}{MOMENTUM_PULLBACK_DEEP_ATR}×阈值,"
+            f"{'回撤浅✓' if m3_strong else '回撤深✗'})"
+        )
+
+    # ── Background metrics (20-bar, reference only) ──────────────────────────
+    bull_tb_bg, bear_tb_bg = _count_trend_bars(bars, W_bg)
+    overlap_bg = _mean_overlap_ratio(bars, W_bg)
+    bg_desc = (
+        f"背景参考K{W_bg}-K1（趋势棒多{bull_tb_bg}/空{bear_tb_bg}，"
+        f"重叠{f'{overlap_bg:.2f}' if overlap_bg is not None else 'N/A'}）"
+    )
+
+    # ── Scoring ───────────────────────────────────────────────────────────────
+    strong_count = int(m1_strong) + int(m2_strong) + (int(m3_strong) if m3_strong is not None else 0)
+
+    if strong_count >= 2:
+        answer = "是"
+        branch = None
+        conclusion = "惯性强，支持趋势跟踪。"
+    elif strong_count == 1:
+        answer = "中性"
+        branch = "broad_channel"
+        conclusion = "惯性中等，宜转为等待反弹衰竭信号，不宜激进追势。"
+    else:
+        answer = "否"
+        branch = None
+        conclusion = (
+            "惯性偏弱，不宜趋势跟踪；但§2.5否不触发gate=wait，"
+            "继续进入策略分支等待合适入场时机。"
+        )
+
+    reason = (
+        f"近端强度信号{strong_count}/3（主判K{W_near}-K1）："
+        f"{m1_desc}；{m2_desc}；{m3_desc}。{conclusion}"
+        f" {bg_desc}。"
+    )
+
+    return NodeFill(
+        node_id="2.5",
+        answer=answer,
+        reason=reason,
+        bar_range=bar_range,
+        branch=branch,
+    )
 
 
 # ── SignalBarJudge ─────────────────────────────────────────────────────────────
+
 
 
 
@@ -1424,6 +1761,8 @@ def route_order_method(
 
     def _sec14_violated(trace: list) -> bool:
 
+        _DENIAL_PHRASES = ("未触犯", "未违反", "无触犯", "无违规", "通过扫描", "扫描通过", "无禁止", "未触发")
+
         for item in trace:
 
             if not isinstance(item, dict):
@@ -1432,9 +1771,22 @@ def route_order_method(
 
             nid = str(item.get("node_id", "")).strip()
 
-            if nid.startswith("14") and str(item.get("answer", "")).strip() == "是":
+            if not nid.startswith("14"):
 
-                return True
+                continue
+
+            if str(item.get("answer", "")).strip() != "是":
+
+                continue
+
+            # Cross-check reason: if it contains denial phrases the AI used wrong answer
+            reason = str(item.get("reason", "") or "")
+
+            if any(phrase in reason for phrase in _DENIAL_PHRASES):
+
+                continue
+
+            return True
 
         return False
 
@@ -1461,6 +1813,40 @@ def route_order_method(
     if candidate == "不下单":
 
         # Not a trading context for this cycle
+
+        return []
+
+
+
+    # ── spike_ending / spike_pullback exception ───────────────────────────────
+    # When cycle_position=spike but spike_stage indicates the spike has already
+    # ended (ending/pullback/channel), the default candidate is 市价单 (for active
+    # spike chasing).  However, once the spike exhausts itself the market enters a
+    # consolidation/pullback phase where waiting for a breakout of the signal bar
+    # is the textbook entry (§3.4 SPS / §3.5 path-A).  Forcing 市价单 on a pending
+    # 突破单 is wrong: the entry hasn't triggered yet (entry_bar.strength=not_triggered
+    # / freshness=pending) and the signal_chain validator would reject it.
+    # Preserve the model's 突破单 choice when:
+    #   1. spike_stage is ending / pullback / channel  (spike already exhausted)
+    #   2. model chose 突破单
+    #   3. a valid entry_basis_bar + entry_basis_extreme are present (breakout anchor)
+    if cycle == "spike" and candidate == "市价单":
+
+        spike_stage = str((stage1_json or {}).get("spike_stage") or "").strip().lower()
+
+        model_order_type = str(decision.get("order_type") or "").strip()
+
+        if spike_stage in ("ending", "pullback", "channel") and model_order_type == "突破单":
+
+            has_basis = bool(
+
+                decision.get("entry_basis_bar") and decision.get("entry_basis_extreme")
+
+            )
+
+            if has_basis:
+
+                candidate = "突破单"
 
         return []
 
@@ -1570,7 +1956,17 @@ def route_order_method(
 
         if nid == final_node_id:
 
-            reason = f"cycle_position={cycle}→{candidate}。" + reason
+            # For spike_ending exception: the candidate was overridden to 突破单,
+            # make the reason explicit so the audit trail is clear.
+            spike_stage_label = str((stage1_json or {}).get("spike_stage") or "").strip().lower()
+            if cycle == "spike" and candidate == "突破单" and spike_stage_label in ("ending", "pullback", "channel"):
+                reason = (
+                    f"cycle_position={cycle}（spike_stage={spike_stage_label}，尖峰已结束）"
+                    f"→{candidate}（保留模型突破单选择；尖峰结束后等待信号棒突破确认是正确做法，"
+                    "不应强制市价单立即追入）。" + reason
+                )
+            else:
+                reason = f"cycle_position={cycle}→{candidate}。" + reason
 
         nodes.append(NodeFill(
 
@@ -1650,6 +2046,27 @@ def write_override_trace(node: dict[str, Any], override: dict[str, Any]) -> None
 
 
 
+def _node_id_sort_key(node_id: str) -> tuple[int, int, str]:
+    """Numeric sort key for gate_trace node_id values.
+
+    Converts '1.1' -> (1, 1, '1.1'), '2.3' -> (2, 3, '2.3') so that merged
+    program nodes sort into natural chapter-section order regardless of how
+    the AI ordered its trace entries.
+    """
+    parts = str(node_id or "").split(".", 1)
+    try:
+        major = int(parts[0])
+    except (ValueError, IndexError):
+        return (999, 999, node_id)
+    if len(parts) == 1:
+        return (major, 0, node_id)
+    sub = parts[1]
+    try:
+        return (major, int(sub), node_id)
+    except ValueError:
+        return (major, 999, node_id)
+
+
 def merge_program_nodes(
 
     trace: list[dict[str, Any]],
@@ -1658,15 +2075,30 @@ def merge_program_nodes(
 
 ) -> list[dict[str, Any]]:
 
-    """Merge program nodes into trace by node_id. Program nodes override AI nodes."""
+    """Merge program nodes into trace by node_id.
+
+    Two merge modes based on node type:
+
+    PROGRAM-AUTHORITATIVE (default):
+      Program result replaces the AI node entirely.  Used for §1.1, §2.3, §2.4
+      where the program has definitive computed data.
+
+    AI-PRIMARY (AI_PRIMARY_NODES — currently §1.3 and §2.5):
+      If the AI already wrote the node, preserve the AI version and append the
+      program's computed metrics to the AI node's reason as a reference block.
+      The program node is used as-is only when the AI omitted the node entirely.
+      This preserves the AI's holistic judgement while surfacing objective signals
+      in the audit trail, preventing silent result-flipping.
+
+    New program nodes not already in the AI trace are inserted in chapter-section
+    order (1.1 < 1.2 < 2.3 < 2.5) so the UI renders the correct decision path.
+    """
 
     result = list(trace)
 
     prog_by_id = {n["node_id"]: n for n in program_nodes if isinstance(n, dict) and "node_id" in n}
 
 
-
-    # Replace existing entries or append new ones
 
     replaced_ids: set[str] = set()
 
@@ -1678,21 +2110,49 @@ def merge_program_nodes(
 
         nid = str(item.get("node_id", "")).strip()
 
-        if nid in prog_by_id:
+        if nid not in prog_by_id:
 
+            continue
+
+        if nid in AI_PRIMARY_NODES:
+
+            # AI-primary: keep AI node, append program metrics to reason as reference
+            prog_node = prog_by_id[nid]
+            prog_reason = str(prog_node.get("reason", "") or "").strip()
+            prog_bar_range = str(prog_node.get("bar_range", "") or "").strip()
+            if prog_reason:
+                ai_reason = str(item.get("reason", "") or "").strip()
+                supplement = f"【程序参考数据（{prog_bar_range}）：{prog_reason}】"
+                if supplement not in ai_reason:
+                    result[i] = dict(item)
+                    result[i]["reason"] = f"{ai_reason} {supplement}".strip()
+
+        else:
+
+            # Program-authoritative: program result replaces AI node
             result[i] = prog_by_id[nid]
 
-            replaced_ids.add(nid)
+        replaced_ids.add(nid)
 
 
 
-    # Append program nodes not already in trace
+    # Insert new nodes then re-sort by numeric node_id so injected program nodes
+    # land in their natural document position (1.1 < 1.2 < 2.3 < 2.5) rather
+    # than being appended to the tail of whatever order the AI produced.
 
-    for nid, node in prog_by_id.items():
+    new_nodes = [node for nid, node in prog_by_id.items() if nid not in replaced_ids]
 
-        if nid not in replaced_ids:
+    if new_nodes:
 
-            result.append(node)
+        result.extend(new_nodes)
+
+        result.sort(
+
+            key=lambda x: _node_id_sort_key(str(x.get("node_id", "")))
+
+            if isinstance(x, dict) else (999, 999, "")
+
+        )
 
 
 
@@ -1710,7 +2170,8 @@ def merge_program_nodes_head(
     """Merge program nodes into trace, placing NEW nodes at the HEAD (before AI nodes).
 
     Used when gate_result=wait/unknown so the AI's terminating node stays at the end.
-    Existing entries with the same node_id are replaced in-place (position preserved).
+    Applies the same AI-PRIMARY / program-authoritative distinction as merge_program_nodes:
+    §1.3 and §2.5 preserve the AI version and append program data to reason.
     """
 
     # First replace existing entries in-place (same as merge_program_nodes)
@@ -1728,14 +2189,35 @@ def merge_program_nodes_head(
 
         nid = str(item.get("node_id", "")).strip()
 
-        if nid in prog_by_id:
+        if nid not in prog_by_id:
+
+            continue
+
+        if nid in AI_PRIMARY_NODES:
+
+            prog_node = prog_by_id[nid]
+            prog_reason = str(prog_node.get("reason", "") or "").strip()
+            prog_bar_range = str(prog_node.get("bar_range", "") or "").strip()
+            if prog_reason:
+                ai_reason = str(item.get("reason", "") or "").strip()
+                supplement = f"【程序参考数据（{prog_bar_range}）：{prog_reason}】"
+                if supplement not in ai_reason:
+                    result[i] = dict(item)
+                    result[i]["reason"] = f"{ai_reason} {supplement}".strip()
+
+        else:
 
             result[i] = prog_by_id[nid]
 
-            replaced_ids.add(nid)
+        replaced_ids.add(nid)
 
-    # Prepend program nodes not already in trace (keep AI's terminating node at end)
-    new_nodes = [node for nid, node in prog_by_id.items() if nid not in replaced_ids]
+    # Sort new nodes by node_id then prepend before the AI's existing nodes so
+    # injected program nodes appear in chapter order, while the AI's terminating
+    # node (answer=否/等待) remains at the end of the trace.
+    new_nodes = sorted(
+        [node for nid, node in prog_by_id.items() if nid not in replaced_ids],
+        key=lambda x: _node_id_sort_key(str(x.get("node_id", ""))) if isinstance(x, dict) else (999, 999, ""),
+    )
 
     return new_nodes + result
 
@@ -1961,6 +2443,14 @@ def apply_overrides(
 
                     _sync_order_type_from_11_override(out, result[idx], ov)
 
+                # §2.4 override: sync bar_analysis.always_in so the field stays
+                # consistent with the final (possibly AI-overridden) §2.4 branch.
+                # Without this, bar_analysis.always_in keeps the program's value
+                # while direction/gate_trace reflect the AI's override — self-contradiction.
+                if node_id == "2.4":
+
+                    _sync_always_in_from_24_override(out, ov)
+
 
 
     return result
@@ -1985,6 +2475,36 @@ def _validate_dir_override(answer: str, branch: str) -> bool:
 
 
 
+
+
+def _sync_always_in_from_24_override(
+    out: dict[str, Any],
+    override: dict[str, Any],
+) -> None:
+    """After §2.4 override accepted, sync bar_analysis.always_in to match the
+    AI-overridden branch.  Without this sync, bar_analysis.always_in keeps the
+    program's original value while the gate_trace §2.4 node shows the overridden
+    branch — a self-contradiction that caused the confusion in the pending record.
+
+    Mapping:
+      branch=AIL  → always_in="long"
+      branch=AIS  → always_in="short"
+      answer=否   → always_in="neutral"
+    """
+    bar_analysis = out.get("bar_analysis")
+    if not isinstance(bar_analysis, dict):
+        return
+
+    branch = str(override.get("branch", "") or "").strip()
+    answer = str(override.get("answer", "") or "").strip()
+
+    if branch == "AIL":
+        bar_analysis["always_in"] = "long"
+    elif branch == "AIS":
+        bar_analysis["always_in"] = "short"
+    elif answer == "否":
+        bar_analysis["always_in"] = "neutral"
+    # If branch is unrecognised or missing, leave as-is to avoid silent corruption.
 
 
 def _sync_order_type_from_11_override(
@@ -2065,6 +2585,14 @@ class DecisionNodeEngine:
 
 
 
+        # Step 1b: MarketChaosJudge → §1.3
+        # Checks EMA flatness + high bar overlap + no directional signal.
+        # Overridable: AI can disagree based on holistic reading.
+
+        fill_13 = judge_market_chaos(frame)
+
+
+
         # Step 2: DirectionJudge → §2.3 + direction field
 
         direction, fill_23 = judge_direction(frame)
@@ -2079,17 +2607,34 @@ class DecisionNodeEngine:
 
 
 
+        # Step 3b: MomentumStrengthJudge → §2.5
+        # Assesses trend-bar dominance, overlap, pullback depth.
+        # Overridable; per §2.5 rules, answer=否 does NOT trigger gate=wait.
+
+        fill_25 = judge_momentum_strength(frame, direction=direction)
+
+
+
         # Convert NodeFill → trace dicts
 
         node_11 = build_program_trace_node(fill_11)
+
+        node_13 = build_program_trace_node(fill_13)
 
         node_23 = build_program_trace_node(fill_23)
 
         node_24 = build_program_trace_node(fill_24)
 
+        node_25 = build_program_trace_node(fill_25)
+
+        # §2.5 is a NON-BLOCKING gate node: any answer (是/中性/否) still results in
+        # gate_result=proceed.  Mark it explicitly so UI and audit readers are not
+        # misled into thinking a 否 answer blocked the gate.
+        node_25["non_blocking"] = True
 
 
-        program_nodes = [node_11, node_23, node_24]
+
+        program_nodes = [node_11, node_13, node_23, node_24, node_25]
 
 
 
@@ -2119,6 +2664,26 @@ class DecisionNodeEngine:
             out["gate_trace"] = merge_program_nodes_head(out["gate_trace"], final_nodes)
         else:
             out["gate_trace"] = merge_program_nodes(out["gate_trace"], final_nodes)
+
+        # Step 6: Sync bar_analysis.always_in from the program-determined §2.4 node.
+        # apply_overrides already handles the AI-override path via
+        # _sync_always_in_from_24_override; this step covers the non-override path
+        # where the program fills §2.4 directly and bar_analysis.always_in must match.
+        node_24_final = next(
+            (n for n in final_nodes if isinstance(n, dict) and str(n.get("node_id", "")) == "2.4"),
+            None,
+        )
+        if node_24_final is not None:
+            bar_analysis = out.get("bar_analysis")
+            if isinstance(bar_analysis, dict):
+                branch_24 = str(node_24_final.get("branch", "") or "").strip()
+                answer_24 = str(node_24_final.get("answer", "") or "").strip()
+                if branch_24 == "AIL":
+                    bar_analysis["always_in"] = "long"
+                elif branch_24 == "AIS":
+                    bar_analysis["always_in"] = "short"
+                elif answer_24 == "否":
+                    bar_analysis["always_in"] = "neutral"
 
 
 
@@ -2182,6 +2747,10 @@ class DecisionNodeEngine:
 
         # Check §9.0 answer: if AI said no valid signal bar, skip §9.1-9.5
         # rather than injecting misleading program-computed values.
+        # "否"  = no valid signal bar exists right now
+        # "等待" = AI semantically means "no valid signal bar" (should be "否" but
+        #          AI sometimes conflates "does it exist?" with "should I wait?").
+        # Both map to skip §9.1-9.5.
         _dt = out.get("decision_trace") or []
         _node_90 = next(
             (x for x in _dt if isinstance(x, dict) and str(x.get("node_id", "")) == "9.0"),
@@ -2190,7 +2759,7 @@ class DecisionNodeEngine:
         _section9_has_signal = True
         if _node_90 is not None:
             _ans_90 = str(_node_90.get("answer", "") or "").strip()
-            if _ans_90 == "否":
+            if _ans_90 in ("否", "等待"):
                 _section9_has_signal = False
 
 

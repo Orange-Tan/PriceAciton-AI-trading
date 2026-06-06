@@ -22,7 +22,7 @@
 - [x] 4. DecisionNodeEngine 阶段一判定器
   - [x] 4.1 实现 judge_data_sufficiency(frame) -> NodeFill：数据已充足前提下填充 §1.1=是
   - [x] 4.2 实现 judge_direction(frame) -> tuple[str, NodeFill]：EMA20 斜率 + 收盘重心 + 波段结构三信号投票，score≥+2→bullish，≤-2→bearish，否则 neutral；填充 §2.3 节点
-  - [x] 4.3 实现 judge_always_in(frame) -> NodeFill：近 N 根同侧收盘占比 ≥ 0.7 + EMA 斜率，判定 AIL/AIS/否；填充 §2.4 节点
+  - [x] 4.3 实现 judge_always_in(frame) -> NodeFill：近 N 根同侧收盘占比 ≥ 0.7 + EMA 斜率，判定 AIL/AIS/否；填充 §2.4 节点；**增加短窗口（近5根）背离预警：全窗口 AIL/AIS 但近5根同侧占比<40% 时，在 reason 中追加 ⚠️ 预警文本，供 AI 提交覆盖时引用**
   - [x] 4.4 实现 build_program_trace_node(fill, tree) -> dict：question 取自 node_label，保证所有必填字段合法
   - [x] 4.5 实现 DecisionNodeEngine.apply_stage1(out, frame)：调用三个判定器，填充 §1.1/§2.3/§2.4，写入 direction 字段
   - [x] 4.6 编写单元测试（Property 2/3/4/5）：方向映射、§2.3 与 direction 一致性、归一化幂等、Always In 映射
@@ -38,7 +38,7 @@
   - [x] 6.1 实现 _conservativeness_rank(node_id, answer) -> int：为安全闸门定义保守度偏序
   - [x] 6.2 实现 write_override_trace(node, override)：写留痕字段 program_answer/program_branch/override_reason/overridden_by_ai=True
   - [x] 6.3 实现 merge_program_nodes(trace, program_nodes) -> list：按 node_id 覆盖合并，程序节点覆盖 AI 节点
-  - [x] 6.4 实现 apply_overrides(program_nodes, node_overrides, out, stage)：六条裁决规则（结构校验→锁定→缺理由→安全闸门→§2.3 一致性→接受）；§2.3 覆盖被接受时同步 out["direction"]
+  - [x] 6.4 实现 apply_overrides(program_nodes, node_overrides, out, stage)：六条裁决规则（结构校验→锁定→缺理由→安全闸门→§2.3 一致性→接受）；§2.3 覆盖被接受时同步 out["direction"]；**§2.4 覆盖被接受时调用 _sync_always_in_from_24_override 同步 bar_analysis.always_in（AIL→"long"/AIS→"short"/否→"neutral"），消除字段自相矛盾**
   - [x] 6.5 将 apply_overrides 集成到 apply_stage1/apply_stage2 中（程序判定 → 应用覆盖 → 合并）
   - [x] 6.6 编写单元测试（Property 15–22）：无覆盖恒等、锁定不可覆盖、缺理由拒绝、接受即替换+留痕、§2.3 整体一致性、安全单向、畸形降级、覆盖幂等
 
@@ -61,7 +61,7 @@
   - [x] 9.3 修正《二元决策_闸门.txt》引用为实际存在的 二元决策.txt 与内置提示文本
   - [x] 9.4 移除阶段一提示中 §0.1/§0.2 强制评估要求；标注 §1.1/§2.3/§2.4「由程序判定，勿输出」
   - [x] 9.5 移除阶段二提示中 §9.1/§9.2/§9.3/§9.5 与 §11.1–§11.4 的输出要求；保留 §9.0/§9.4/§9.6/§9.7 与 §10 由 AI 判定
-  - [x] 9.6 新增 node_overrides 提示说明（默认不输出被改造节点；覆盖时提交带 override_reason 的条目；锁定节点不可覆盖；安全闸门仅更保守；§2.3 自洽；§11 横向切换）；JSON 示例加入可选 node_overrides（注明可省略）
+  - [x] 9.6 新增 node_overrides 提示说明（默认不输出被改造节点；覆盖时提交带 override_reason 的条目；锁定节点不可覆盖；安全闸门仅更保守；§2.3 自洽；§11 横向切换）；JSON 示例加入可选 node_overrides（注明可省略）；**收紧 §2.3/§2.4 覆盖门槛：各列出三项全部满足才允许提交的具体条件，§2.4 要求先确认 reason 中是否有 ⚠️ 背离预警，override_reason 须含具体根数数据和推翻全窗口判定的理由；_render_program_prefill_hint 末尾提示同步更新**
   - [x] 9.7 更新增量分析文本（0.1–2.5 → 改造后集合）
   - [x] 9.8 编写单元测试：assemble 后断言「共 5 条」、无《二元决策_闸门.txt》引用、含 node_overrides 说明
 

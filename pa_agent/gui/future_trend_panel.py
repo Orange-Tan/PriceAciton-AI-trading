@@ -101,14 +101,14 @@ class FutureTrendPanel(QWidget):
         self._bar_reasoning_edit.setReadOnly(True)
         self._bar_reasoning_edit.setObjectName("answerPane")
         self._bar_reasoning_edit.setStyleSheet(_REASON_EDIT_CSS)
-        self._bar_reasoning_edit.setMaximumHeight(120)
+        self._bar_reasoning_edit.setMinimumHeight(80)
         self._bar_reasoning_edit.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        bar_layout.addWidget(self._bar_reasoning_edit)
+        bar_layout.addWidget(self._bar_reasoning_edit, stretch=1)
 
         self._bar_group.setVisible(False)
-        layout.addWidget(self._bar_group)
+        layout.addWidget(self._bar_group, stretch=1)
 
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.HLine)
@@ -164,16 +164,14 @@ class FutureTrendPanel(QWidget):
         self._cycle_reasoning_edit.setReadOnly(True)
         self._cycle_reasoning_edit.setObjectName("answerPane")
         self._cycle_reasoning_edit.setStyleSheet(_REASON_EDIT_CSS)
-        self._cycle_reasoning_edit.setMaximumHeight(150)
+        self._cycle_reasoning_edit.setMinimumHeight(100)
         self._cycle_reasoning_edit.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        cycle_layout.addWidget(self._cycle_reasoning_edit)
+        cycle_layout.addWidget(self._cycle_reasoning_edit, stretch=1)
 
         self._cycle_group.setVisible(False)
-        layout.addWidget(self._cycle_group)
-
-        layout.addStretch(1)
+        layout.addWidget(self._cycle_group, stretch=2)
 
     # ── Module 1: next_bar_prediction ────────────────────────────────────────
 

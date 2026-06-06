@@ -321,7 +321,7 @@ _DECISION_BASE: dict = {
         "trade_confidence": {"type": "integer", "minimum": 0, "maximum": 100},
         "trade_confidence_reasoning": {"type": "string"},
         "estimated_win_rate": {"type": ["integer", "null"], "minimum": 0, "maximum": 100},
-        "estimated_win_rate_reasoning": {"type": "string"},
+        "estimated_win_rate_reasoning": {"type": ["string", "null"]},
         "key_factors": {"type": "array", "items": {"type": "string"}},
         "watch_points": {"type": "array", "items": {"type": "string"}},
         "risk_assessment": {"type": "string"},

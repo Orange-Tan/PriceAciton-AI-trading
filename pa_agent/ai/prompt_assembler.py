@@ -183,13 +183,23 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 
 **node_overrides（可选，默认不输出）：**
 程序已为 §1.1/§2.3/§2.4 填充权威判定，**默认不要输出这些节点**。
-仅当你识别到程序规则未捕捉到的明确结构性依据时，在顶层 `node_overrides` 数组中提交覆盖：
+仅当你识别到程序规则**未捕捉到**的明确结构性依据时，在顶层 `node_overrides` 数组中提交覆盖：
 ```json
 "node_overrides": [
   {"node_id": "2.3", "answer": "是", "branch": "bearish", "override_reason": "近3根出现强势看跌反转，斜率窗口未捕捉到该结构突变"}
 ]
 ```
 约束：§1.1/§9.1 为锁定节点不可覆盖；安全闸门（§10.3/§14）只能朝更保守方向；§2.3 answer/branch 须自洽（bullish/bearish↔是，neutral↔中性）；不输出时请勿包含该字段。
+
+**§2.3 覆盖门槛（三项全部满足才允许提交）：**
+1. 指明具体是哪根 K 线（如 K2、K1）、哪个结构特征（如强势空头趋势棒跌破颈线、MTR 双确认）导致方向突变；
+2. 该特征明确超出程序三信号（EMA斜率/收盘重心位移/波段结构枢轴）的计算范围——例如出现程序窗口未捕捉到的突破/假突破/多空角力转换；
+3. override_reason 须用具体 K 线序号和价格结构描述，不接受"整体看跌""趋势感觉已变"等模糊表述。
+
+**§2.4 覆盖门槛（三项全部满足才允许提交）：**
+1. 程序判定的 §2.4 reason 字段中**已出现** "⚠️ 近N根K线…与全窗口…结论存在背离"预警，或近期 K 线有明确的 EMA 跌破/站上事件（收盘价穿越 EMA20 且后续 K 线未立即修复）；
+2. 指明具体是哪几根 K 线导致短期背离（如"K1-K5 有4根收于 EMA 下方"）；
+3. override_reason 须同时说明：①短窗口背离的具体数据（几根中几根）；②为何认为该背离足以推翻全窗口 AIL/AIS 判定而非只是正常回撤。
 
 规则：
 - answer 只能是：是 / 否 / 中性 / 等待 / 不适用（**禁止**写「部分」「待确认」「待定」等——部分一致用 **中性**，尚需下一根K线确认用 **等待**）
@@ -310,6 +320,11 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 **⚠️ diagnosis_summary.direction 与阶段一 direction 不一致时的强制规则：**
 
 **⚠️ bar_analysis.bar_type 强制规则：必须直接沿用阶段一 `bar_analysis.bar_type` 的值，禁止在阶段二重新推断或修改。** 阶段一几何特征表是程序的确定性计算结果，是权威来源。如果你认为 K1 的棒型与实际不符，可以在 reasoning 里说明，但 `bar_type` 字段必须等于阶段一给出的值。
+
+**⚠️ bar_type 两套分类体系说明（不矛盾，两个维度互补）：**
+- **几何特征表（程序预计算）中的"类型"列**：描述单根 K 线的**内部几何**（实体比、收盘位置）。`trend_bear` = 实体占主导、收盘接近低点。
+- **bar_analysis.bar_type 与 bar_by_bar_summary.bar_type**：描述该 K 线与**前一根**的关系结构。`outside_bear` = 高低点均超出前棒（外包）且收盘偏低。
+- **同一根 K 线完全可以同时是两种**：例如 K1 几何上是 `trend_bear`（实体 62%）、关系上是 `outside_bear`（外包吞没前棒）——两者不矛盾，是不同维度的描述。不要因为几何表显示 `trend_bear` 就认为关系分类"错误"。
 - `diagnosis_summary.direction` 必须与 `stage1.direction` **保持一致**，除非你在阶段二的 decision_trace 中以 **node_id="2.3"** 明确记录方向变更及原因。
 - **例外（无需 2.3 节点）**：
   - 阶段一 direction=**neutral** → 阶段二 direction=bullish/bearish：程序判不了方向时 AI 阶段二识别出方向属于正常补充，校验器已尅5豪免。不强制补写 2.3，但建议补（给本人看更清晰）。
@@ -332,6 +347,12 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 3. **§10** 风险收益（必须按序）：**10.1 止损明确 → 10.2 止损不过大 → 10.3 交易者方程**（勿编造具体手数、合约数或资金规模）
 4. **§11 下单方式由程序填充，AI 不输出**（程序依据 cycle_position 路由，仅当 10.3=是 且下单时填充）
 5. **§14** 禁止行为清单：下单前快速扫描，触犯任一条 → order_type=不下单
+   - **⚠️ §14 answer 语义硬规则（违反会被程序强制改为不下单）：**
+     - `answer=是` = **触犯了禁止行为**（程序据此强制 order_type=不下单）
+     - `answer=否` = **未触犯任何禁止项**（可以继续下单）
+   - **未触犯时必须写 `answer=否`**，不能写 `是`。许多 AI 误用 `是` 表示"已完成扫描"，这是错误的。
+   - 例：扫描完成、无触犯 → `{"node_id":"14","answer":"否","reason":"扫描§14：未触犯任何禁止项。①...②..."}`
+   - 例：触犯了宽通道追突破 → `{"node_id":"14","answer":"是","reason":"触犯：宽通道中追突破，放弃入场，order_type=不下单"}`
 
 **node_overrides（可选，默认不输出）：**
 仅当你识别到程序规则未捕捉到的明确结构性依据时，在顶层 `node_overrides` 数组中提交覆盖（如改变 §9.2/§9.3/§11 路由）：
@@ -371,6 +392,17 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 - 如果最新 K1 是 doji、弱入场棒、无跟随或反向确认，必须降低 trade_confidence；除非有非常明确的二次入场/突破测试证据，否则 order_type=不下单。
 - 当 `bar_analysis.signal_bar.quality=weak|invalid`，或已触发入场棒但 `entry_bar.follow_through=false` 时，若仍下单，必须在 §9 和 reasoning 中明确说明为何该弱点未使信号失效；否则应等待。挂单未触发时不得把 `follow_through=false` 当作失败跟随，应写 `pending`。
 
+**⚠️ watch_points 与 stage1 risk_warning 一致性规则（必须遵守）：**
+- 阶段一 `risk_warning` 是风险警示，**watch_points 中的触发条件不得与其直接矛盾**。
+- 典型违反：risk_warning 说"在 4435–4440 底轨区域不宜追空"，watch_points 却建议"下破 4438 追空"——这是在 risk_warning 明确警示的区域做 risk_warning 禁止的操作。
+- **写 watch_points 前必须回顾 stage1 risk_warning**：如果你的触发条件恰好落在 risk_warning 描述的风险区域，必须在 watch_points 里注明该风险或修改触发条件以避开冲突区域。
+- 如果有充分依据认为 risk_warning 的风险在阶段二已经消除，必须在 reasoning 里明确说明原因。
+
+**⚠️ detected_patterns 必须引用规则：**
+- 阶段一 `detected_patterns` 中识别出的每一个形态（如 `failed_signal`、`magnet`、`breakout_test`、`breakout_failure`）都与当前交易风险直接相关。
+- **阶段二 reasoning 和 watch_points 中必须明确引用 detected_patterns 中的形态**，说明它们对本次交易决策的影响（支持还是否定入场，或设为 watch 条件）。
+- 不得从头重新推理而完全忽略 detected_patterns 中已识别的形态。
+
 **跳过规则：**
 - 无持仓：跳过 §12、§13（不写 trace）
 - 不适用分支：skipped:true，answer=不适用
@@ -379,6 +411,20 @@ terminal 必须与 order_type 一致（**decision 与 decision_trace 同步**）
 - 有下单 → outcome=trade，10.3 必须为「是」，decision 含有效三价
 - 不下单 → outcome=wait 或 reject，order_type=不下单，三价与 order_direction 均为 null
 - **禁止** decision 写突破单/限价单/市价单，同时 decision_trace 里 10.3=否 或 terminal=reject
+
+**⚠️ terminal.node_id 和 outcome 的语义规则（必须区分以下两种情形）：**
+
+情形 A：**有入场计划，但交易者方程不通过**（有具体止损、止盈数字，但盈亏比不达标）
+→ `terminal.node_id = "10.3"`，`outcome = "reject"`
+→ 典型表现：10.3 trace 里有具体数值计算，方程结果为负
+
+情形 B：**根本没有入场计划可评估**（§9.0=否/等待，或 §10.1=否 因无止损锚点）
+→ `terminal.node_id = "9.0"`（或最早的否定节点），`outcome = "wait"`
+→ **不能** terminal 在 10.3，因为从未有过可评估的交易方案
+→ **不能** 写 outcome="reject"——拒绝一个不存在的方案在语义上是无意义的
+
+常见错误：§9.0=否 → §10.1=否 → §10.3 写"不适用"或"否" → terminal=10.3/reject
+正确做法：§9.0=否 时 terminal 应是 §9.0，outcome=wait，10.3 不应出现在 trace 里（或标 skipped=true）
 
 阶段一 gate_result 为 wait/unknown 时：系统会短路，不应调用本阶段。
 
@@ -405,7 +451,7 @@ trade_confidence_reasoning：必须简要说明打分依据（如“入场信号
 三、estimated_win_rate —— 对**本笔交易方案**成交后获利概率的主观估计（0–100 整数）
 - 与 trade_confidence **不是同一概念**：trade_confidence 是对「是否该做这笔决策」的把握；estimated_win_rate 是「若按该 entry/stop/target 成交，你认为获胜的概率」
 - **必须在 §10.3 交易者方程评估完成后**由你自行判断并填写；须与 10.3 节点 reason 中的胜率假设一致
-- order_type=「不下单」时：estimated_win_rate 填 **null**，estimated_win_rate_reasoning 可说明为何不交易
+- order_type=「不下单」时：estimated_win_rate 填 **null**，estimated_win_rate_reasoning 填 **null**（无交易方案，无胜率可估）
 - 有下单时：estimated_win_rate 为 **必填整数**（不要填区间字符串，取你判断的最可能值，如 47）
 estimated_win_rate_reasoning：必须简要说明依据（如“宽通道顺势 Low1，结构支持约 45–50%，取 47% 用于方程”）
 """.strip()
@@ -890,7 +936,11 @@ class PromptAssembler:
 
             hint_lines.append(
                 "⚠️ §1.1 为锁定节点不可覆盖。§2.3/§2.4 可通过 node_overrides 覆盖，"
-                "但必须提供 override_reason。"
+                "但门槛较高：\n"
+                "  • §2.3 覆盖须指明具体 K 线序号+结构特征，且该特征超出三信号（EMA斜率/收盘重心/波段枢轴）的计算范围；\n"
+                "  • §2.4 覆盖须先确认 reason 中是否已出现短窗口背离预警（⚠️标记），"
+                "并给出具体背离数据（几根中几根收盘偏向反方向）及推翻全窗口判定的理由；\n"
+                "  • override_reason 必须具体，不接受「整体看跌」「感觉已变」等模糊描述。"
             )
             return "\n".join(hint_lines)
         except Exception as exc:  # noqa: BLE001
@@ -919,6 +969,23 @@ class PromptAssembler:
             f"品种:{frame.symbol} 周期:{frame.timeframe} K线数量:{n_bars}\n"
             f"（K线序号：1=最新已收盘，最大 K{n_bars}；"
             f"每个决策节点的 bar_range 由你自行选择子区间，勿超出 K{n_bars}-K1）\n\n"
+            f"## ⚠️ 分析窗口分层规则（强制，必须遵守）\n\n"
+            f"你收到全部 {n_bars} 根 K 线数据，但分析深度必须严格分层：\n\n"
+            f"**详细分析区 K1–K40（最近约 10 小时）：**\n"
+            f"- bar_by_bar_summary 覆盖此区间\n"
+            f"- 通道/波段/趋势结构识别、信号棒识别、趋势棒计数、反转判断\n"
+            f"- market_phase 和 cycle_position 判断基于**此区间**的结构特征\n"
+            f"- 各闸门节点的 bar_range 优先选取此区间\n\n"
+            f"**结构背景区 K41–K{n_bars}（更早期）：**\n"
+            f"- **只提取重要的 swing highs/lows（波段高点和低点）**\n"
+            f"- 将这些关键价位写入 `htf_context` 字段，格式示例：\n"
+            f"  「K65 高点 2685、K80 低点 2632、K92 高点 2698」\n"
+            f"- **禁止** 对 K41–K{n_bars} 做逐棒分析、通道识别、趋势结构、信号判断\n"
+            f"- **禁止** 在 bar_by_bar_summary 中涵盖 K41 及更早的 K 线\n"
+            f"- **禁止** 用 K41–K{n_bars} 的结构判断大时间框架（HTF）方向——"
+            f"其作用仅限于提供价格水平参考（潜在的支撑/阻力/磁力位）\n"
+            f"- K41–K{n_bars} 的高低价位只在 node 2.2 中作为**次要参考**，"
+            f"不作为 HTF 方向的否决依据\n\n"
             f"## K线数据(序号1=最新已收盘K线,序号越大越早;不含当前未收盘K线;"
             f"阳阴列由程序按收盘价与开盘价计算:收盘>开盘=阳线,收盘<开盘=阴线,相等=平)\n\n"
             f"{kline_table}\n\n"
