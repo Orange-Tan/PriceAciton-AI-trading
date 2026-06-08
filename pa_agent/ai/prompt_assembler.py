@@ -114,6 +114,8 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
   "key_signals": [],
   "htf_context": "",
   "entry_setup": "",
+  "support_levels": ["5402", "5119"],
+  "resistance_levels": ["6147", "6300"],
   "strategy_files_needed": ["下跌通道分析识别.txt", "下跌通道交易策略.txt"],
   "risk_warning": "",
   "bar_analysis": {
@@ -234,7 +236,12 @@ diagnosis_confidence 分档说明:
 - 50-69:周期位置存在歧义(如 trending_tr vs normal_channel),信号部分矛盾,需更多K线确认;市场可能处于过渡阶段
 - 30-49:信号严重矛盾,周期位置难以判定,K线特征与多种状态都有部分重叠
 - 0-29:数据不足以支撑任何诊断,或市场状态极度混乱(如极端交易区间)
-""".strip()
+
+**support_levels / resistance_levels 填写规则：**
+- `support_levels`：从近期 K 线结构中识别出的**当前价格下方**支撑价位，按由近到远排列，最多 3 个。每项填价格字符串（如 `"5402"` 或 `"5380-5400"` 表示区间），不识别时填空数组 `[]`。
+- `resistance_levels`：从近期 K 线结构中识别出的**当前价格上方**阻力价位，按由近到远排列，最多 3 个。格式同上，不识别时填空数组 `[]`。
+- 填写依据：近期摆动高低点、通道边界、EMA、前期整数关口、突破/失败突破位。**禁止**填写远离当前价格超过全局背景窗口波动幅度的历史高低点。
+- 若市场处于 `extreme_tr` 或无法识别周期，允许填 `[]`。""".strip()
 
 _STAGE2_OUTPUT_CONTRACT = """
 请严格按照以下 JSON 格式输出决策结果，不要输出任何其他内容。
@@ -387,6 +394,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 
 **§9 逐K信号链与新鲜度硬规则：**
 - §9.0–§9.7 必须引用 `bar_analysis.signal_bar.bar` 与阶段一 `bar_by_bar_summary` 中的对应 K 线；只有在“计划型限价/突破挂单，尚无已收盘信号棒”时，`signal_bar.bar` 才可为 null，且必须设 `quality="invalid"`、`pattern="none"`，并在 9.0 写明“等待信号确认/接受该瑕疵”。若限价单/突破单尚未触发，`bar_analysis.entry_bar.bar` 可为 null，但必须设 `strength="not_triggered"`、`freshness="pending"`，并在 9.7 写明“等待触发，尚无入场棒”。
+- **⚠️ 市价单 entry_bar 硬规则**：`order_type="市价单"` 代表基于当前已收盘棒立即入场，**不存在「等待触发」状态**。`entry_bar.bar` 必须填写信号棒（通常为 K1），`strength` 设为 `strong` 或 `weak`，`freshness` 设为 `fresh`，`follow_through` 设为 `true`。**禁止**市价单将 `entry_bar.bar` 填为 null 或将 `freshness` 填为 `pending`——这会导致校验失败。
 - 信号棒、入场棒、确认棒必须时间顺序合理：信号棒序号通常大于入场棒序号（更早），入场棒之后的跟随看更新的 K 线。
 - 如果信号棒之后已经出现 2–3 根无跟随、反向强 K、或 `entry_bar.freshness=stale|invalid`，不得继续把旧信号当作新的突破单依据。
 - 如果最新 K1 是 doji、弱入场棒、无跟随或反向确认，必须降低 trade_confidence；除非有非常明确的二次入场/突破测试证据，否则 order_type=不下单。
@@ -455,6 +463,36 @@ trade_confidence_reasoning：必须简要说明打分依据（如“入场信号
 - 有下单时：estimated_win_rate 为 **必填整数**（不要填区间字符串，取你判断的最可能值，如 47）
 estimated_win_rate_reasoning：必须简要说明依据（如“宽通道顺势 Low1，结构支持约 45–50%，取 47% 用于方程”）
 """.strip()
+
+# ── Analysis-mode–aware Stage 1 output rule ───────────────────────────────────
+
+_STAGE1_ORIGINAL_MODE_GATE_RULE = """
+## 原始分析过程闸门硬规则（覆盖上文任何相反描述）
+
+- 当前为 **原始分析过程**：不要使用「程序已经判定 / 由程序填充 / AI 不输出」作为省略 gate_trace 节点的理由。
+- 即使你在思考中认为某个节点已被程序预判，最终 JSON 仍必须在 `gate_trace` 中显式写出该节点。
+- 当 `gate_result="proceed"` 时，`gate_trace` 必须至少包含以下节点，且每个节点都要有独立的 `question`、`answer`、`reason`、`bar_range`：
+  `0.1`、`0.2`、`1.1`、`1.2`、`1.3`、`2.1`、`2.2`、`2.3`、`2.4`、`2.5`。
+- `0.1`/`0.2` 是阶段一前置可读性与继续分析条件闸门；`1.1` 是数据是否足够；`2.3` 是方向；`2.4` 是 Always In。原始模式必须由你自己写入 `gate_trace`。
+- 不要在 `gate_trace` 中跳过 `0.1`、`0.2`、`1.1`、`2.3`、`2.4`；否则校验会失败，阶段二不会执行。
+""".strip()
+
+
+def _stage1_output_reminder_for_mode(analysis_mode: str = "original") -> str:
+    """Return Stage 1 output rules adjusted for the selected analysis mode.
+
+    - ``original``: appends a hard-rule block requiring the AI to write ALL
+      gate_trace nodes explicitly (including 0.1/0.2/1.1/2.3/2.4 which are
+      normally program-prefilled). Also disables the program prefill hint so
+      the AI reasons independently.
+    - ``optimized``: returns the standard reminder unchanged (program prefill
+      path stays active).
+    """
+    mode = (analysis_mode or "original").strip().lower()
+    if mode == "optimized":
+        return _STAGE1_OUTPUT_REMINDER
+    return _STAGE1_OUTPUT_REMINDER + "\n\n" + _STAGE1_ORIGINAL_MODE_GATE_RULE
+
 
 _NEXT_BAR_PREDICTION_INSTRUCTION = """\
 ## 下一根K线预测任务（阶段二附加输出，不影响下单决策）
@@ -796,10 +834,10 @@ class PromptAssembler:
 
     # ── Stage 1 ───────────────────────────────────────────────────────────────
 
-    def build_stage1(self, frame: KlineFrame) -> list[dict]:
+    def build_stage1(self, frame: KlineFrame, *, analysis_mode: str = "original") -> list[dict]:
         """Build the message list for Stage 1 (market diagnosis)."""
         system_content = self._build_stage1_system_prompt()
-        user_content = self._build_stage1_user_prompt(frame)
+        user_content = self._build_stage1_user_prompt(frame, analysis_mode=analysis_mode)
 
         return [
             {"role": "system", "content": system_content},
@@ -811,6 +849,8 @@ class PromptAssembler:
         frame: KlineFrame,
         previous_record: AnalysisRecord,
         new_bar_count: int,
+        *,
+        analysis_mode: str = "original",
     ) -> list[dict]:
         """Build Stage 1 as a continuation-based incremental update.
 
@@ -862,6 +902,7 @@ class PromptAssembler:
             frame,
             previous_record,
             new_bar_count,
+            analysis_mode=analysis_mode,
         )
 
         return [
@@ -947,14 +988,17 @@ class PromptAssembler:
             logger.warning("_render_program_prefill_hint failed: %s", exc)
             return ""
 
-    def _build_stage1_user_prompt(self, frame: KlineFrame) -> str:
+    def _build_stage1_user_prompt(self, frame: KlineFrame, *, analysis_mode: str = "original") -> str:
         """Build the Stage 1 task turn; stage-specific rules stay out of system."""
         pattern_block = self._stage1_pattern_supplement()
-        prefill_hint = self._render_program_prefill_hint(frame)
+        # In original mode the AI must reason independently — do NOT inject the
+        # program prefill hint, as it would prime the model to skip those nodes.
+        use_prefill = (analysis_mode or "original").strip().lower() == "optimized"
+        prefill_hint = self._render_program_prefill_hint(frame) if use_prefill else ""
         stage1_parts = [
             *(self._load(name) for name in STAGE1_TASK_PROMPT_TXT_FILES),
             *([pattern_block] if pattern_block else []),
-            _STAGE1_OUTPUT_REMINDER,
+            _stage1_output_reminder_for_mode(analysis_mode),
         ]
         stage1_context = "\n\n---\n\n".join(p for p in stage1_parts if p)
         kline_table = self._render_kline_table(frame)
@@ -1002,14 +1046,17 @@ class PromptAssembler:
         frame: KlineFrame,
         previous_record: AnalysisRecord,
         new_bar_count: int,
+        *,
+        analysis_mode: str = "original",
     ) -> str:
         """Build a Stage 1 update turn using the last completed analysis."""
         pattern_block = self._stage1_pattern_supplement()
-        prefill_hint = self._render_program_prefill_hint(frame)
+        use_prefill = (analysis_mode or "original").strip().lower() == "optimized"
+        prefill_hint = self._render_program_prefill_hint(frame) if use_prefill else ""
         stage1_parts = [
             *(self._load(name) for name in STAGE1_TASK_PROMPT_TXT_FILES),
             *([pattern_block] if pattern_block else []),
-            _STAGE1_OUTPUT_REMINDER,
+            _stage1_output_reminder_for_mode(analysis_mode),
         ]
         stage1_context = "\n\n---\n\n".join(p for p in stage1_parts if p)
         n_bars = len(frame.bars)
@@ -1068,15 +1115,20 @@ class PromptAssembler:
         frame: KlineFrame,
         previous_record: AnalysisRecord,
         new_bar_count: int,
+        *,
+        analysis_mode: str = "original",
     ) -> str:
         """Build the incremental continuation user turn (message [3] in 4-message mode).
 
         Only sends NEW K-line data; the model can reference the full K-line table
         from the previous Stage 1 user message ([1]) above.
-        Injects prefill_hint so the AI knows the updated §2.3/§2.4 verdicts
+        Injects prefill_hint in optimized mode so the AI knows the updated §2.3/§2.4
+        verdicts even though the full K-line table is not re-sent. In original mode
+        the prefill hint is suppressed so the AI reasons independently.
         even though the full K-line table is not re-sent.
         """
-        prefill_hint = self._render_program_prefill_hint(frame)
+        use_prefill = (analysis_mode or "original").strip().lower() == "optimized"
+        prefill_hint = self._render_program_prefill_hint(frame) if use_prefill else ""
         n_bars = len(frame.bars)
         new_count = max(0, min(new_bar_count, n_bars))
         new_kline_table = self._render_kline_table(frame, limit=new_count)

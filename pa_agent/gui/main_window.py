@@ -35,6 +35,32 @@ logger = logging.getLogger(__name__)
 _WORKER_JOIN_TIMEOUT_MS = 5000
 
 
+def _parse_sr_price(raw: object) -> float | None:
+    """Parse a support/resistance price string from the AI output.
+
+    Accepts single values (``"5402"``, ``5402``) and range strings
+    (``"5380-5400"``).  Returns the midpoint for ranges, or the value
+    itself for single prices.  Returns None on parse failure.
+    """
+    import re as _re
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        v = float(raw)
+        return v if v > 0 else None
+    text = str(raw).strip()
+    # Range: e.g. "5380-5400" or "5380~5400"
+    m = _re.search(r"(\d+(?:\.\d+)?)\s*[-~]\s*(\d+(?:\.\d+)?)", text)
+    if m:
+        lo, hi = float(m.group(1)), float(m.group(2))
+        return (lo + hi) / 2.0
+    # Single number
+    m2 = _re.search(r"\d+(?:\.\d+)?", text)
+    if m2:
+        return float(m2.group(0))
+    return None
+
+
 # ── AI Worker ─────────────────────────────────────────────────────────────────
 
 class _AnalysisWorker(QThread):
@@ -528,6 +554,15 @@ class MainWindow(QMainWindow):
 
         outer_layout.addLayout(status_row)
 
+        # ── FlowBar: 5-step analysis progress indicator ───────────────────────
+        from pa_agent.gui.widgets.flow_bar import FlowBar
+        self._flow_bar = FlowBar()
+        self._flow_bar.setFixedHeight(52)
+        self._flow_bar.setStyleSheet(
+            "background-color: #161b22; border-bottom: 1px solid #30363d;"
+        )
+        outer_layout.addWidget(self._flow_bar)
+
         workbench = QSplitter(Qt.Orientation.Horizontal)
 
         self._chart_widget = ChartWidget()
@@ -542,6 +577,11 @@ class MainWindow(QMainWindow):
 
         workbench.setStretchFactor(0, 3)
         workbench.setStretchFactor(1, 2)
+
+        # ── SummaryStrip: 5-metric card strip above workbench ─────────────────
+        from pa_agent.gui.widgets.summary_strip import SummaryStrip
+        self._summary_strip = SummaryStrip()
+        outer_layout.addWidget(self._summary_strip)
 
         outer_layout.addWidget(workbench, stretch=1)
 
@@ -1168,6 +1208,35 @@ class MainWindow(QMainWindow):
             panel = getattr(self, "_stream_panel", None)
             if panel is not None:
                 panel.on_analysis_progress(text)
+        # ── Drive FlowBar step indicators ────────────────────────────────────
+        flow = getattr(self, "_flow_bar", None)
+        if flow is not None:
+            # Steps: 0=数据 1=快照 2=诊断(Stage1) 3=决策(Stage2) 4=追问
+            if text == "阶段一分析中…":
+                flow.set_step_status(0, "done")
+                flow.set_step_caption(0, "已就绪")
+                flow.set_step_status(1, "done")
+                flow.set_step_caption(1, "已获取")
+                flow.set_step_status(2, "active")
+                flow.set_step_caption(2, "分析中…")
+            elif text in ("阶段一完成",):
+                flow.set_step_status(2, "done")
+                flow.set_step_caption(2, "已完成")
+            elif text in ("阶段一失败",):
+                flow.set_step_status(2, "error")
+                flow.set_step_caption(2, "失败")
+            elif text == "阶段二分析中…":
+                flow.set_step_status(3, "active")
+                flow.set_step_caption(3, "决策中…")
+            elif text in ("阶段二完成",):
+                flow.set_step_status(3, "done")
+                flow.set_step_caption(3, "已完成")
+            elif text in ("阶段二失败",):
+                flow.set_step_status(3, "error")
+                flow.set_step_caption(3, "失败")
+            elif text in ("已取消",):
+                for idx in range(5):
+                    flow.set_step_status(idx, "idle")
 
     def _set_chart_refresh_paused(self, paused: bool) -> None:
         """Pause or resume live chart updates from RefreshLoop."""
@@ -1439,6 +1508,12 @@ class MainWindow(QMainWindow):
             )
             if ts is not None:
                 self._last_forming_ts_open = ts
+
+            # FlowBar step 0: data connected
+            flow = getattr(self, "_flow_bar", None)
+            if flow is not None and not self._analysis_in_progress:
+                flow.set_step_status(0, "done")
+                flow.set_step_caption(0, "已就绪")
 
         if self._pending_submit_after_close and bars:
             self._check_pending_bar_close(bars)
@@ -2666,6 +2741,18 @@ class MainWindow(QMainWindow):
         self._analysis_in_progress = True
         self._last_analysis_had_error = False
         self._update_submit_button_state()
+
+        # Reset FlowBar and SummaryStrip at the start of every analysis
+        flow = getattr(self, "_flow_bar", None)
+        if flow is not None:
+            flow.reset_all()
+            flow.set_step_status(0, "done")
+            flow.set_step_caption(0, "已就绪")
+        strip = getattr(self, "_summary_strip", None)
+        if strip is not None:
+            strip.reset()
+        # Clear previous support/resistance lines
+        self._chart_widget.clear_support_resistance()
         from pa_agent.ai.decision_stance import stance_label_zh
 
         stance_raw = "balanced"
@@ -2852,14 +2939,85 @@ class MainWindow(QMainWindow):
             self._decision_badge.setText(f"决策: {order}")
             if getattr(self, "_demo_mode", False):
                 self._present_decision_flow_playback(force_play=True)
+
+            # ── FlowBar: mark Stage 2 done ────────────────────────────────────
+            flow = getattr(self, "_flow_bar", None)
+            if flow is not None:
+                flow.set_step_status(3, "done")
+                flow.set_step_caption(3, "已完成")
+                flow.set_step_status(4, "active")
+                flow.set_step_caption(4, "可追问")
+
+            # ── SummaryStrip: populate key metrics ────────────────────────────
+            strip = getattr(self, "_summary_strip", None)
+            if strip is not None:
+                diag = decision.get("diagnosis_summary") or {}
+
+                # Current market cycle from diagnosis_summary
+                _cycle_map = {
+                    "spike": "尖峰", "micro_channel": "微型通道",
+                    "tight_channel": "紧凑通道", "normal_channel": "常规通道",
+                    "broad_channel": "宽通道", "trending_tr": "趋势型区间",
+                    "trading_range": "交易区间", "extreme_tr": "极端区间",
+                    "unknown": "未知",
+                }
+                cur_cycle = diag.get("cycle_position") or ""
+                cur_cycle_zh = _cycle_map.get(cur_cycle, cur_cycle or "—")
+
+                # Next cycle: pick the highest-probability from next_cycle_prediction
+                next_cycle_zh = "—"
+                ncp = decision.get("next_cycle_prediction") or {}
+                probs = ncp.get("probabilities") or {}
+                if probs:
+                    best_key = max(probs, key=lambda k: probs[k])
+                    next_cycle_zh = _cycle_map.get(best_key, best_key)
+
+                metrics: dict[str, str] = {
+                    "最终动作": order,
+                    "当前市场周期": cur_cycle_zh,
+                    "下一个市场周期": next_cycle_zh,
+                    "支撑区": "—",
+                    "阻力区": "—",
+                }
+                # Read support/resistance directly from stage1_diagnosis structured fields
+                s1 = self._last_stage1_diagnosis or {}
+                support_levels = s1.get("support_levels") or []
+                resistance_levels = s1.get("resistance_levels") or []
+
+                # Show the farthest (last) support and resistance level
+                if support_levels:
+                    metrics["支撑区"] = str(support_levels[-1])
+                if resistance_levels:
+                    metrics["阻力区"] = str(resistance_levels[-1])
+
+                # Draw chart lines: only the farthest support and resistance
+                try:
+                    from pa_agent.gui.support_resistance import StructureLevel
+                    chart_levels: list[StructureLevel] = []
+                    if support_levels:
+                        p = _parse_sr_price(support_levels[-1])
+                        if p is not None:
+                            chart_levels.append(StructureLevel("support", p, p, "支撑"))
+                    if resistance_levels:
+                        p = _parse_sr_price(resistance_levels[-1])
+                        if p is not None:
+                            chart_levels.append(StructureLevel("resistance", p, p, "阻力"))
+                    self._chart_widget.set_support_resistance(chart_levels)
+                except Exception:  # noqa: BLE001
+                    pass
+                strip.set_metrics(metrics)
         else:
             self._chart_widget.clear_decision_overlay()
+            self._chart_widget.clear_support_resistance()
             self._decision_panel.clear()
             self._future_trend_panel.clear()
             self._decision_tree_panel.clear()
             if getattr(self, "_decision_flow_viz_panel", None) is not None:
                 self._decision_flow_viz_panel.clear()
             self._decision_badge.setText("")
+            strip = getattr(self, "_summary_strip", None)
+            if strip is not None:
+                strip.reset()
 
     def _build_exception_debug_bundle(
         self,
@@ -3311,7 +3469,10 @@ class MainWindow(QMainWindow):
         self._analysis_in_progress = False
         self._auto_incremental_pending = False
         self._worker = None
-        self._update_submit_button_state()
+        try:
+            self._update_submit_button_state()
+        except RuntimeError as exc:
+            logger.warning("_update_submit_button_state after worker done failed: %s", exc)
 
         # Reap any zombie RefreshLoops that finished while we were busy
         self._reap_zombie_loops()

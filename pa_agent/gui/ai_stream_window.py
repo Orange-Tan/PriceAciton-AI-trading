@@ -10,6 +10,7 @@ from PyQt6.QtGui import QColor, QFont, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
@@ -145,7 +146,6 @@ class AIStreamPanel(QWidget):
         self._reasoning_edit.setFont(font)
         self._reasoning_edit.document().setDefaultFont(font)
         self._input_edit.setFont(font)
-        self._input_edit.document().setDefaultFont(font)
 
     def _build_token_bar(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -163,24 +163,60 @@ class AIStreamPanel(QWidget):
 
     def _build_input_area(self) -> QWidget:
         box = QWidget()
+        box.setStyleSheet(
+            "QWidget {"
+            " background: #161b22;"
+            " border-top: 1px solid #30363d;"
+            "}"
+        )
         row = QHBoxLayout(box)
-        self._input_edit = QPlainTextEdit()
+        row.setContentsMargins(12, 10, 12, 10)
+        row.setSpacing(8)
+
+        self._input_edit = QLineEdit()
         self._input_edit.setObjectName("chatInput")
-        self._input_edit.setPlaceholderText("分析完成后可继续追问…")
-        self._input_edit.setMaximumHeight(80)
+        self._input_edit.setPlaceholderText("分析完成后可继续追问\u2026")
+        self._input_edit.setFixedHeight(44)
+        self._input_edit.setStyleSheet(
+            "QLineEdit {"
+            " border: 1px solid #30363d;"
+            " border-radius: 6px;"
+            " background: #0a0e14;"
+            " color: #e6edf3;"
+            " padding: 0 14px;"
+            " font-size: 13px;"
+            "}"
+            "QLineEdit:focus {"
+            " border-color: #38bdf8;"
+            "}"
+        )
+        self._input_edit.returnPressed.connect(self._on_send_or_stop)
         row.addWidget(self._input_edit, stretch=1)
 
         button_col = QVBoxLayout()
         button_col.setSpacing(6)
         self._send_btn = QPushButton("发送")
-        self._send_btn.setObjectName("primaryButton")
-        self._send_btn.setMinimumWidth(72)
+        self._send_btn.setStyleSheet(
+            "QPushButton {"
+            " background: #15803d;"
+            " color: #fff;"
+            " border: 1px solid #16a34a;"
+            " min-width: 80px;"
+            " border-radius: 4px;"
+            " padding: 4px 8px;"
+            "}"
+            "QPushButton:disabled {"
+            " background: #1f2937;"
+            " color: #6b7280;"
+            " border-color: #374151;"
+            "}"
+        )
         self._send_btn.clicked.connect(self._on_send_or_stop)
         button_col.addWidget(self._send_btn)
 
         self._clear_output_btn = QPushButton("清空")
         self._clear_output_btn.setMinimumWidth(72)
-        self._clear_output_btn.setToolTip("清空上方“思考过程”窗口内容，不影响当前会话")
+        self._clear_output_btn.setToolTip("清空上方\u201c思考过程\u201d窗口内容，不影响当前会话")
         self._clear_output_btn.clicked.connect(self.clear_stream_output)
         button_col.addWidget(self._clear_output_btn)
         button_col.addStretch()
@@ -512,7 +548,7 @@ class AIStreamPanel(QWidget):
     def _on_send(self) -> None:
         if self._session is None:
             return
-        text = self._input_edit.toPlainText().strip()
+        text = self._input_edit.text().strip()
         if not text:
             return
         from pa_agent.util.threading import CancelToken
@@ -526,9 +562,16 @@ class AIStreamPanel(QWidget):
 
         self._sending = True
         self._send_btn.setText("停止")
-        self._send_btn.setObjectName("dangerButton")
-        self._send_btn.style().unpolish(self._send_btn)
-        self._send_btn.style().polish(self._send_btn)
+        self._send_btn.setStyleSheet(
+            "QPushButton {"
+            " background: rgba(239,68,68,0.15);"
+            " color: #ef4444;"
+            " border: 1px solid #ef4444;"
+            " min-width: 80px;"
+            " border-radius: 4px;"
+            " padding: 4px 8px;"
+            "}"
+        )
         self._input_edit.setEnabled(False)
 
         self._worker = _ChatWorker(self._session, text, self._cancel_token, parent=self)
@@ -566,8 +609,20 @@ class AIStreamPanel(QWidget):
     def _on_worker_done(self) -> None:
         self._sending = False
         self._send_btn.setText("发送")
-        self._send_btn.setObjectName("primaryButton")
-        self._send_btn.style().unpolish(self._send_btn)
-        self._send_btn.style().polish(self._send_btn)
+        self._send_btn.setStyleSheet(
+            "QPushButton {"
+            " background: #15803d;"
+            " color: #fff;"
+            " border: 1px solid #16a34a;"
+            " min-width: 80px;"
+            " border-radius: 4px;"
+            " padding: 4px 8px;"
+            "}"
+            "QPushButton:disabled {"
+            " background: #1f2937;"
+            " color: #6b7280;"
+            " border-color: #374151;"
+            "}"
+        )
         self._input_edit.setEnabled(True)
         self._worker = None

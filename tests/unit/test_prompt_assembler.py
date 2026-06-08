@@ -195,6 +195,36 @@ def test_stage1_output_reminder_present(assembler: PromptAssembler):
     assert "gate_result" in user
 
 
+def test_stage1_original_mode_requires_full_gate_trace(assembler: PromptAssembler):
+    """Original mode must inject the hard-rule block requiring all gate_trace nodes."""
+    frame = _make_frame()
+    messages = assembler.build_stage1(frame, analysis_mode="original")
+    user = messages[1]["content"]
+
+    assert "原始分析过程闸门硬规则" in user
+    assert "0.1" in user
+    assert "0.2" in user
+    assert "1.1" in user
+    assert "2.3" in user
+    assert "2.4" in user
+    # prefill hint must NOT appear in original mode
+    assert "程序预填充节点判断依据" not in user
+
+
+def test_stage1_optimized_mode_keeps_program_prefill_hint(assembler: PromptAssembler):
+    """Optimized mode keeps the deterministic prefill path and no hard-rule block."""
+    frame = _make_frame()
+    messages = assembler.build_stage1(frame, analysis_mode="optimized")
+    user = messages[1]["content"]
+
+    # Hard-rule block must NOT appear in optimized mode
+    assert "原始分析过程闸门硬规则" not in user
+    # The prefill hint may or may not appear (depends on indicators being computable),
+    # but either way the block should not be forced.
+    # The standard reminder should still be present.
+    assert "gate_result" in user
+
+
 def test_stage2_output_contract_present(assembler: PromptAssembler):
     """Stage 2 user turn must contain the output contract with null rule."""
     frame = _make_frame()
