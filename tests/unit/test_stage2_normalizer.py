@@ -417,4 +417,5 @@ def test_normalize_stage2_without_prediction_noop():
         "terminal": {"node_id": "0", "outcome": "wait", "label": "test"},
     }
     result = normalize_stage2(obj)
-    assert "next_bar_prediction" not in result
+    assert isinstance(result.get("next_bar_prediction"), dict)
+    assert isinstance(result.get("next_cycle_prediction"), dict)

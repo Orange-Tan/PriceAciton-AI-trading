@@ -205,11 +205,13 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 
 规则：
 - answer 只能是：是 / 否 / 中性 / 等待 / 不适用（**禁止**写「部分」「待确认」「待定」等——部分一致用 **中性**，尚需下一根K线确认用 **等待**）
+- **gate_result=wait/unknown 的合法触发条件只有两个：§1.2 answer≠是（无法识别周期）或 §1.3 answer=否（极端混乱 extreme_tr）。** §6/§9/§10 等后续节点的"否"答案（信号不一致、止损无法设定、交易者方程不通）不代表闸门阻断——这些是阶段二的判断依据
 - 任一闸门导致「等待/unknown」时，gate_result 设为 wait 或 unknown，并在最后一条 trace 写明 reason
 - gate_result=proceed 表示可通过闸门进入阶段二；wait/unknown 表示不应进入策略与下单评估
 - gate_trace 与 cycle_position、direction 不得矛盾
 - 每条 gate_trace.reason 须非空且说明依据（勿只写「通过」「是」等套话）
 - gate_result=proceed 时，**最后一条** gate_trace.reason 须含「闸门通过」或「进入阶段二」
+- **禁止在 gate_trace 中输出 node_id 为 "14.1" 的节点**：14.1（禁止行为扫描）由程序自动注入，AI 输出会导致重复节点和校验失败
 - 节点 2.4 / 2.5 的 question 须与决策树原文一致（含 Always In 空格、用「支持」而非仅改措辞）
 
 **每条 gate_trace / decision_trace 必须包含 bar_range（K线依据，由你自行判断）：**
@@ -231,16 +233,16 @@ diagnosis_confidence 必须为 0-100 的整数(满分100),表示对 cycle_positi
 禁止使用 high、medium、low 等字符串;分数越高表示对当前市场状态判断越有把握。
 
 diagnosis_confidence 分档说明:
-- 90-100:周期位置非常典型,K线特征完全匹配频谱定义,多时间框架方向一致,信号充分无矛盾
+- 90-100:周期位置非常典型,K线特征完全匹配频谱定义,长程背景与近期结构同向共振,信号充分无矛盾
 - 70-89:周期位置较明确,主要特征吻合频谱定义,可能有个别模糊信号但不影响核心判断
-- 50-69:周期位置存在歧义(如 trending_tr vs normal_channel),信号部分矛盾,需更多K线确认;市场可能处于过渡阶段
+- 50-69:周期位置存在歧义(如 trending_tr vs normal_channel),或长程背景与近期方向冲突(冲突不否决、不自动wait,仅降置信);需更多K线确认
 - 30-49:信号严重矛盾,周期位置难以判定,K线特征与多种状态都有部分重叠
 - 0-29:数据不足以支撑任何诊断,或市场状态极度混乱(如极端交易区间)
 
 **support_levels / resistance_levels 填写规则：**
 - `support_levels`：从近期 K 线结构中识别出的**当前价格下方**支撑价位，按由近到远排列，最多 3 个。每项填价格字符串（如 `"5402"` 或 `"5380-5400"` 表示区间），不识别时填空数组 `[]`。
 - `resistance_levels`：从近期 K 线结构中识别出的**当前价格上方**阻力价位，按由近到远排列，最多 3 个。格式同上，不识别时填空数组 `[]`。
-- 填写依据：近期摆动高低点、通道边界、EMA、前期整数关口、突破/失败突破位。**禁止**填写远离当前价格超过全局背景窗口波动幅度的历史高低点。
+- 填写依据：近期摆动高低点、通道边界、EMA、前期整数关口、突破/失败突破位。**禁止**填写远离当前价格超过长程结构窗口波动幅度的历史高低点。
 - 若市场处于 `extreme_tr` 或无法识别周期，允许填 `[]`。""".strip()
 
 _STAGE2_OUTPUT_CONTRACT = """
@@ -475,6 +477,7 @@ _STAGE1_ORIGINAL_MODE_GATE_RULE = """
   `0.1`、`0.2`、`1.1`、`1.2`、`1.3`、`2.1`、`2.2`、`2.3`、`2.4`、`2.5`。
 - `0.1`/`0.2` 是阶段一前置可读性与继续分析条件闸门；`1.1` 是数据是否足够；`2.3` 是方向；`2.4` 是 Always In。原始模式必须由你自己写入 `gate_trace`。
 - 不要在 `gate_trace` 中跳过 `0.1`、`0.2`、`1.1`、`2.3`、`2.4`；否则校验会失败，阶段二不会执行。
+- **禁止在 gate_trace 中输出 node_id 为 "14.1" 的节点**：14.1（禁止行为扫描）由程序自动注入，无需 AI 输出；额外输出会导致重复节点和校验失败。
 """.strip()
 
 
@@ -941,7 +944,10 @@ class PromptAssembler:
                 judge_direction,
                 judge_always_in,
             )
-            import copy
+            from pa_agent.ai.trend_context import (
+                build_trend_context,
+                render_three_window_summary,
+            )
 
             hint_lines: list[str] = [
                 "## 程序预填充节点判断依据（§1.1 / §2.3 / §2.4，供 AI 参考）",
@@ -959,6 +965,21 @@ class PromptAssembler:
 
             # §2.3
             direction, fill_23 = judge_direction(frame)
+            trend_ctx = build_trend_context(frame, direction)
+            n_bars_hint = len(frame.bars)
+            hint_lines.append(render_three_window_summary(frame, trend_ctx))
+            hint_lines.append("")
+            hint_lines.append(
+                "**§2.2 长程背景 vs 近期方向（程序摘要，供 gate_trace 2.2 引用）**"
+            )
+            hint_lines.append(
+                f"  背景方向（K{n_bars_hint}-K41）≈ {trend_ctx['background_direction']}；"
+                f"交易主方向（近期）≈ {trend_ctx['trading_direction']}；"
+                f"关系={trend_ctx['relationship']}"
+                + ("；**冲突时不否决近期、不自动减半仓位**" if trend_ctx.get("conflict") else "")
+            )
+            hint_lines.append("")
+
             hint_lines.append(
                 f"**§2.3 当前方向（多/空/中性）** → {fill_23.answer}"
                 + (f"（branch={fill_23.branch}）" if fill_23.branch else "")
@@ -978,9 +999,8 @@ class PromptAssembler:
             hint_lines.append(
                 "⚠️ §1.1 为锁定节点不可覆盖。§2.3/§2.4 可通过 node_overrides 覆盖，"
                 "但门槛较高：\n"
-                "  • §2.3 覆盖须指明具体 K 线序号+结构特征，且该特征超出三信号（EMA斜率/收盘重心/波段枢轴）的计算范围；\n"
-                "  • §2.4 覆盖须先确认 reason 中是否已出现短窗口背离预警（⚠️标记），"
-                "并给出具体背离数据（几根中几根收盘偏向反方向）及推翻全窗口判定的理由；\n"
+                "  • §2.3 覆盖须指明具体 K 线序号+结构特征，且该特征超出五信号投票的计算范围；\n"
+                "  • §2.4 近端K8-K1为主判、背景K20-K1仅参考；覆盖须基于近端结构突变证据；\n"
                 "  • override_reason 必须具体，不接受「整体看跌」「感觉已变」等模糊描述。"
             )
             return "\n".join(hint_lines)
@@ -1015,21 +1035,18 @@ class PromptAssembler:
             f"每个决策节点的 bar_range 由你自行选择子区间，勿超出 K{n_bars}-K1）\n\n"
             f"## ⚠️ 分析窗口分层规则（强制，必须遵守）\n\n"
             f"你收到全部 {n_bars} 根 K 线数据，但分析深度必须严格分层：\n\n"
-            f"**详细分析区 K1–K40（最近约 10 小时）：**\n"
-            f"- bar_by_bar_summary 覆盖此区间\n"
-            f"- 通道/波段/趋势结构识别、信号棒识别、趋势棒计数、反转判断\n"
-            f"- market_phase 和 cycle_position 判断基于**此区间**的结构特征\n"
-            f"- 各闸门节点的 bar_range 优先选取此区间\n\n"
-            f"**结构背景区 K41–K{n_bars}（更早期）：**\n"
-            f"- **只提取重要的 swing highs/lows（波段高点和低点）**\n"
-            f"- 将这些关键价位写入 `htf_context` 字段，格式示例：\n"
-            f"  「K65 高点 2685、K80 低点 2632、K92 高点 2698」\n"
-            f"- **禁止** 对 K41–K{n_bars} 做逐棒分析、通道识别、趋势结构、信号判断\n"
-            f"- **禁止** 在 bar_by_bar_summary 中涵盖 K41 及更早的 K 线\n"
-            f"- **禁止** 用 K41–K{n_bars} 的结构判断大时间框架（HTF）方向——"
-            f"其作用仅限于提供价格水平参考（潜在的支撑/阻力/磁力位）\n"
-            f"- K41–K{n_bars} 的高低价位只在 node 2.2 中作为**次要参考**，"
-            f"不作为 HTF 方向的否决依据\n\n"
+            f"**即时惯性区 K1–K8（Brooks：市场继续做刚刚在做的事）：**\n"
+            f"- bar_by_bar_summary **必须**覆盖 K8–K1 每一根\n"
+            f"- spike_stage / 尖峰识别、§2.5 惯性强度优先看此窗口\n"
+            f"- cycle_position 若为 spike，结构依据必须来自此窗口\n\n"
+            f"**近期结构区 K1–K40：**\n"
+            f"- 通道/波段/趋势结构、信号棒、反转判断的主窗口\n"
+            f"- `direction` 与交易主方向以此为准（程序 §2.3 亦用近端窗口）\n"
+            f"- 各闸门 bar_range 优先选取此区间\n\n"
+            f"**长程背景区 K41–K{n_bars}（全部数据中较老部分，不截断）：**\n"
+            f"- 提取 swing highs/lows 写入 `htf_context`，作磁力位/阻力支撑参考\n"
+            f"- **禁止**用长程方向否决近期方向（Brooks：近期或主要任一同向即顺势）\n"
+            f"- node 2.2 记录背景与近期的关系（同向/冲突），冲突时近期为主\n\n"
             f"## K线数据(序号1=最新已收盘K线,序号越大越早;不含当前未收盘K线;"
             f"阳阴列由程序按收盘价与开盘价计算:收盘>开盘=阳线,收盘<开盘=阴线,相等=平)\n\n"
             f"{kline_table}\n\n"
@@ -1303,9 +1320,11 @@ class PromptAssembler:
     ) -> str:
         """Build the Stage 2 task turn for standalone or continuation mode."""
         stance_block = build_decision_stance_guidance(normalize_stance(decision_stance))
+        conflict_block = self._render_trend_conflict_guidance(stage1_json)
         transition_block = self._render_transition_guidance(stage1_json)
         stage2_parts = [
             stance_block,
+            conflict_block,
             transition_block,
             *(
                 self._load(name)
@@ -1402,6 +1421,7 @@ class PromptAssembler:
             "detected_patterns",
             "key_signals",
             "htf_context",
+            "trend_context",
             "entry_setup",
             "strategy_files_needed",
             "risk_warning",
@@ -1411,6 +1431,29 @@ class PromptAssembler:
             "gate_result",
         )
         return {k: stage1_json[k] for k in keys if k in stage1_json}
+
+    @staticmethod
+    def _render_trend_conflict_guidance(stage1_json: dict) -> str:
+        """Stage-2 guidance when long-range background conflicts with recent direction."""
+        tc = stage1_json.get("trend_context")
+        if not isinstance(tc, dict) or not tc.get("conflict"):
+            return ""
+        bg = tc.get("background_direction", "neutral")
+        td = tc.get("trading_direction", "neutral")
+        spike = tc.get("recent_spike")
+        lines = [
+            "## 新旧趋势冲突指导（Brooks 并列原则）",
+            "",
+            f"长程背景方向：**{bg}**；交易主方向（近期）：**{td}**。",
+            f"- {tc.get('with_trend_rule', '')}",
+            "- **禁止**仅因长程背景相反而拒绝顺近期方向的入场或判 gate=wait。",
+            "- 逆势交易指**逆近期主方向**；顺近期即顺势，即使逆长程背景。",
+            "- 在 risk_assessment / watch_points 写明长程背景带来的磁力位与阻力，而非否定方向。",
+            "- 仓位不因冲突自动减半；由信号强度与交易者方程决定。",
+        ]
+        if spike:
+            lines.append(f"- 程序检测到近端 **{spike}** 尖峰：优先按尖峰/回撤逻辑，不追突破。")
+        return "\n".join(lines) + "\n"
 
     @staticmethod
     def _render_transition_guidance(stage1_json: dict) -> str:

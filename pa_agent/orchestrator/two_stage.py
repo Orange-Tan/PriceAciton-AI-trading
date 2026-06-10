@@ -14,12 +14,13 @@ Coordinates the full Stage 1 (diagnosis) → Stage 2 (decision) pipeline:
 Cancel checks are performed before each stage and after each API call.
 Network/timeout errors are caught and recorded on the partial record.
 
-Stage 2 validation failure ends the run immediately (``STAGE2_VALIDATION_AUTO_RETRY``
-is always False): no second ``stream_chat`` and no automatic fix-and-revalidate loop.
+On validation failure, ``validation_retry`` may append a feedback user turn and
+re-call the API (see ``ValidationSettings.retry_*``). Semantic / safety errors
+are not retried; immutable-field cheat detection rejects suspicious retries.
 """
 from __future__ import annotations
 
-# Explicit policy: never re-call Stage 2 API after validation failure.
+# Legacy flag kept for tests/docs; retry is governed by ValidationSettings.
 STAGE2_VALIDATION_AUTO_RETRY = False
 
 import dataclasses
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
     from pa_agent.records.pending_writer import PendingWriter
 
 from pa_agent.ai.json_validator import Ok, ValidationError
+from pa_agent.orchestrator.validation_retry import validate_with_retry
 from pa_agent.data.base import KlineFrame
 from pa_agent.records.schema import AnalysisRecord, RecordMeta
 from pa_agent.util.threading import CancelToken, OrchestratorEvent
@@ -261,6 +263,14 @@ def _accumulate_usage(current: dict, reply_usage: Any) -> dict:
     return result
 
 
+def _accumulate_usage_calls(current: dict, usage_calls: list[Any]) -> dict:
+    total = dict(current)
+    for usage in usage_calls:
+        if usage is not None:
+            total = _accumulate_usage(total, usage)
+    return total
+
+
 class TwoStageOrchestrator:
     """Orchestrates the two-stage AI analysis pipeline.
 
@@ -301,6 +311,13 @@ class TwoStageOrchestrator:
         self._pending_writer = pending_writer
         self._exp_reader = exp_reader
         self._settings = settings
+
+    def _validation_settings(self) -> Any:
+        if self._settings is not None and hasattr(self._settings, "validation"):
+            return self._settings.validation
+        from pa_agent.config.settings import ValidationSettings
+
+        return ValidationSettings()
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -482,13 +499,46 @@ class TwoStageOrchestrator:
         if previous_record is not None and int(incremental_new_bar_count or 0) > 0:
             prev_s1 = previous_record.stage1_diagnosis
 
-        result_s1 = self._validator.validate(
-            "stage1",
-            reply_s1.content,
-            kline_frame=frame,
-            incremental_new_bar_count=int(incremental_new_bar_count or 0),
-            incremental_previous_stage1=prev_s1,
+        s1_usage_calls: list[Any] = [getattr(reply_s1, "usage", None)]
+
+        def _call_s1_retry(msgs: list[dict]) -> Any:
+            nonlocal s1_streamed_reasoning, s1_streamed_content
+            on_event(OrchestratorEvent.Stage1Retry)
+            s1_streamed_reasoning = False
+            s1_streamed_content = False
+            r = self._client.stream_chat(
+                msgs,
+                on_reasoning_token=_on_s1_reasoning,
+                on_content_token=_on_s1_content,
+                cancel_token=cancel_token,
+                thinking=_thinking,
+                reasoning_effort=_effort,
+            )
+            if not s1_streamed_reasoning and r.reasoning_content:
+                _emit_buffered_stream(r.reasoning_content, on_stage1_reasoning)
+            if not s1_streamed_content and r.content:
+                _emit_buffered_stream(r.content, on_stage1_content)
+            s1_usage_calls.append(getattr(r, "usage", None))
+            return r
+
+        vr_s1 = validate_with_retry(
+            stage="stage1",
+            messages=messages_s1,
+            reply=reply_s1,
+            validator=self._validator,
+            validation_settings=self._validation_settings(),
+            validate_kwargs={
+                "kline_frame": frame,
+                "incremental_new_bar_count": int(incremental_new_bar_count or 0),
+                "incremental_previous_stage1": prev_s1,
+            },
+            call_api=_call_s1_retry,
         )
+        messages_s1 = vr_s1.messages
+        reply_s1 = vr_s1.reply
+        result_s1 = vr_s1.result
+        if vr_s1.attempts > 1:
+            logger.info("Stage 1 validation succeeded after %d attempt(s)", vr_s1.attempts)
 
         if isinstance(result_s1, ValidationError):
             err = result_s1
@@ -502,7 +552,7 @@ class TwoStageOrchestrator:
                 update={
                     "stage1_messages": messages_s1,
                     "stage1_response": reply_s1.raw,
-                    "usage_total": _accumulate_usage(record.usage_total, reply_s1.usage),
+                    "usage_total": _accumulate_usage_calls(record.usage_total, s1_usage_calls),
                     "exception": {
                         "type": "validation_error",
                         "stage": "stage1",
@@ -736,13 +786,46 @@ class TwoStageOrchestrator:
         )
         logger.debug("="*80 + "\n")
 
-        result_s2 = self._validator.validate(
-            "stage2",
-            reply_s2.content,
-            decision_stance=record.meta.decision_stance,
-            kline_frame=frame,
-            stage1_json=stage1_json,
+        s2_usage_calls: list[Any] = [getattr(reply_s2, "usage", None)]
+
+        def _call_s2_retry(msgs: list[dict]) -> Any:
+            nonlocal s2_streamed_reasoning, s2_streamed_content
+            on_event(OrchestratorEvent.Stage2Retry)
+            s2_streamed_reasoning = False
+            s2_streamed_content = False
+            r = self._client.stream_chat(
+                msgs,
+                on_reasoning_token=_on_s2_reasoning,
+                on_content_token=_on_s2_content,
+                cancel_token=cancel_token,
+                thinking=_thinking,
+                reasoning_effort=_effort,
+            )
+            if not s2_streamed_reasoning and r.reasoning_content:
+                _emit_buffered_stream(r.reasoning_content, on_stage2_reasoning)
+            if not s2_streamed_content and r.content:
+                _emit_buffered_stream(r.content, on_stage2_content)
+            s2_usage_calls.append(getattr(r, "usage", None))
+            return r
+
+        vr_s2 = validate_with_retry(
+            stage="stage2",
+            messages=messages_s2,
+            reply=reply_s2,
+            validator=self._validator,
+            validation_settings=self._validation_settings(),
+            validate_kwargs={
+                "kline_frame": frame,
+                "decision_stance": record.meta.decision_stance,
+                "stage1_json": stage1_json,
+            },
+            call_api=_call_s2_retry,
         )
+        messages_s2 = vr_s2.messages
+        reply_s2 = vr_s2.reply
+        result_s2 = vr_s2.result
+        if vr_s2.attempts > 1:
+            logger.info("Stage 2 validation succeeded after %d attempt(s)", vr_s2.attempts)
 
         if isinstance(result_s2, ValidationError):
             err = result_s2
@@ -764,9 +847,9 @@ class TwoStageOrchestrator:
                         e.model_dump() if hasattr(e, "model_dump") else dict(e)
                         for e in experience_entries
                     ],
-                    "usage_total": _accumulate_usage(
-                        _accumulate_usage(record.usage_total, reply_s1.usage),
-                        reply_s2.usage,
+                    "usage_total": _accumulate_usage_calls(
+                        _accumulate_usage_calls(record.usage_total, s1_usage_calls),
+                        s2_usage_calls,
                     ),
                     "exception": {
                         "type": "validation_error",
@@ -810,9 +893,9 @@ class TwoStageOrchestrator:
             logger.info("next_bar_prediction absent from stage2 response")
 
         # ── Step 20: Build final record ───────────────────────────────────────
-        usage_total = _accumulate_usage(
-            _accumulate_usage(record.usage_total, reply_s1.usage),
-            reply_s2.usage,
+        usage_total = _accumulate_usage_calls(
+            _accumulate_usage_calls(record.usage_total, s1_usage_calls),
+            s2_usage_calls,
         )
         record = record.model_copy(
             update={

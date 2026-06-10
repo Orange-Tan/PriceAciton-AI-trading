@@ -114,8 +114,10 @@ class _AnalysisWorker(QThread):
 
         _EVENT_LABELS = {
             OrchestratorEvent.Stage1Started: "阶段一分析中…",
+            OrchestratorEvent.Stage1Retry: "阶段一重试",
             OrchestratorEvent.Stage1Done: "阶段一完成",
             OrchestratorEvent.Stage2Started: "阶段二分析中…",
+            OrchestratorEvent.Stage2Retry: "阶段二重试",
             OrchestratorEvent.Stage2Done: "阶段二完成",
             OrchestratorEvent.RecordSaved: "记录已保存",
             OrchestratorEvent.Cancelled: "已取消",
@@ -1207,7 +1209,12 @@ class MainWindow(QMainWindow):
         if self._analysis_in_progress:
             panel = getattr(self, "_stream_panel", None)
             if panel is not None:
-                panel.on_analysis_progress(text)
+                if text in ("阶段一重试",):
+                    panel.mark_retry("stage1")
+                elif text in ("阶段二重试",):
+                    panel.mark_retry("stage2")
+                else:
+                    panel.on_analysis_progress(text)
         # ── Drive FlowBar step indicators ────────────────────────────────────
         flow = getattr(self, "_flow_bar", None)
         if flow is not None:
@@ -2914,13 +2921,12 @@ class MainWindow(QMainWindow):
         the inner ``decision`` sub-dict, so we extract it here.
         """
         if decision:
-            inner = decision.get("decision", decision)
-            # Carry next_bar_prediction from top-level into inner dict
-            # so DecisionPanel._apply_next_bar_prediction can find it.
-            if "next_bar_prediction" in decision and "next_bar_prediction" not in inner:
-                inner = {**inner, "next_bar_prediction": decision["next_bar_prediction"]}
-            if "next_cycle_prediction" in decision and "next_cycle_prediction" not in inner:
-                inner = {**inner, "next_cycle_prediction": decision["next_cycle_prediction"]}
+            from pa_agent.gui.stage2_payload import prepare_stage2_for_ui
+
+            inner = prepare_stage2_for_ui(
+                decision,
+                stage1_json=self._last_stage1_diagnosis,
+            )
             self._chart_widget.set_decision(inner)
             if getattr(self, "_demo_mode", False):
                 self._chart_widget.fit_view()
@@ -3041,12 +3047,12 @@ class MainWindow(QMainWindow):
         stage = exc_info.get("stage", "")
         if stage == "stage2":
             parts.append(
-                "【说明】阶段二校验失败后不会自动重试 API；"
+                "【说明】阶段二校验失败时程序会自动重试（格式类错误，见 ValidationSettings）；"
                 "请根据下方信息修改提示词/模型输出或手动重新「提交分析」。\n"
             )
         elif stage == "stage1":
             parts.append(
-                "【说明】阶段一校验失败后不会自动重试 API；"
+                "【说明】阶段一校验失败时程序会自动重试（格式类错误，见 ValidationSettings）；"
                 "请根据下方信息排查后手动重新「提交分析」。\n"
             )
 
@@ -3289,12 +3295,13 @@ class MainWindow(QMainWindow):
         self._last_stage1_diagnosis = s1_diag if isinstance(s1_diag, dict) else None
         s2_full = getattr(record, "stage2_decision", None)
         if s2_full:
-            inner = s2_full.get("decision", s2_full)
-            # Carry next_bar_prediction from top-level into inner dict
-            if "next_bar_prediction" in s2_full and "next_bar_prediction" not in inner:
-                inner = {**inner, "next_bar_prediction": s2_full["next_bar_prediction"]}
-            if "next_cycle_prediction" in s2_full and "next_cycle_prediction" not in inner:
-                inner = {**inner, "next_cycle_prediction": s2_full["next_cycle_prediction"]}
+            from pa_agent.gui.stage2_payload import prepare_stage2_for_ui
+
+            s1_diag = getattr(record, "stage1_diagnosis", None) or {}
+            inner = prepare_stage2_for_ui(
+                s2_full if isinstance(s2_full, dict) else {},
+                stage1_json=s1_diag if isinstance(s1_diag, dict) else None,
+            )
             meta = getattr(record, "meta", None)
             stance = getattr(meta, "decision_stance", None) if meta is not None else None
             self._decision_panel.set_decision(

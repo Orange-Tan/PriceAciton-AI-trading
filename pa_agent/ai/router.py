@@ -97,6 +97,14 @@ def route_strategy_files(stage1_json: dict[str, Any]) -> list[str]:
     files: list[str] = []
     files.extend(_base_files_for_cycle(cp, direction, spike_stage=spike_stage))
 
+    # Brooks: near-term spike is trading core even when cycle_position is channel/range
+    tc = stage1_json.get("trend_context") or {}
+    recent_spike = tc.get("recent_spike") if isinstance(tc, dict) else None
+    if recent_spike == "bullish" and cp != "spike" and direction == "bullish":
+        files.extend(_BULLISH_SPIKE_FILES)
+    elif recent_spike == "bearish" and cp != "spike" and direction == "bearish":
+        files.extend(_BEARISH_SPIKE_FILES)
+
     if alternative_cp and alternative_cp != cp:
         files.extend(_base_files_for_cycle(str(alternative_cp), direction, spike_stage=None))
 

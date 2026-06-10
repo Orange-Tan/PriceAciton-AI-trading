@@ -85,6 +85,8 @@ class AIStreamPanel(QWidget):
         self._finalized_stages: set[str] = set()
         # Per-stage streamed char counts; text in the pane is never cleared between stages.
         self._stage_chars: dict[str, dict[str, int]] = {}
+        # Completed attempts per stage (pre-retry counts preserved).
+        self._stage_attempts: dict[str, list[dict[str, int]]] = {}
         self._stage_headers_written: set[str] = set()
         self._content_headers_written: set[str] = set()
 
@@ -272,27 +274,47 @@ class AIStreamPanel(QWidget):
         labels = {"stage1": "阶段一", "stage2": "阶段二", "chat": "追问"}
         parts: list[str] = []
         for sid, label in labels.items():
+            # ── completed attempts ──
+            prev_attempts = self._stage_attempts.get(sid, [])
+            for i, prev in enumerate(prev_attempts):
+                attempt_label = label if i == 0 else f"{label}重试"
+                parts.append(self._format_attempt_text(attempt_label, prev))
+            # ── current attempt ──
             counts = self._stage_chars.get(sid)
-            if not counts:
-                continue
-            reasoning_n = counts.get("reasoning", 0)
-            content_n = counts.get("content", 0)
-            cache_hit_pct = counts.get("cache_hit_pct")
-            if reasoning_n and content_n:
-                text = f"{label} 思考{reasoning_n:,}+回答{content_n:,}字"
-            elif reasoning_n:
-                text = f"{label} 思考{reasoning_n:,}字"
-            elif content_n:
-                text = f"{label} 回答{content_n:,}字"
-            else:
-                continue
-            if cache_hit_pct is not None:
-                text += f"，缓存命中率{cache_hit_pct:.0f}%"
-            parts.append(text)
+            if counts:
+                attempt_label = label if not prev_attempts else f"{label}重试"
+                parts.append(self._format_attempt_text(attempt_label, counts))
         if parts:
             self._stats_label.setText(" · ".join(parts))
         else:
             self._stats_label.setText("思考 0 字")
+
+    @staticmethod
+    def _format_attempt_text(label: str, counts: dict[str, int]) -> str:
+        reasoning_n = counts.get("reasoning", 0)
+        content_n = counts.get("content", 0)
+        cache_hit_pct = counts.get("cache_hit_pct")
+        if reasoning_n and content_n:
+            text = f"{label} 思考{reasoning_n:,}+回答{content_n:,}字"
+        elif reasoning_n:
+            text = f"{label} 思考{reasoning_n:,}字"
+        elif content_n:
+            text = f"{label} 回答{content_n:,}字"
+        else:
+            text = f"{label}"
+        if cache_hit_pct is not None:
+            text += f"，缓存命中率{cache_hit_pct:.0f}%"
+        return text
+
+    def mark_retry(self, stage: str) -> None:
+        """Called when a retry begins: preserve current char counts as a completed
+        attempt and reset for the new attempt."""
+        current = self._stage_chars.get(stage)
+        if current is not None and (current.get("reasoning", 0) or current.get("content", 0)):
+            attempts = self._stage_attempts.setdefault(stage, [])
+            attempts.append(dict(current))
+        self._stage_chars[stage] = {"reasoning": 0, "content": 0}
+        self._update_stats()
 
     def set_stage_cache_hit(self, stage: str, cache_hit_pct: float) -> None:
         """Set the cache hit rate (0–100) for a given stage; refreshes stats label."""
@@ -387,6 +409,7 @@ class AIStreamPanel(QWidget):
         self._stage_t0 = time.monotonic()
         self._reasoning_chars = 0
         self._content_chars = 0
+        self._stage_attempts.pop(stage, None)  # fresh start, no retries yet
         self._ensure_stage_header(stage)
         self._phase_label.setText(f"▶ {title} — {self._stream_phase_suffix()}")
         self._update_stats()
@@ -414,6 +437,7 @@ class AIStreamPanel(QWidget):
         self._stage = ""
         self._finalized_stages.clear()
         self._stage_chars.clear()
+        self._stage_attempts.clear()
         self._stage_headers_written.clear()
         self._content_headers_written.clear()
         self._phase_label.setText("等待分析…")
@@ -430,6 +454,7 @@ class AIStreamPanel(QWidget):
         self._reasoning_chars = 0
         self._content_chars = 0
         self._stage_chars.clear()
+        self._stage_attempts.clear()
         self._stage_headers_written.clear()
         self._content_headers_written.clear()
         self._finalized_stages.clear()

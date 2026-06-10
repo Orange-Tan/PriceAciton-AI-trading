@@ -43,6 +43,12 @@ class ValidationSettings(BaseModel):
     strict_bar_by_bar_features: bool = True
     #: Do not inject stub gate_trace on truncated Stage 1 JSON.
     disable_truncation_repair: bool = True
+    #: Re-call API with structured feedback when validation fails (format errors).
+    retry_enabled: bool = True
+    retry_max: int = Field(default=2, ge=0, le=5)
+    #: Max retries for category=c semantic errors (subset only).
+    retry_max_semantic: int = Field(default=1, ge=0, le=3)
+    retry_stage2: bool = True
 
 
 class GeneralSettings(BaseModel):

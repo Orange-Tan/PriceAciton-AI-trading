@@ -91,6 +91,12 @@ def _clear_decision_to_no_order(decision: dict[str, Any]) -> None:
     for field in _NO_ORDER_PRICE_FIELDS:
         decision[field] = None
     decision["estimated_win_rate"] = None
+    # trade_confidence / trade_confidence_reasoning: schema requires non-null values.
+    # When the breaker forces 不下单, provide valid defaults.
+    if decision.get("trade_confidence") is None:
+        decision["trade_confidence"] = 0
+    if not isinstance(decision.get("trade_confidence_reasoning"), str) or not decision["trade_confidence_reasoning"]:
+        decision["trade_confidence_reasoning"] = "无入场计划，不存在交易信心"
 
 
 def _set_trace_node_answer(
@@ -429,6 +435,87 @@ def _normalize_next_bar_prediction(prediction: dict[str, Any]) -> None:
     # else: unparseable probabilities with unpredictable=False — leave for validator
 
 
+def _default_bar_probs(direction: str) -> dict[str, int]:
+    d = (direction or "neutral").strip().lower()
+    if d == "bullish":
+        return {"bullish": 45, "bearish": 30, "neutral": 25}
+    if d == "bearish":
+        return {"bearish": 45, "bullish": 30, "neutral": 25}
+    return {"neutral": 40, "bearish": 30, "bullish": 30}
+
+
+def _default_cycle_probs(cycle: str) -> dict[str, int]:
+    from pa_agent.ai.cycle_enums import CYCLE_ORDER
+
+    c = (cycle or "unknown").strip().lower()
+    base = {k: 0 for k in CYCLE_ORDER}
+    if c in base:
+        base[c] = 55
+        rest = 45 // max(len(CYCLE_ORDER) - 1, 1)
+        for k in CYCLE_ORDER:
+            if k != c:
+                base[k] = rest
+        # fix sum
+        diff = 100 - sum(base.values())
+        base[c] = max(0, base[c] + diff)
+    else:
+        base["broad_channel"] = 30
+        base["trading_range"] = 25
+        base["normal_channel"] = 20
+        base["trending_tr"] = 15
+        base["spike"] = 10
+    return base
+
+
+def ensure_stage2_predictions(
+    out: dict[str, Any],
+    *,
+    stage1_json: dict[str, Any] | None = None,
+) -> bool:
+    """Inject next_bar/next_cycle prediction stubs when the model omitted them."""
+    changed = False
+    diag = out.get("diagnosis_summary") if isinstance(out.get("diagnosis_summary"), dict) else {}
+    s1 = stage1_json or {}
+    direction = str(diag.get("direction") or s1.get("direction") or "neutral")
+    cycle = str(diag.get("cycle_position") or s1.get("cycle_position") or "unknown")
+
+    decision = out.get("decision") if isinstance(out.get("decision"), dict) else {}
+    reasoning = str(decision.get("reasoning") or "").strip()
+    synth_note = "（程序根据阶段二诊断摘要补全，原模型未输出预测字段）"
+
+    if not isinstance(out.get("next_bar_prediction"), dict):
+        probs = _default_bar_probs(direction)
+        dom = max(probs, key=probs.get)  # type: ignore[arg-type]
+        out["next_bar_prediction"] = {
+            "direction": dom,
+            "probabilities": probs,
+            "unpredictable": False,
+            "reasoning": (
+                (reasoning[:400] + "…") if len(reasoning) > 400 else reasoning
+            ) or f"基于当前方向 {direction} 的参考预测{synth_note}",
+            "features_used": ["stage1_diagnosis", "stage2_decision"],
+        }
+        changed = True
+
+    if not isinstance(out.get("next_cycle_prediction"), dict):
+        c_probs = _default_cycle_probs(cycle)
+        dom_c = max(c_probs, key=c_probs.get)  # type: ignore[arg-type]
+        out["next_cycle_prediction"] = {
+            "cycle": dom_c,
+            "direction": direction if direction in ("bullish", "bearish", "neutral") else "neutral",
+            "probabilities": c_probs,
+            "unpredictable": False,
+            "reasoning": (
+                f"当前周期 {cycle}，方向 {direction}。"
+                f"下一周期概率为程序参考分布{synth_note}"
+            ),
+            "features_used": ["stage1_diagnosis", "stage2_decision"],
+        }
+        changed = True
+
+    return changed
+
+
 def _max_bar_seq_from_frame(kline_frame: Any) -> int | None:
     bars = getattr(kline_frame, "bars", None) if kline_frame is not None else None
     if not bars:
@@ -485,6 +572,13 @@ def normalize_stage2(
         for field in _NO_ORDER_PRICE_FIELDS:
             decision[field] = None
         decision["estimated_win_rate"] = None
+        # trade_confidence / trade_confidence_reasoning are required (non-nullable)
+        # by schema; AI incorrectly sets them to null when order_type=不下单.
+        # Patch to valid defaults.
+        if decision.get("trade_confidence") is None:
+            decision["trade_confidence"] = 0
+        if not isinstance(decision.get("trade_confidence_reasoning"), str) or not decision["trade_confidence_reasoning"]:
+            decision["trade_confidence_reasoning"] = "无入场计划，不存在交易信心"
 
     bar_analysis = out.get("bar_analysis")
     decision = out.get("decision")
@@ -511,12 +605,12 @@ def normalize_stage2(
                 if entry_bar.get("follow_through") in (None, "", "pending"):
                     entry_bar["follow_through"] = "pending"
 
-    # Next bar prediction normalization (R8.6: only when field exists)
+    ensure_stage2_predictions(out, stage1_json=stage1_json)
+
     pred = out.get("next_bar_prediction")
     if isinstance(pred, dict):
         _normalize_next_bar_prediction(pred)
 
-    # Next cycle prediction normalization (only when field exists)
     pred_c = out.get("next_cycle_prediction")
     if isinstance(pred_c, dict):
         _normalize_next_cycle_prediction(pred_c)

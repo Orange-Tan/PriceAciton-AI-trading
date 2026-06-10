@@ -445,6 +445,16 @@ def build_stage2_gate_wait_response(stage1_json: dict[str, Any]) -> dict[str, An
             "unpredictable": True,
             "features_used": ["stage1_diagnosis"],
         },
+        "next_cycle_prediction": {
+            "cycle": None,
+            "direction": None,
+            "probabilities": None,
+            "reasoning": (
+                f"阶段一闸门未通过（{node_id}），未进入阶段二周期演变评估。"
+            ),
+            "unpredictable": True,
+            "features_used": ["stage1_diagnosis"],
+        },
     }
 
 
