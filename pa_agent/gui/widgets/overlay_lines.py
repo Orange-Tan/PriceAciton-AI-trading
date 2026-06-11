@@ -31,7 +31,8 @@ class OverlayLines:
 
     def __init__(self) -> None:
         self._items: list[pg.GraphicsItem] = []
-        self._labels: list[pg.TextItem] = []
+        # (TextItem, exact line price) — never re-parse Y from formatted label text.
+        self._labels: list[tuple[pg.TextItem, float]] = []
         self._plot: "PlotItem | None" = None
         self._range_conn = None
 
@@ -68,13 +69,13 @@ class OverlayLines:
             label = pg.TextItem(
                 text=f"{label_text}: {price:.5g}",
                 color=color,
-                anchor=(0.0, 1.0),
+                anchor=(0.0, 0.5),
             )
 
             plot.addItem(line)
             plot.addItem(label)
             self._items.extend([line, label])
-            self._labels.append(label)
+            self._labels.append((label, float(price)))
 
         # Position labels at the left edge of the current view
         self._update_label_positions()
@@ -108,11 +109,5 @@ class OverlayLines:
             x_min = self._plot.getViewBox().viewRange()[0][0]
         except Exception:  # noqa: BLE001
             return
-        for label in self._labels:
-            # Extract price from text (format: "Label: price")
-            text = label.textItem.toPlainText()
-            try:
-                price = float(text.split(":")[-1].strip())
-            except (ValueError, IndexError):
-                continue
+        for label, price in self._labels:
             label.setPos(x_min, price)

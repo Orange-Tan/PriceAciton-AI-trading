@@ -239,23 +239,21 @@ class ChartWidget(pg.PlotWidget):
             label = pg.TextItem(
                 text=f"{label_text}: {price:.5g}",
                 color=text_color,
-                anchor=(0.0, 1.0),
+                anchor=(0.0, 0.5),
             )
             plot.addItem(label)
             self._sr_items.append(label)
+            label._sr_price = float(price)  # type: ignore[attr-defined]
 
-        # Position labels at left edge
+        # Position labels at left edge (use exact price, not rounded display text)
         if self._sr_items:
             try:
                 x_min = self.getViewBox().viewRange()[0][0]
                 for item in self._sr_items:
                     if isinstance(item, pg.TextItem):
-                        text = item.textItem.toPlainText()
-                        try:
-                            p = float(text.split(":")[-1].strip())
-                            item.setPos(x_min, p)
-                        except (ValueError, IndexError):
-                            pass
+                        p = getattr(item, "_sr_price", None)
+                        if p is not None:
+                            item.setPos(x_min, float(p))
             except Exception:  # noqa: BLE001
                 pass
 
