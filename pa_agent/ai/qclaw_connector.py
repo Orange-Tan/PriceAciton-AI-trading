@@ -32,8 +32,37 @@ _PUBLIC_GATEWAY_MODEL = "openclaw"
 
 
 def is_openclaw_model(model: str | None) -> bool:
-    """True when the user selected QClaw via model name ``openclaw``."""
-    return (model or "").strip().lower() == _PUBLIC_GATEWAY_MODEL
+    """True when the user selected QClaw's OpenClaw Agent route.
+
+    Accepts the bare alias ``openclaw`` and gateway variants such as
+    ``openclaw/main`` (shown in QClaw's /models list).
+    """
+    m = (model or "").strip().lower()
+    if not m:
+        return False
+    return m == _PUBLIC_GATEWAY_MODEL or m.startswith(f"{_PUBLIC_GATEWAY_MODEL}/")
+
+
+def should_use_qclaw_provider(
+    model: str | None,
+    base_url: str | None = None,
+) -> bool:
+    """True when settings Save should auto-configure from local QClaw."""
+    if is_openclaw_model(model):
+        return True
+    if not detect_qclaw():
+        return False
+    info = _get_qclaw_gateway_info()
+    if info is None:
+        return False
+    _host, port, _token = info
+    base = (base_url or "").strip().lower()
+    if not base:
+        return False
+    return (
+        f":{port}" in base
+        and ("127.0.0.1" in base or "localhost" in base)
+    )
 
 
 def is_qclaw_agent_route(model: str | None) -> bool:
@@ -204,7 +233,11 @@ def _resolve_qclaw_endpoint(
     return public_base, public_model, mode
 
 
-def apply_qclaw_provider_to_settings(settings: Any) -> str | None:
+def apply_qclaw_provider_to_settings(
+    settings: Any,
+    *,
+    preferred_model: str | None = None,
+) -> str | None:
     """Populate *settings.provider* from local QClaw (settings Save with model=openclaw).
 
     Returns None on success, or a user-facing error string.
@@ -218,7 +251,12 @@ def apply_qclaw_provider_to_settings(settings: Any) -> str | None:
             "3. gateway.auth.token 已配置"
         )
 
-    resolved = qclaw_provider_settings(model=_PUBLIC_GATEWAY_MODEL, prefer_relay=False)
+    model_arg = (
+        (preferred_model or "").strip()
+        if is_openclaw_model(preferred_model)
+        else _PUBLIC_GATEWAY_MODEL
+    )
+    resolved = qclaw_provider_settings(model=model_arg, prefer_relay=False)
     if resolved is None:
         return "QClaw 配置读取失败。"
 

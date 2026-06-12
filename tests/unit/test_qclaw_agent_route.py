@@ -7,8 +7,33 @@ from pa_agent.ai.qclaw_connector import (
     _PUBLIC_GATEWAY_MODEL,
     _resolve_qclaw_endpoint,
     apply_qclaw_provider_to_settings,
+    is_openclaw_model,
     qclaw_provider_settings,
+    should_use_qclaw_provider,
 )
+
+
+def test_is_openclaw_model_accepts_gateway_aliases() -> None:
+    assert is_openclaw_model("openclaw")
+    assert is_openclaw_model("openclaw/main")
+    assert is_openclaw_model(" OpenClaw/Default ")
+    assert not is_openclaw_model("pool-deepseek-v4-pro")
+
+
+def test_should_use_qclaw_provider_when_base_url_matches_gateway() -> None:
+    with patch("pa_agent.ai.qclaw_connector.detect_qclaw", return_value=True):
+        with patch(
+            "pa_agent.ai.qclaw_connector._get_qclaw_gateway_info",
+            return_value=("127.0.0.1", 64257, "tok"),
+        ):
+            assert should_use_qclaw_provider(
+                "pool-deepseek-v4-pro",
+                "http://127.0.0.1:64257/v1",
+            )
+            assert not should_use_qclaw_provider(
+                "pool-deepseek-v4-pro",
+                "https://api.deepseek.com",
+            )
 
 
 def test_resolve_qclaw_endpoint_skips_relay_by_default() -> None:
@@ -41,6 +66,39 @@ def test_qclaw_provider_settings_uses_openclaw_agent() -> None:
     assert settings.base_url == "http://127.0.0.1:58579/v1"
     resolve.assert_called_once()
     assert resolve.call_args.kwargs.get("prefer_relay") is False
+
+
+def test_apply_qclaw_provider_keeps_openclaw_sub_agent_alias() -> None:
+    from pa_agent.config.settings import Settings
+
+    settings = Settings()
+    with patch(
+        "pa_agent.ai.qclaw_connector.qclaw_provider_settings",
+        return_value=type(
+            "P",
+            (),
+            {
+                "model": "openclaw/main",
+                "base_url": "http://127.0.0.1:58579/v1",
+                "api_key": "tok",
+                "thinking": True,
+                "reasoning_effort": "max",
+                "context_window": 2_000_000,
+            },
+        )(),
+    ):
+        with patch("pa_agent.ai.qclaw_connector.detect_qclaw", return_value=True):
+            with patch(
+                "pa_agent.ai.qclaw_connector.qclaw_health_check",
+                return_value=(True, "ok"),
+            ):
+                err = apply_qclaw_provider_to_settings(
+                    settings,
+                    preferred_model="openclaw/main",
+                )
+
+    assert err is None
+    assert settings.provider.model == "openclaw/main"
 
 
 def test_apply_qclaw_provider_forces_agent_model() -> None:

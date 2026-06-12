@@ -25,7 +25,11 @@ from PyQt6.QtGui import QDesktopServices, QFont
 
 from pa_agent.config.settings import Settings, save_settings
 from pa_agent.config.paths import SETTINGS_JSON_PATH
-from pa_agent.ai.qclaw_connector import detect_qclaw, is_openclaw_model
+from pa_agent.ai.qclaw_connector import (
+    detect_qclaw,
+    is_openclaw_model,
+    should_use_qclaw_provider,
+)
 
 _API_KEY_HELP_URL = "https://my.feishu.cn/wiki/CUV1wUKWxiQGhekQdRvcZQQ2ncf"
 _AGENT_TUTORIAL_URL = (
@@ -292,42 +296,54 @@ class SettingsDialog(QDialog):
     @staticmethod
     def _validate_provider_fields(model: str, base_url: str) -> str | None:
         """Return user-facing error text, or None if fields look consistent."""
+        if is_openclaw_model(model) or should_use_qclaw_provider(model, base_url):
+            return None
         if model.startswith(("http://", "https://")) and not base_url.startswith(
             ("http://", "https://")
         ):
             return (
                 "「模型」与「Base URL」似乎填反了：\n"
                 "• 模型应填模型名，如 deepseek-v4-pro 或 claude-sonnet-4-6\n"
+                "• 使用 QClaw 时模型填 openclaw（或 openclaw/main）\n"
                 "• Base URL 应填接口地址，如 https://api.deepseek.com"
             )
         if base_url.startswith(("http://", "https://")):
             return None
         if not base_url:
+            if detect_qclaw():
+                return (
+                    "请填写 Base URL，或使用 QClaw：\n"
+                    "• 模型填 openclaw（保存时会自动写入本地网关地址与 Token）"
+                )
             return "请填写 Base URL（API 接口地址）。"
         return (
             f"Base URL 不是有效网址（当前：{base_url}）。\n"
             "DeepSeek 示例：https://api.deepseek.com\n"
-            "PackyAPI 示例：https://www.packyapi.com/v1"
+            "PackyAPI 示例：https://www.packyapi.com/v1\n"
+            "QClaw：模型填 openclaw 后点保存（自动配置本地网关）"
         )
 
-    def _apply_qclaw_provider(self) -> str | None:
+    def _apply_qclaw_provider(self, *, preferred_model: str = "") -> str | None:
         """Detect QClaw and write provider fields. Returns error text, or None."""
         from pa_agent.ai.qclaw_connector import apply_qclaw_provider_to_settings
 
-        return apply_qclaw_provider_to_settings(self._settings)
+        return apply_qclaw_provider_to_settings(
+            self._settings,
+            preferred_model=preferred_model or None,
+        )
 
     def _on_save(self) -> None:
         p = self._settings.provider
         g = self._settings.general
 
         model = self._model_edit.text().strip()
-        if is_openclaw_model(model):
-            qclaw_err = self._apply_qclaw_provider()
+        base_url = self._base_url_edit.text().strip()
+        if should_use_qclaw_provider(model, base_url):
+            qclaw_err = self._apply_qclaw_provider(preferred_model=model)
             if qclaw_err:
                 QMessageBox.warning(self, "QClaw 配置异常", qclaw_err)
                 return
         else:
-            base_url = self._base_url_edit.text().strip()
             field_err = self._validate_provider_fields(model, base_url)
             if field_err:
                 QMessageBox.warning(self, "AI 提供商配置有误", field_err)
