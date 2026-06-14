@@ -180,7 +180,11 @@ class _AnalysisWorker(QThread):
             )
             decision = record.stage2_decision or {}
         except Exception as exc:  # noqa: BLE001
-            logger.error("Analysis worker error: %s", exc, exc_info=True)
+            from pa_agent.ai.deepseek_client import CancelledError as _CancelledError
+            if isinstance(exc, _CancelledError):
+                logger.warning("Analysis worker cancelled: %s", exc)
+            else:
+                logger.error("Analysis worker error: %s", exc, exc_info=True)
             decision = {}
             record = None  # type: ignore[assignment]
             self.error_occurred.emit(str(exc))
@@ -224,6 +228,8 @@ class MainWindow(QMainWindow):
         self._keep_analysis_submit_closed_ts: int | None = None  # closed bar ts at analysis submit time
         self._free_chat_session: Any = None
         self._last_stage1_diagnosis: dict | None = None
+        self._last_analysis_record: Any = None
+        self._last_analysis_frame: Any = None  # KlineFrame of the most recent analysis
         self._demo_mode = False
         self._demo_mode_kind: str | None = None  # manual | auto
         self._demo_record_path: str | None = None
@@ -610,11 +616,16 @@ class MainWindow(QMainWindow):
         self._symbol_switch_timer = QTimer(self)
         self._symbol_switch_timer.setSingleShot(True)
         self._symbol_switch_timer.setInterval(500)
-        self._symbol_switch_timer.timeout.connect(self._flush_deferred_symbol_switch)
+        # Timer no longer auto-triggers symbol switch on text change.
+        # It is kept for _update_symbol_data_alert debouncing only.
+        self._symbol_switch_timer.timeout.connect(self._update_symbol_data_alert)
         self._symbol_combo.currentTextChanged.connect(self._on_symbol_combo_text_changed)
         sym_line = self._symbol_combo.lineEdit()
         if sym_line is not None:
-            sym_line.editingFinished.connect(self._on_symbol_combo_editing_finished)
+            # editingFinished only updates the alert label; no longer triggers a
+            # data subscription change.  The user must click 「获取数据」 or
+            # 「提交分析」 to apply the new symbol/timeframe.
+            sym_line.editingFinished.connect(self._update_symbol_data_alert)
         self._tf_combo.currentTextChanged.connect(
             lambda _: self._on_symbol_or_tf_changed(
                 self._symbol_combo.currentText(), self._tf_combo.currentText()
@@ -655,7 +666,7 @@ class MainWindow(QMainWindow):
         if settings is not None:
             interval_ms = getattr(settings.general, "refresh_interval_ms", 1000)
             n_bars = self._analysis_bar_count()
-        if self._current_data_source_kind() == "akshare" and interval_ms < 2500:
+        if self._current_data_source_kind() in ("akshare", "eastmoney") and interval_ms < 2500:
             interval_ms = 2500
 
         self._refresh_cancel_token = CancelToken()
@@ -948,7 +959,7 @@ class MainWindow(QMainWindow):
             line.setPlaceholderText(
                 "A股 6 位 / 港股 1810 / 名称 小米集团；交易所可自动；或 XAUUSD+OANDA"
             )
-        elif kind == "akshare":
+        elif kind in ("akshare", "eastmoney"):
             line.setPlaceholderText("A股 6 位代码，如 600519；指数 000300 或 sh000300")
         else:
             line.setPlaceholderText("输入 MT5 品种名，如 XAUUSDm…")
@@ -1154,22 +1165,18 @@ class MainWindow(QMainWindow):
     # ── Slots ─────────────────────────────────────────────────────────────────
 
     def _on_symbol_combo_text_changed(self, _text: str = "") -> None:
-        """Debounce symbol edits so partial codes (00→600519) do not spam subscribe."""
+        """Update the alert label while the user is typing; no longer triggers subscription."""
         self._update_symbol_data_alert()
-        sym = self._symbol_combo.currentText()
-        tf = self._tf_combo.currentText()
-        self._pending_symbol_switch = (sym, tf)
+        # Debounce the alert refresh for slow typists
         if self._symbol_switch_timer is not None:
             self._symbol_switch_timer.start()
 
     def _on_symbol_combo_editing_finished(self) -> None:
-        """Apply symbol change immediately when the user leaves the field."""
+        """Update the alert label when the user leaves the symbol field.
+        No longer triggers a subscription change — use 「获取数据」 or 「提交分析」."""
         if self._symbol_switch_timer is not None:
             self._symbol_switch_timer.stop()
-        sym = self._symbol_combo.currentText()
-        tf = self._tf_combo.currentText()
-        self._pending_symbol_switch = None
-        self._on_symbol_or_tf_changed(sym, tf)
+        self._update_symbol_data_alert()
 
     def _flush_deferred_symbol_switch(self) -> None:
         pending = self._pending_symbol_switch
@@ -1307,6 +1314,19 @@ class MainWindow(QMainWindow):
         if data_source is None or not getattr(data_source, "_connected", False):
             self._status_bar.showMessage("数据源未连接，请先切换数据来源")
             return
+
+        # Apply any pending symbol/timeframe change before fetching.
+        # If the user typed a new symbol/tf and clicked 「获取数据」, honour it.
+        new_symbol = self._symbol_combo.currentText().strip()
+        new_tf = self._tf_combo.currentText().strip()
+        cur_symbol = str(getattr(data_source, "_symbol", "") or "").strip()
+        cur_tf = str(getattr(data_source, "_timeframe", "") or "").strip()
+        if new_symbol and (new_symbol != cur_symbol or new_tf != cur_tf):
+            # _on_symbol_or_tf_changed handles everything including starting the
+            # refresh loop at the end, so we can return right away.
+            self._on_symbol_or_tf_changed(new_symbol, new_tf)
+            return
+
         # For TradingView, probe connectivity on-demand (not at startup)
         if self._current_data_source_kind() == "tradingview":
             from pa_agent.data.tradingview_connectivity import check_tradingview_connectivity
@@ -2571,6 +2591,20 @@ class MainWindow(QMainWindow):
         # Clear auto-incremental flag — user initiated analysis manually
         self._auto_incremental_pending = False
 
+        # If the user typed a new symbol/tf but hasn't fetched data yet,
+        # trigger the switch now before submitting analysis.
+        data_source = getattr(self._ctx, "data_source", None)
+        if data_source is not None:
+            new_symbol = self._symbol_combo.currentText().strip()
+            new_tf = self._tf_combo.currentText().strip()
+            cur_symbol = str(getattr(data_source, "_symbol", "") or "").strip()
+            cur_tf = str(getattr(data_source, "_timeframe", "") or "").strip()
+            if new_symbol and (new_symbol != cur_symbol or new_tf != cur_tf):
+                self._on_symbol_or_tf_changed(new_symbol, new_tf)
+                # Switch resets everything; user needs to click 提交分析 again
+                # once data arrives.
+                return
+
         # Cancel any existing worker before starting a new one
         self._cancel_analysis_worker()
 
@@ -2705,6 +2739,9 @@ class MainWindow(QMainWindow):
             self._status_bar.showMessage("数据不足，请等待图表刷新后再提交")
             return
 
+        # Store frame so _on_analysis_finished can access it for trade logging
+        self._last_analysis_frame = frame
+
         orchestrator = self._build_orchestrator()
         if orchestrator is None:
             self._status_bar.showMessage("编排器未就绪，请检查设置")
@@ -2777,8 +2814,8 @@ class MainWindow(QMainWindow):
             self._on_analysis_finished(decision)
             self._on_worker_done()
 
-        self._worker.finished.connect(_on_worker_finished)
         self._worker.record_ready.connect(self._on_record_ready)
+        self._worker.finished.connect(_on_worker_finished)
         self._worker.error_occurred.connect(self._on_analysis_error)
         self._worker.status_update.connect(self._on_status_update)
         self._worker.retry_occurred.connect(self._on_retry_occurred)
@@ -2962,6 +2999,16 @@ class MainWindow(QMainWindow):
         pf.set_stage2_files(stage2_prompt_txt_files(strategy_files))
         pf.set_extras(stage1_builtin=True, stage2_builtin=True)
 
+    def _current_stage1_diagnosis(self) -> dict:
+        """Stage-1 diagnosis for the analysis that just finished."""
+        record = getattr(self, "_last_analysis_record", None)
+        if record is not None:
+            s1 = getattr(record, "stage1_diagnosis", None)
+            if isinstance(s1, dict):
+                return s1
+        s1 = getattr(self, "_last_stage1_diagnosis", None)
+        return s1 if isinstance(s1, dict) else {}
+
     def _on_analysis_finished(self, decision: dict) -> None:
         """Called on the main thread when the AI worker completes.
 
@@ -2974,9 +3021,13 @@ class MainWindow(QMainWindow):
         if decision:
             from pa_agent.gui.stage2_payload import prepare_stage2_for_ui
 
+            stage1_diag = self._current_stage1_diagnosis()
             inner = prepare_stage2_for_ui(
                 decision,
-                stage1_json=self._last_stage1_diagnosis,
+                stage1_json=stage1_diag or None,
+                skip_next_bar=not bool(
+                    getattr(getattr(self._ctx.settings, "general", None), "enable_next_bar_prediction", False)
+                ) if self._ctx.settings is not None else False,
             )
             self._chart_widget.set_decision(inner)
             if getattr(self, "_demo_mode", False):
@@ -2987,15 +3038,34 @@ class MainWindow(QMainWindow):
             self._decision_panel.set_decision(
                 inner,
                 diagnosis_summary=decision.get("diagnosis_summary"),
-                stage1_diagnosis=self._last_stage1_diagnosis,
+                stage1_diagnosis=stage1_diag or None,
                 decision_stance=stance,
+                confidence_threshold=self._confidence_threshold(),
             )
             self._future_trend_panel.set_prediction(inner)
-            self._bind_decision_tree(decision, self._last_stage1_diagnosis)
+            self._bind_decision_tree(decision, stage1_diag or None)
             order = inner.get("order_type", "—")
             self._decision_badge.setText(f"决策: {order}")
             if self._maybe_alert_order_opportunity(inner):
-                pass
+                # ── Trade record: log to CSV + chart image ────────────────────
+                try:
+                    from pa_agent.records.trade_logger import save_trade_record
+                    settings = getattr(self._ctx, "settings", None)
+                    model_name = ""
+                    if settings is not None:
+                        model_name = getattr(settings.provider, "model", "") or ""
+                    save_trade_record(
+                        decision_inner=inner,
+                        stage2_full=decision,
+                        stage1_diagnosis=self._current_stage1_diagnosis() or None,
+                        frame=getattr(self, "_last_analysis_frame", None),
+                        meta_symbol=getattr(self._ctx.settings.general, "last_symbol", "") if settings else "",
+                        meta_timeframe=getattr(self._ctx.settings.general, "last_timeframe", "") if settings else "",
+                        decision_stance=getattr(getattr(settings, "general", None), "decision_stance", "") if settings else "",
+                        model_name=model_name,
+                    )
+                except Exception as _exc:  # noqa: BLE001
+                    logger.warning("Trade record logging failed: %s", _exc)
             elif getattr(self, "_demo_mode", False):
                 self._present_decision_flow_playback(force_play=True)
 
@@ -3012,16 +3082,14 @@ class MainWindow(QMainWindow):
             if strip is not None:
                 diag = decision.get("diagnosis_summary") or {}
 
+                from pa_agent.ai.cycle_enums import (
+                    format_cycle_with_direction,
+                )
+
                 # Current market cycle from diagnosis_summary
-                _cycle_map = {
-                    "spike": "尖峰", "micro_channel": "微型通道",
-                    "tight_channel": "紧凑通道", "normal_channel": "常规通道",
-                    "broad_channel": "宽通道", "trending_tr": "趋势型区间",
-                    "trading_range": "交易区间", "extreme_tr": "极端区间",
-                    "unknown": "未知",
-                }
                 cur_cycle = diag.get("cycle_position") or ""
-                cur_cycle_zh = _cycle_map.get(cur_cycle, cur_cycle or "—")
+                # Include direction prefix for cycle labels (e.g. 下跌宽通道 / 震荡交易区间).
+                cur_cycle_zh = format_cycle_with_direction(cur_cycle, diag.get("direction"))
 
                 # Next cycle: pick the highest-probability from next_cycle_prediction
                 next_cycle_zh = "—"
@@ -3029,7 +3097,11 @@ class MainWindow(QMainWindow):
                 probs = ncp.get("probabilities") or {}
                 if probs:
                     best_key = max(probs, key=lambda k: probs[k])
-                    next_cycle_zh = _cycle_map.get(best_key, best_key)
+                    next_cycle_zh = format_cycle_with_direction(best_key, ncp.get("direction"))
+                else:
+                    cycle_key = ncp.get("cycle")
+                    if cycle_key:
+                        next_cycle_zh = format_cycle_with_direction(cycle_key, ncp.get("direction"))
 
                 # Current trend from diagnosis_summary.direction
                 _trend_map = {
@@ -3047,29 +3119,17 @@ class MainWindow(QMainWindow):
                     "支撑区": "—",
                     "阻力区": "—",
                 }
-                # Read support/resistance directly from stage1_diagnosis structured fields
-                s1 = self._last_stage1_diagnosis or {}
-                support_levels = s1.get("support_levels") or []
-                resistance_levels = s1.get("resistance_levels") or []
+                from pa_agent.gui.support_resistance import (
+                    chart_levels_from_stage1_diagnosis,
+                    nearest_support_resistance_labels,
+                )
 
-                # Show the farthest (last) support and resistance level
-                if support_levels:
-                    metrics["支撑区"] = str(support_levels[-1])
-                if resistance_levels:
-                    metrics["阻力区"] = str(resistance_levels[-1])
+                sup_label, res_label = nearest_support_resistance_labels(stage1_diag)
+                metrics["支撑区"] = sup_label
+                metrics["阻力区"] = res_label
 
-                # Draw chart lines: only the farthest support and resistance
                 try:
-                    from pa_agent.gui.support_resistance import StructureLevel
-                    chart_levels: list[StructureLevel] = []
-                    if support_levels:
-                        p = _parse_sr_price(support_levels[-1])
-                        if p is not None:
-                            chart_levels.append(StructureLevel("support", p, p, "支撑"))
-                    if resistance_levels:
-                        p = _parse_sr_price(resistance_levels[-1])
-                        if p is not None:
-                            chart_levels.append(StructureLevel("resistance", p, p, "阻力"))
+                    chart_levels = chart_levels_from_stage1_diagnosis(stage1_diag)
                     self._chart_widget.set_support_resistance(chart_levels)
                 except Exception:  # noqa: BLE001
                     pass
@@ -3098,7 +3158,14 @@ class MainWindow(QMainWindow):
 
         parts: list[str] = []
         stage = exc_info.get("stage", "")
-        if stage == "stage2":
+        exc_type = exc_info.get("type", "")
+        category = exc_info.get("category", "")
+        if exc_type == "provider_error" or category == "e":
+            parts.append(
+                "【说明】API 提供商返回积分/额度不足（402），程序不会自动重试。"
+                "请充值 OpenClaw 积分或更换 API 后重新「提交分析」。\n"
+            )
+        elif stage == "stage2":
             parts.append(
                 "【说明】阶段二校验失败时程序会自动重试（格式类错误，见 ValidationSettings）；"
                 "请根据下方信息修改提示词/模型输出或手动重新「提交分析」。\n"
@@ -3284,6 +3351,7 @@ class MainWindow(QMainWindow):
         """Push the full AnalysisRecord to the conversation and debug tabs."""
         if not self._ui_is_alive():
             return
+        self._last_analysis_record = record
         import json as _json
 
         exc_info = getattr(record, "exception", None)
@@ -3350,9 +3418,15 @@ class MainWindow(QMainWindow):
                 err_type = exc_info.get("type", "error")
                 category = exc_info.get("category", "")
                 msg = exc_info.get("message", "")
-                detail = f"{category}: {msg}" if category else (msg or err_type)
+                if err_type == "provider_error" or category == "e":
+                    headline = "API 积分不足"
+                    detail = msg or "OpenClaw 积分不足，请充值或更换 API"
+                    self._status_bar.showMessage(detail)
+                else:
+                    detail = f"{category}: {msg}" if category else (msg or err_type)
+                    headline = f"分析未通过（{err_type}）"
                 self._prompt_debug_report_for_bug_fix(
-                    f"分析未通过（{err_type}）",
+                    headline,
                     detail,
                     exc_info=exc_info,
                     record=record,
@@ -3376,7 +3450,7 @@ class MainWindow(QMainWindow):
             )
 
         s1_diag = getattr(record, "stage1_diagnosis", None) or {}
-        # Cache for _on_analysis_finished (which fires after this)
+        self._last_analysis_record = record
         self._last_stage1_diagnosis = s1_diag if isinstance(s1_diag, dict) else None
         s2_full = getattr(record, "stage2_decision", None)
         if s2_full:
@@ -3386,6 +3460,9 @@ class MainWindow(QMainWindow):
             inner = prepare_stage2_for_ui(
                 s2_full if isinstance(s2_full, dict) else {},
                 stage1_json=s1_diag if isinstance(s1_diag, dict) else None,
+                skip_next_bar=not bool(
+                    getattr(getattr(self._ctx.settings, "general", None), "enable_next_bar_prediction", False)
+                ) if self._ctx.settings is not None else False,
             )
             meta = getattr(record, "meta", None)
             stance = getattr(meta, "decision_stance", None) if meta is not None else None
@@ -3394,6 +3471,7 @@ class MainWindow(QMainWindow):
                 diagnosis_summary=s2_full.get("diagnosis_summary"),
                 stage1_diagnosis=s1_diag if isinstance(s1_diag, dict) else None,
                 decision_stance=stance,
+                confidence_threshold=self._confidence_threshold(),
             )
             self._future_trend_panel.set_prediction(inner)
             self._bind_decision_tree(
@@ -3562,11 +3640,20 @@ class MainWindow(QMainWindow):
             return True
         return bool(getattr(settings.general, "alert_on_order_opportunity", True))
 
-    @staticmethod
-    def _has_order_opportunity(decision_inner: dict) -> bool:
+    def _confidence_threshold(self) -> int:
+        """Return the decision confidence threshold from settings (default 0 = no gate)."""
+        settings = self._ctx.settings
+        if settings is None:
+            return 0
+        return int(getattr(settings.general, "decision_confidence_threshold", 0))
+
+    def _has_order_opportunity(self, decision_inner: dict) -> bool:
         from pa_agent.gui.order_opportunity import has_order_opportunity
 
-        return has_order_opportunity(decision_inner)
+        return has_order_opportunity(
+            decision_inner,
+            confidence_threshold=self._confidence_threshold(),
+        )
 
     def _maybe_alert_order_opportunity(self, decision_inner: dict) -> bool:
         """Beep, popup, and focus decision tab when stage-2 proposes an order."""

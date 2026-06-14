@@ -198,6 +198,12 @@ def _channel_files(direction: str) -> list[str]:
     elif direction == "bearish":
         files.extend(_BEARISH_CHANNEL_FILES)
     else:
-        logger.warning("Channel-like state with neutral direction — no directional strategy files loaded")
+        # Neutral in a channel: skip directional channel files, but preload
+        # range strategy for boundary planned-limit setups (§9.0 path).
+        logger.warning(
+            "Channel-like state with neutral direction — "
+            "no directional channel files; loading range strategy for boundary setups"
+        )
+        files.extend(_RANGE_FILES)
     files.append(_CHANNEL_WIDTH_FILE)
     return files

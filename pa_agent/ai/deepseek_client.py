@@ -11,6 +11,15 @@ if TYPE_CHECKING:
 
 from pa_agent.config.settings import AIProviderSettings
 from pa_agent.util.mask_secret import mask_secret
+from pa_agent.ai.mimo_compat import (
+    ReasoningCache,
+    is_mimo_provider,
+    mimo_max_output_tokens,
+    patch_messages_for_mimo,
+    resolve_mimo_thinking_extra_body,
+    response_message_dict,
+    store_reasoning_from_response,
+)
 
 try:
     from openai import OpenAI as _OpenAI  # type: ignore[import]
@@ -21,6 +30,8 @@ else:
     _OPENAI_IMPORT_ERROR = None
 
 logger = logging.getLogger(__name__)
+
+_MIMO_REASONING_CACHE = ReasoningCache()
 
 
 @dataclass
@@ -68,9 +79,11 @@ def _is_deepseek_native(base_url: str) -> bool:
 
 
 def _is_deepseek_model(model: str) -> bool:
-    """True for DeepSeek model ids; excludes QClaw ``openclaw`` Agent alias."""
+    """True for DeepSeek model ids; excludes QClaw ``openclaw`` and WorkBuddy ``openclaw_wb`` Agent aliases."""
     m = (model or "").lower()
-    if m == "openclaw":
+    if m in ("openclaw", "openclaw_wb"):
+        return False
+    if m.startswith("openclaw/") or m.startswith("openclaw_wb/"):
         return False
     return "deepseek" in m
 
@@ -83,10 +96,35 @@ def _is_qclaw_openclaw_agent(settings: AIProviderSettings) -> bool:
 
 
 def _openclaw_agent_request_extra(settings: AIProviderSettings) -> dict[str, Any]:
-    """Ask QClaw Agent to answer in-chat only (no exec/write tool loop)."""
-    if not _is_qclaw_openclaw_agent(settings):
-        return {}
-    return {"tool_choice": "none"}
+    """Ask QClaw/WorkBuddy Agent to answer in-chat only (no exec/write tool loop)."""
+    if _is_qclaw_openclaw_agent(settings) or _is_workbuddy_agent(settings):
+        return {"tool_choice": "none"}
+    return {}
+
+
+def _is_workbuddy_agent(settings: AIProviderSettings) -> bool:
+    """True when requests go through WorkBuddy's model route."""
+    from pa_agent.ai.workbuddy_connector import is_workbuddy_route
+
+    return is_workbuddy_route(settings)
+
+
+def _effective_api_model(settings: AIProviderSettings) -> str:
+    """Model id sent to the upstream API (resolve WorkBuddy aliases)."""
+    if _is_workbuddy_agent(settings):
+        from pa_agent.ai.workbuddy_connector import resolve_workbuddy_api_model
+
+        return resolve_workbuddy_api_model(settings.model)
+    return settings.model
+
+
+def _workbuddy_agent_request_extra(settings: AIProviderSettings) -> dict[str, Any]:
+    """Add WorkBuddy-specific request parameters.
+
+    Returns empty dict if not using WorkBuddy agent route.
+    WorkBuddy uses the same tool_choice: none strategy as QClaw.
+    """
+    return _openclaw_agent_request_extra(settings)
 
 
 def _is_kkai_openai_proxy(base_url: str) -> bool:
@@ -154,6 +192,8 @@ def _effort_budget_tokens(effort: str | None, *, max_output: int) -> int:
 
 def _thinking_enabled(extra_body: dict[str, Any], effort: str | None) -> bool:
     if extra_body:
+        if extra_body.get("chat_template_kwargs", {}).get("enable_thinking"):
+            return True
         return extra_body.get("thinking", {}).get("type") in ("enabled", "adaptive")
     return effort is not None and effort != "none"
 
@@ -161,6 +201,10 @@ def _thinking_enabled(extra_body: dict[str, Any], effort: str | None) -> bool:
 def _packy_anthropic_messages_api(settings: AIProviderSettings) -> bool:
     """Packy claude-officially uses Anthropic Messages API (no role=system in messages)."""
     return _is_packyapi(settings.base_url) and "claude" in (settings.model or "").lower()
+
+
+def _is_mimo(settings: AIProviderSettings) -> bool:
+    return is_mimo_provider(settings.base_url, settings.model)
 
 
 def _prepare_chat_messages(
@@ -183,6 +227,21 @@ def _prepare_chat_messages(
     return api_messages, system_param
 
 
+def _prepare_api_messages(
+    settings: AIProviderSettings,
+    messages: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Normalize messages for the active provider before API submission."""
+    api_messages, system_param = _prepare_chat_messages(settings, messages)
+    if _is_mimo(settings):
+        api_messages = patch_messages_for_mimo(
+            api_messages,
+            model=settings.model,
+            reasoning_cache=_MIMO_REASONING_CACHE,
+        )
+    return api_messages, system_param
+
+
 def _provider_max_output_tokens(settings: AIProviderSettings) -> int:
     """Per-gateway completion cap (max_tokens); avoids 400 from provider limits."""
     model = (settings.model or "").lower()
@@ -190,6 +249,8 @@ def _provider_max_output_tokens(settings: AIProviderSettings) -> int:
         return _PACKY_CLAUDE_MAX_OUTPUT_TOKENS
     if _is_deepseek_native(settings.base_url):
         return _DEEPSEEK_MAX_OUTPUT_TOKENS
+    if _is_mimo(settings):
+        return mimo_max_output_tokens(settings.model)
     return _PRACTICAL_UNLIMITED_MAX_TOKENS
 
 
@@ -248,6 +309,12 @@ def _resolve_thinking_params(
             }
         # MiniMax does not use reasoning_effort
         return extra_body, None
+
+    if _is_mimo(settings):
+        # MiMo: DeepSeek-style reasoning via chat_template_kwargs.enable_thinking
+        return resolve_mimo_thinking_extra_body(thinking=_thinking), (
+            _effort or "medium" if _thinking else None
+        )
 
     if not _thinking:
         return {}, None
@@ -327,7 +394,7 @@ class DeepSeekClient:
             self._settings, thinking=thinking, reasoning_effort=reasoning_effort
         )
         extra_body = {**extra_body, **_openclaw_agent_request_extra(self._settings)}
-        api_messages, system_param = _prepare_chat_messages(self._settings, messages)
+        api_messages, system_param = _prepare_api_messages(self._settings, messages)
         if system_param:
             extra_body = {**extra_body, "system": system_param}
         _thinking_on = _thinking_enabled(extra_body, _effort)
@@ -358,7 +425,7 @@ class DeepSeekClient:
 
         t0 = time.monotonic()
         create_kwargs: dict[str, Any] = {
-            "model": self._settings.model,
+            "model": _effective_api_model(self._settings),
             "messages": api_messages,
             "timeout": timeout_s,
             "max_tokens": _max_tokens,
@@ -398,6 +465,13 @@ class DeepSeekClient:
                     if t:
                         parts.append(t)
                 reasoning_content = "".join(parts)
+
+        if _is_mimo(self._settings):
+            store_reasoning_from_response(
+                api_messages,
+                response_message_dict(content, reasoning_content, msg),
+                _MIMO_REASONING_CACHE,
+            )
 
         # Build usage
         u = response.usage
@@ -490,7 +564,7 @@ class DeepSeekClient:
             self._settings, thinking=thinking, reasoning_effort=reasoning_effort
         )
         extra_body = {**extra_body, **_openclaw_agent_request_extra(self._settings)}
-        api_messages, system_param = _prepare_chat_messages(self._settings, messages)
+        api_messages, system_param = _prepare_api_messages(self._settings, messages)
         if system_param:
             extra_body = {**extra_body, "system": system_param}
         _thinking_on = _thinking_enabled(extra_body, _effort)
@@ -532,7 +606,7 @@ class DeepSeekClient:
             # Some providers may not support it; if the create() call itself
             # rejects stream_options we retry without it.
             stream_kwargs: dict[str, Any] = {
-                "model": self._settings.model,
+                "model": _effective_api_model(self._settings),
                 "messages": api_messages,
                 "timeout": timeout_s,
                 "max_tokens": _max_tokens,
@@ -665,6 +739,17 @@ class DeepSeekClient:
                 "check model ID, token group, and reasoning_effort=%s.",
                 len(reasoning_content),
                 _effort,
+            )
+
+        if _is_mimo(self._settings):
+            store_reasoning_from_response(
+                api_messages,
+                {
+                    "role": "assistant",
+                    "content": content,
+                    "reasoning_content": reasoning_content,
+                },
+                _MIMO_REASONING_CACHE,
             )
 
         return AIReply(

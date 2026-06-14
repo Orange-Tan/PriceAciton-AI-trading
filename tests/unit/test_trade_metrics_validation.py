@@ -342,6 +342,53 @@ def test_stage2_validator_accepts_planned_limit_without_signal_bar() -> None:
     assert isinstance(result, Ok), f"Expected Ok, got {result}"
 
 
+def test_stage2_validator_accepts_planned_limit_with_weak_signal_bar() -> None:
+    obj = _stage2_trade_obj(
+        order_type="限价单",
+        order_direction="做空",
+        entry_price=101.0,
+        take_profit_price=98.0,
+        stop_loss_price=103.0,
+        trade_confidence=55,
+        estimated_win_rate=52,
+        entry_basis_bar=None,
+        entry_basis_extreme=None,
+        entry_rule="区间上边界反弹挂空",
+    )
+    obj["bar_analysis"]["always_in"] = "short"
+    obj["bar_analysis"]["signal_bar"] = {
+        "bar": "K2",
+        "quality": "weak",
+        "pattern": "tr_boundary",
+        "reason": "边界弱反弹棒，计划型限价接受次优信号",
+    }
+    obj["bar_analysis"]["entry_bar"] = {
+        "bar": None,
+        "strength": "not_triggered",
+        "follow_through": "pending",
+        "still_valid": True,
+        "freshness": "pending",
+    }
+    obj["decision_trace"] = [
+        {
+            "node_id": "9.0",
+            "question": "信号棒是否已经收盘且质量足够？",
+            "answer": "是",
+            "reason": "计划型限价：宽通道上边界 weak 信号可接受，等待反弹到位",
+            "skipped": False,
+            "bar_range": "K3-K1",
+        },
+        *obj["decision_trace"],
+    ]
+    result = validator.validate(
+        "stage2",
+        json.dumps(obj),
+        decision_stance="balanced",
+        kline_frame=_frame(),
+    )
+    assert isinstance(result, Ok), f"Expected Ok, got {result}"
+
+
 def test_stage2_validator_rejects_strong_signal_without_signal_bar() -> None:
     obj = _stage2_trade_obj()
     obj["bar_analysis"]["signal_bar"]["bar"] = None

@@ -5,6 +5,7 @@ Categories:
   b — missing required field
   c — illegal value (enum violation, type mismatch, 不下单 price non-null, etc.)
   d — plain text (no JSON structure at all)
+  e — provider error (quota/billing; non-retryable)
 """
 from __future__ import annotations
 
@@ -30,6 +31,12 @@ _EXPLICIT_S9_TRADABLE_TOKENS = (
     "计划型",
     "接受",
     "限价",
+    "结构位",
+    "边界",
+    "宽通道",
+    "回撤",
+    "反弹",
+    "tr_boundary",
 )
 
 # ── Result types ──────────────────────────────────────────────────────────────
@@ -347,6 +354,7 @@ class JsonValidator:
         stage1_json: dict[str, Any] | None = None,
         incremental_new_bar_count: int = 0,
         incremental_previous_stage1: dict[str, Any] | None = None,
+        skip_next_bar: bool = False,
     ) -> dict[str, Any]:
         """Apply the same post-parse normalization as :meth:`validate`."""
         norm_mode = getattr(self._validation, "normalization_mode", "strict")
@@ -364,12 +372,15 @@ class JsonValidator:
             )
         from pa_agent.ai.stage2_normalizer import normalize_stage2
 
+        # Always satisfy STAGE2_SCHEMA.required during validation; orchestrator
+        # strips next_bar_prediction before save when the feature is disabled.
         return normalize_stage2(
             obj,
             normalization_mode=norm_mode,
             kline_frame=kline_frame,
             decision_stance=decision_stance,
             stage1_json=stage1_json,
+            skip_next_bar=False,
         )
 
     def validate(
@@ -382,6 +393,7 @@ class JsonValidator:
         stage1_json: dict[str, Any] | None = None,
         incremental_new_bar_count: int = 0,
         incremental_previous_stage1: dict[str, Any] | None = None,
+        skip_next_bar: bool = False,
     ) -> Result:
         """Validate *raw_text* against the schema for *stage*.
 
@@ -389,9 +401,22 @@ class JsonValidator:
         """
         schema = self._schemas[stage]
 
-        # ── Category d: plain text (no JSON at all) ───────────────────────────
+        # ── Category d / e: plain text (no JSON at all) ───────────────────────
         stripped = _strip_fences(raw_text)
         if not stripped.startswith("{") and not stripped.startswith("["):
+            from pa_agent.ai.provider_errors import (
+                PROVIDER_QUOTA_USER_MESSAGE,
+                is_provider_quota_exhausted,
+            )
+
+            if is_provider_quota_exhausted(stripped):
+                return ValidationError(
+                    category="e",
+                    stage=stage,
+                    raw_text=raw_text,
+                    message=PROVIDER_QUOTA_USER_MESSAGE,
+                    invalid_fields=["provider:quota_exhausted"],
+                )
             return ValidationError(
                 category="d",
                 stage=stage,
@@ -450,6 +475,7 @@ class JsonValidator:
             stage1_json=stage1_json,
             incremental_new_bar_count=incremental_new_bar_count,
             incremental_previous_stage1=incremental_previous_stage1,
+            skip_next_bar=False if stage == "stage2" else skip_next_bar,
         )
         norm_mode = getattr(self._validation, "normalization_mode", "strict")
 
@@ -892,14 +918,36 @@ class JsonValidator:
             or freshness == "pending"
             or entry_bar.get("bar") is None
         )
+        order_type = decision.get("order_type")
         planned_without_signal = (
             pending_entry
-            and decision.get("order_type") in ("限价单", "突破单")
+            and order_type in ("限价单", "突破单")
             and quality == "invalid"
             and pattern in ("", "none", "not_triggered", "pending")
             and signal_bar.get("bar") is None
         )
-        if sig_seq is None and not planned_without_signal:
+        planned_limit_weak = (
+            pending_entry
+            and order_type == "限价单"
+            and quality == "weak"
+            and (
+                signal_bar.get("bar") is None
+                or pattern in (
+                    "",
+                    "none",
+                    "tr_boundary",
+                    "breakout_pullback",
+                    "h1",
+                    "h2",
+                    "l1",
+                    "l2",
+                    "wedge",
+                    "mtr",
+                )
+            )
+        )
+        planned_entry = planned_without_signal or planned_limit_weak
+        if sig_seq is None and not planned_entry:
             errors.append("bar_analysis.signal_bar.bar must be a K{n} reference")
         if entry_seq is None and not pending_entry:
             errors.append("bar_analysis.entry_bar.bar must be a K{n} reference")
@@ -918,7 +966,7 @@ class JsonValidator:
         if (
             not lenient
             and quality in ("weak", "invalid")
-            and not planned_without_signal
+            and not planned_entry
         ):
             reasons = _all_stage2_reasons(obj)
             if not any(token in reasons for token in _EXPLICIT_S9_TRADABLE_TOKENS):

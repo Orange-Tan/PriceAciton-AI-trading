@@ -170,6 +170,70 @@ def _normalize_bar_by_bar_context_effects(out: dict[str, Any]) -> None:
             )
 
 
+def _infer_signal_bar_from_summary(summary: object) -> dict[str, Any] | None:
+    """Build signal_bar from the newest bar_by_bar_summary item with role=signal."""
+    if not isinstance(summary, list):
+        return None
+    for item in summary:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("role", "")).strip().lower() != "signal":
+            continue
+        bar_type = str(item.get("bar_type", "")).strip().lower()
+        if bar_type in ("trend_bull", "trend_bear"):
+            quality = "strong"
+        elif bar_type in ("outside_bull", "outside_bear"):
+            quality = "medium"
+        elif bar_type in ("doji", "inside", "flat", "other"):
+            quality = "weak"
+        else:
+            quality = "invalid"
+        reason = str(item.get("reason", "") or "").strip()
+        if not reason:
+            reason = "从 bar_by_bar_summary（role=signal）推断"
+        return {
+            "bar": item.get("bar"),
+            "quality": quality,
+            "reason": reason,
+        }
+    return None
+
+
+def _normalize_signal_bar_object(out: dict[str, Any]) -> bool:
+    """``signal_bar`` must be an object; models often emit null when signal is in summary."""
+    bar_analysis = out.get("bar_analysis")
+    if not isinstance(bar_analysis, dict):
+        return False
+
+    signal_bar = bar_analysis.get("signal_bar")
+    if isinstance(signal_bar, dict):
+        if not str(signal_bar.get("reason", "") or "").strip():
+            signal_bar["reason"] = "见 bar_by_bar_summary"
+        signal_bar.setdefault("bar", None)
+        signal_bar.setdefault("quality", "invalid")
+        return False
+
+    inferred = _infer_signal_bar_from_summary(out.get("bar_by_bar_summary"))
+    if inferred is None:
+        last_bar = str(bar_analysis.get("last_closed_bar", "K1") or "K1").strip()
+        bar_type = str(bar_analysis.get("bar_type", "") or "").strip().lower()
+        quality = "weak" if bar_type in ("doji", "inside", "flat", "other") else "invalid"
+        inferred = {
+            "bar": None,
+            "quality": quality,
+            "reason": (
+                f"模型 signal_bar=null；最近收盘棒 {last_bar}（{bar_type or 'unknown'}），"
+                "无独立已确认信号棒，见 bar_by_bar_summary"
+            ),
+        }
+    bar_analysis["signal_bar"] = inferred
+    logger.debug(
+        "Normalized bar_analysis.signal_bar null -> %r",
+        inferred.get("bar"),
+    )
+    return True
+
+
 def _normalize_signal_bar_quality(out: dict[str, Any]) -> None:
     """Normalize signal_bar.quality to valid enum values."""
     bar_analysis = out.get("bar_analysis")
@@ -279,6 +343,8 @@ _INCREMENTAL_TRACKED_FIELDS = (
     "gate_result",
     "entry_setup",
     "spike_stage",
+    "support_levels",
+    "resistance_levels",
 )
 
 
@@ -407,6 +473,7 @@ def normalize_stage1(
     normalize_stage1_traces(out, normalization_mode=normalization_mode)
     _normalize_bar_by_bar_roles(out)
     _normalize_bar_by_bar_context_effects(out)
+    _normalize_signal_bar_object(out)
     _normalize_signal_bar_quality(out)
     _normalize_transition_risk(out)
     _pad_bar_by_bar_summary_to_minimum(out, kline_frame=kline_frame)
@@ -415,5 +482,13 @@ def normalize_stage1(
         new_bar_count=incremental_new_bar_count,
         previous_stage1=incremental_previous_stage1,
     )
+
+    if kline_frame is not None:
+        try:
+            from pa_agent.ai.structure_levels import refresh_stage1_support_resistance
+
+            refresh_stage1_support_resistance(out, kline_frame)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("refresh_stage1_support_resistance failed: %s", exc)
 
     return out

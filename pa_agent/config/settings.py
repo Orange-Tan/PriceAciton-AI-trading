@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 DecisionStance = Literal["conservative", "balanced", "aggressive", "extreme_aggressive"]
-DataSourceKind = Literal["mt5", "tradingview", "akshare"]
+DataSourceKind = Literal["mt5", "tradingview", "akshare", "eastmoney"]
 NormalizationMode = Literal["strict", "lenient"]
 
 
@@ -63,6 +63,8 @@ class GeneralSettings(BaseModel):
     refresh_interval_ms: int = 1000
     context_warning_threshold_pct: float = 80.0
     last_data_source: DataSourceKind = "mt5"
+    #: A-share K-line adjust for East Money / Baostock (qfq=前复权)
+    kline_adjust: Literal["qfq", "hfq", "none"] = "qfq"
     #: TradingView 交易所；空字符串 =（自动）依次探测预设列表
     last_tradingview_exchange: str = ""
     last_symbol: str = "XAUUSDm"
@@ -86,6 +88,10 @@ class GeneralSettings(BaseModel):
     keep_analysis: bool = False
     #: 重试后取消持续跟踪分析：校验失败触发重试后自动关闭 keep_analysis
     cancel_keep_analysis_on_retry: bool = False
+    #: 交易决策置信度门槛：仅当 trade_confidence >= 此值时，才视为有下单机会（弹窗警报并提供决策详情）
+    decision_confidence_threshold: int = Field(default=60, ge=0, le=100)
+    #: 开启下根K线预期功能；关闭时不向模型请求该预测，节省 token
+    enable_next_bar_prediction: bool = False
 
     @field_validator("last_data_source", mode="before")
     @classmethod
@@ -94,6 +100,8 @@ class GeneralSettings(BaseModel):
             return "mt5"
         if v in ("adata", "a_share"):
             return "akshare"
+        if v == "eastmoney":
+            return "eastmoney"
         return v
 
     @field_validator("decision_flow_default_zoom_pct", mode="before")

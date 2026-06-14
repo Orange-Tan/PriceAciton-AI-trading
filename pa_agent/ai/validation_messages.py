@@ -22,6 +22,7 @@ _PREFIX_RULES: tuple[tuple[str, str], ...] = (
     ("terminal", "【终局】"),
     ("placing an order", "【下单规则】"),
     ("incremental", "【增量分析】"),
+    ("provider:quota_exhausted", "【API 额度】"),
 )
 
 

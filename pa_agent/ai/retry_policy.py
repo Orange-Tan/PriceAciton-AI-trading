@@ -34,6 +34,8 @@ IMMUTABLE_DIAG_SUMMARY: tuple[str, ...] = ("cycle_position",)
 
 def max_retries_for_category(category: str, settings: Any) -> int:
     """Return allowed retry count for a validation category."""
+    if category == "e":
+        return 0
     if not getattr(settings, "retry_enabled", True):
         return 0
     base = int(getattr(settings, "retry_max", 3) or 0)
@@ -53,6 +55,8 @@ def should_retry(
     settings: Any,
 ) -> bool:
     """Whether another API call is warranted."""
+    if category == "e":
+        return False
     if attempt >= max_retries_for_category(category, settings):
         return False
     if category in ("a", "b", "d"):

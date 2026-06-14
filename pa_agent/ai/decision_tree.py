@@ -550,6 +550,15 @@ def validate_stage2_trace_consistency(stage2: dict[str, Any]) -> list[str]:
         errors.append(
             f"order_type {order_type} cannot pair with terminal.outcome {outcome!r}"
         )
+    if (
+        order_type in ("限价单", "突破单", "市价单")
+        and outcome == "trade"
+        and str(terminal.get("node_id", "") or "").strip().startswith("14")
+    ):
+        errors.append(
+            "terminal.node_id must not be §14 for a trade; §14 is only a prohibition scan, "
+            "use the final §11 order node or 10.3"
+        )
 
     for i, item in enumerate(trace):
         if isinstance(item, dict):

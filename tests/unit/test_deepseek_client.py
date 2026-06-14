@@ -363,3 +363,55 @@ def test_stream_chat_passes_tool_choice_none_for_openclaw() -> None:
 
     extra = mock_openai.last_kwargs.get("extra_body") or {}
     assert extra.get("tool_choice") == "none"
+
+
+def test_mimo_chat_sends_enable_thinking_extra_body() -> None:
+    settings = _make_settings()
+    settings.base_url = "https://api.xiaomimimo.com/v1"
+    settings.model = "mimo-v2-flash"
+    settings.thinking = True
+    client = DeepSeekClient(settings)
+
+    mock_resp = _make_mock_response()
+    mock_openai = MagicMock()
+    mock_openai.return_value.chat.completions.create.return_value = mock_resp
+
+    with patch("pa_agent.ai.deepseek_client._OpenAI", mock_openai):
+        client.chat([{"role": "user", "content": "hi"}])
+
+    kwargs = mock_openai.return_value.chat.completions.create.call_args.kwargs
+    assert kwargs["extra_body"]["chat_template_kwargs"] == {"enable_thinking": True}
+    assert kwargs["max_tokens"] == 65_536
+
+
+def test_mimo_chat_patches_tool_call_messages_before_send() -> None:
+    settings = _make_settings()
+    settings.base_url = "https://api.xiaomimimo.com/v1"
+    settings.model = "mimo-v2.5-pro"
+    settings.thinking = False
+    client = DeepSeekClient(settings)
+
+    mock_resp = _make_mock_response()
+    mock_openai = MagicMock()
+    mock_openai.return_value.chat.completions.create.return_value = mock_resp
+
+    messages = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "x", "arguments": "{}"},
+                }
+            ],
+        },
+    ]
+
+    with patch("pa_agent.ai.deepseek_client._OpenAI", mock_openai):
+        client.chat(messages)
+
+    sent_messages = mock_openai.return_value.chat.completions.create.call_args.kwargs["messages"]
+    assert sent_messages[1]["reasoning_content"] == ""

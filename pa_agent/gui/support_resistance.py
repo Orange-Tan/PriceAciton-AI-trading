@@ -108,6 +108,97 @@ def format_level(level: StructureLevel) -> str:
     return _fmt(level.price)
 
 
+def levels_from_stage1_diagnosis(
+    stage1: dict[str, Any] | None,
+    *,
+    max_per_kind: int = 3,
+) -> list[StructureLevel]:
+    """Build chart levels from stage1 ``support_levels`` / ``resistance_levels``.
+
+    Arrays are ordered **near → far** (per prompt contract). Index 0 is the
+    nearest level to current price; we preserve that order in labels.
+    """
+    if not isinstance(stage1, dict):
+        return []
+    out: list[StructureLevel] = []
+    supports = stage1.get("support_levels") or []
+    resistances = stage1.get("resistance_levels") or []
+    if not isinstance(supports, list):
+        supports = []
+    if not isinstance(resistances, list):
+        resistances = []
+
+    for i, raw in enumerate(supports[:max_per_kind]):
+        parsed = _parse_prices(str(raw), "support")
+        if not parsed:
+            continue
+        base = parsed[0]
+        label = "支撑" if i == 0 else f"支撑{i + 1}"
+        out.append(StructureLevel(base.kind, base.low, base.high, label))
+
+    for i, raw in enumerate(resistances[:max_per_kind]):
+        parsed = _parse_prices(str(raw), "resistance")
+        if not parsed:
+            continue
+        base = parsed[0]
+        label = "阻力" if i == 0 else f"阻力{i + 1}"
+        out.append(StructureLevel(base.kind, base.low, base.high, label))
+    return out
+
+
+def chart_levels_from_stage1_diagnosis(
+    stage1: dict[str, Any] | None,
+) -> list[StructureLevel]:
+    """Return at most one support + one resistance line for the chart (outermost)."""
+    if not isinstance(stage1, dict):
+        return []
+    out: list[StructureLevel] = []
+    supports = stage1.get("support_levels") or []
+    resistances = stage1.get("resistance_levels") or []
+    if not isinstance(supports, list):
+        supports = []
+    if not isinstance(resistances, list):
+        resistances = []
+
+    if supports:
+        parsed = _parse_prices(str(supports[-1]), "support")
+        if parsed:
+            base = parsed[0]
+            out.append(StructureLevel(base.kind, base.low, base.high, "支撑"))
+    if resistances:
+        parsed = _parse_prices(str(resistances[-1]), "resistance")
+        if parsed:
+            base = parsed[0]
+            out.append(StructureLevel(base.kind, base.low, base.high, "阻力"))
+    return out
+
+
+def nearest_support_resistance_labels(
+    stage1: dict[str, Any] | None,
+) -> tuple[str, str]:
+    """Return (nearest_support_text, nearest_resistance_text) for summary UI."""
+    if not isinstance(stage1, dict):
+        return "—", "—"
+    supports = stage1.get("support_levels") or []
+    resistances = stage1.get("resistance_levels") or []
+    if not isinstance(supports, list):
+        supports = []
+    if not isinstance(resistances, list):
+        resistances = []
+
+    sup_text = "—"
+    if supports:
+        parsed = _parse_prices(str(supports[0]), "support")
+        sup_text = format_level(parsed[0]) if parsed else str(supports[0])
+
+    res_text = "—"
+    if resistances:
+        parsed = _parse_prices(str(resistances[0]), "resistance")
+        res_text = format_level(parsed[0]) if parsed else str(resistances[0])
+
+    return sup_text, res_text
+
+
 def _walk(node: Any, found: list[StructureLevel], *, key_hint: str = "") -> None:
     # Skip fields that contain historical descriptions rather than current S/R levels
     if key_hint in _SKIP_KEYS:

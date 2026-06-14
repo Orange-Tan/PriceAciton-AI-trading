@@ -30,6 +30,11 @@ from pa_agent.ai.qclaw_connector import (
     is_openclaw_model,
     should_use_qclaw_provider,
 )
+from pa_agent.ai.workbuddy_connector import (
+    detect_workbuddy,
+    is_openclaw_wb_model,
+    should_use_workbuddy_provider,
+)
 
 _API_KEY_HELP_URL = "https://my.feishu.cn/wiki/CUV1wUKWxiQGhekQdRvcZQQ2ncf"
 _AGENT_TUTORIAL_URL = (
@@ -87,11 +92,6 @@ class SettingsDialog(QDialog):
         self._reasoning_effort_combo.addItems(["low", "medium", "high", "max"])
         provider_form.addRow("Reasoning Effort:", self._reasoning_effort_combo)
 
-        self._context_window_spin = QSpinBox()
-        self._context_window_spin.setRange(1_000, 2_000_000)
-        self._context_window_spin.setSingleStep(1_000)
-        provider_form.addRow("Context Window:", self._context_window_spin)
-
         self._api_key_help_btn = QPushButton("小白点这里！获取程序无限Token，无限分析")
         self._api_key_help_btn.clicked.connect(self._show_unlimited_token_info)
         provider_form.addRow("", self._api_key_help_btn)
@@ -105,6 +105,38 @@ class SettingsDialog(QDialog):
 
         general_group = QGroupBox("通用设置")
         general_form = QFormLayout(general_group)
+
+        self._decision_conf_threshold_spin = QSpinBox()
+        self._decision_conf_threshold_spin.setRange(0, 100)
+        self._decision_conf_threshold_spin.setToolTip(
+            "当阶段二 trade_confidence 低于此阈值时，即使 AI 输出了限价单/突破单/市价单，"
+            "也不视为下单机会（不弹窗警报、决策页按「不下单」处理）。"
+            "设为 0 可关闭此门槛。"
+        )
+        general_form.addRow("下单置信度门槛:", self._decision_conf_threshold_spin)
+
+        self._decision_stance_combo = QComboBox()
+        self._decision_stance_combo.addItem("保守", "conservative")
+        self._decision_stance_combo.addItem("均衡（默认，比保守更愿意下单）", "balanced")
+        self._decision_stance_combo.addItem("激进（比均衡更愿意下单）", "aggressive")
+        self._decision_stance_combo.addItem(
+            "极度激进（强制选方向与进场方式）",
+            "extreme_aggressive",
+        )
+        self._decision_stance_combo.setToolTip(
+            "仅影响阶段二交易决策倾向；保守与改版前一致。"
+            "均衡、激进逐级提高下单意愿；极度激进在未触犯 §14 硬性禁止时"
+            "必须给出具体做多/做空及限价/突破/市价方案。"
+        )
+        general_form.addRow("交易倾向:", self._decision_stance_combo)
+
+        self._enable_next_bar_check = QCheckBox("开启后在「未来走势预期」中显示下根K线预期")
+        self._enable_next_bar_check.setToolTip(
+            "开启后，AI 会在每次分析中额外预测下一根K线方向，结果显示在「未来走势预期」中。\n"
+            "关闭后 prompt 中移除该任务，不消耗额外 token。"
+        )
+        self._enable_next_bar_check.stateChanged.connect(self._on_enable_next_bar_changed)
+        general_form.addRow("下根K线预期:", self._enable_next_bar_check)
 
         self._analysis_bar_count_spin = QSpinBox()
         self._analysis_bar_count_spin.setRange(2, 5_000)
@@ -168,21 +200,6 @@ class SettingsDialog(QDialog):
             "提交分析时走增量分析；设为 0 可关闭增量分析。"
         )
         general_form.addRow("增量分析最大新增K线:", self._incremental_max_new_bars_spin)
-
-        self._decision_stance_combo = QComboBox()
-        self._decision_stance_combo.addItem("保守", "conservative")
-        self._decision_stance_combo.addItem("均衡（默认，比保守更愿意下单）", "balanced")
-        self._decision_stance_combo.addItem("激进（比均衡更愿意下单）", "aggressive")
-        self._decision_stance_combo.addItem(
-            "极度激进（强制选方向与进场方式）",
-            "extreme_aggressive",
-        )
-        self._decision_stance_combo.setToolTip(
-            "仅影响阶段二交易决策倾向；保守与改版前一致。"
-            "均衡、激进逐级提高下单意愿；极度激进在未触犯 §14 硬性禁止时"
-            "必须给出具体做多/做空及限价/突破/市价方案。"
-        )
-        general_form.addRow("交易倾向:", self._decision_stance_combo)
 
         self._last_symbol_edit = QLineEdit()
         general_form.addRow("上次品种:", self._last_symbol_edit)
@@ -254,7 +271,6 @@ class SettingsDialog(QDialog):
         if idx >= 0:
             self._reasoning_effort_combo.setCurrentIndex(idx)
 
-        self._context_window_spin.setValue(p.context_window)
         self._analysis_bar_count_spin.setValue(g.analysis_bar_count)
         self._refresh_interval_spin.setValue(g.refresh_interval_ms)
         self._auto_resume_chart_check.setChecked(
@@ -276,6 +292,14 @@ class SettingsDialog(QDialog):
         stance_idx = self._decision_stance_combo.findData(stance)
         if stance_idx >= 0:
             self._decision_stance_combo.setCurrentIndex(stance_idx)
+        self._enable_next_bar_check.blockSignals(True)
+        self._enable_next_bar_check.setChecked(
+            bool(getattr(g, "enable_next_bar_prediction", False))
+        )
+        self._enable_next_bar_check.blockSignals(False)
+        self._decision_conf_threshold_spin.setValue(
+            int(getattr(g, "decision_confidence_threshold", 60))
+        )
         self._last_symbol_edit.setText(g.last_symbol)
         self._last_timeframe_edit.setText(g.last_timeframe)
         self._alert_on_order_check.blockSignals(True)
@@ -298,6 +322,8 @@ class SettingsDialog(QDialog):
         """Return user-facing error text, or None if fields look consistent."""
         if is_openclaw_model(model) or should_use_qclaw_provider(model, base_url):
             return None
+        if is_openclaw_wb_model(model) or should_use_workbuddy_provider(model, base_url):
+            return None
         if model.startswith(("http://", "https://")) and not base_url.startswith(
             ("http://", "https://")
         ):
@@ -305,6 +331,7 @@ class SettingsDialog(QDialog):
                 "「模型」与「Base URL」似乎填反了：\n"
                 "• 模型应填模型名，如 deepseek-v4-pro 或 claude-sonnet-4-6\n"
                 "• 使用 QClaw 时模型填 openclaw（或 openclaw/main）\n"
+                "• 使用 WorkBuddy 时模型填 openclaw_wb\n"
                 "• Base URL 应填接口地址，如 https://api.deepseek.com"
             )
         if base_url.startswith(("http://", "https://")):
@@ -312,15 +339,23 @@ class SettingsDialog(QDialog):
         if not base_url:
             if detect_qclaw():
                 return (
-                    "请填写 Base URL，或使用 QClaw：\n"
-                    "• 模型填 openclaw（保存时会自动写入本地网关地址与 Token）"
+                    "请填写 Base URL，或使用 QClaw/WorkBuddy：\n"
+                    "• 模型填 openclaw → 使用 QClaw（保存时自动配置本地网关）\n"
+                    "• 模型填 openclaw_wb → 使用 WorkBuddy（保存时自动配置）"
+                )
+            if detect_workbuddy():
+                return (
+                    "请填写 Base URL，或使用 WorkBuddy：\n"
+                    "• 模型填 openclaw_wb（保存时自动配置 WorkBuddy 端点）"
                 )
             return "请填写 Base URL（API 接口地址）。"
         return (
             f"Base URL 不是有效网址（当前：{base_url}）。\n"
             "DeepSeek 示例：https://api.deepseek.com\n"
             "PackyAPI 示例：https://www.packyapi.com/v1\n"
-            "QClaw：模型填 openclaw 后点保存（自动配置本地网关）"
+            "MiMo 示例：https://api.xiaomimimo.com/v1\n"
+            "QClaw：模型填 openclaw 后点保存（自动配置本地网关）\n"
+            "WorkBuddy：模型填 openclaw_wb 后点保存（自动配置 WorkBuddy）"
         )
 
     def _apply_qclaw_provider(self, *, preferred_model: str = "") -> str | None:
@@ -332,16 +367,32 @@ class SettingsDialog(QDialog):
             preferred_model=preferred_model or None,
         )
 
+    def _apply_workbuddy_provider(self, *, preferred_model: str = "") -> str | None:
+        """Detect WorkBuddy and write provider fields. Returns error text, or None."""
+        from pa_agent.ai.workbuddy_connector import apply_workbuddy_provider_to_settings
+
+        return apply_workbuddy_provider_to_settings(
+            self._settings,
+            preferred_model=preferred_model or None,
+        )
+
     def _on_save(self) -> None:
         p = self._settings.provider
         g = self._settings.general
 
         model = self._model_edit.text().strip()
         base_url = self._base_url_edit.text().strip()
+
+        # QClaw (openclaw) before WorkBuddy — stale copilot base_url must not steal routing.
         if should_use_qclaw_provider(model, base_url):
             qclaw_err = self._apply_qclaw_provider(preferred_model=model)
             if qclaw_err:
                 QMessageBox.warning(self, "QClaw 配置异常", qclaw_err)
+                return
+        elif should_use_workbuddy_provider(model, base_url):
+            wb_err = self._apply_workbuddy_provider(preferred_model=model)
+            if wb_err:
+                QMessageBox.warning(self, "WorkBuddy 配置异常", wb_err)
                 return
         else:
             field_err = self._validate_provider_fields(model, base_url)
@@ -354,7 +405,7 @@ class SettingsDialog(QDialog):
             p.api_key = self._api_key_edit.text()
             p.thinking = self._thinking_check.isChecked()
             p.reasoning_effort = self._reasoning_effort_combo.currentText()  # type: ignore[assignment]
-            p.context_window = self._context_window_spin.value()
+            # context_window is no longer editable in UI; use code-level default
 
         g.analysis_bar_count = self._analysis_bar_count_spin.value()
         g.refresh_interval_ms = self._refresh_interval_spin.value()
@@ -366,12 +417,14 @@ class SettingsDialog(QDialog):
         g.chart_seq_label_font_pt = self._chart_seq_font_spin.value()
         g.incremental_max_new_bars = self._incremental_max_new_bars_spin.value()
         g.decision_stance = self._decision_stance_combo.currentData()  # type: ignore[assignment]
+        g.enable_next_bar_prediction = self._enable_next_bar_check.isChecked()
         g.last_symbol = self._last_symbol_edit.text().strip()
         g.last_timeframe = self._last_timeframe_edit.text().strip()
         g.alert_on_order_opportunity = self._alert_on_order_check.isChecked()
         g.decision_flow_auto_play = self._flow_auto_play_check.isChecked()
         g.decision_flow_play_seconds = self._flow_play_seconds_spin.value()
         g.decision_flow_default_zoom_pct = self._flow_default_zoom_spin.value()
+        g.decision_confidence_threshold = self._decision_conf_threshold_spin.value()
 
         save_settings(self._settings, SETTINGS_JSON_PATH)
         self.accept()
@@ -391,6 +444,17 @@ class SettingsDialog(QDialog):
         from pa_agent.gui.order_opportunity import play_order_alert_sound
 
         play_order_alert_sound()
+
+    def _on_enable_next_bar_changed(self, state: int) -> None:
+        """勾选开启下根K线预期时弹出提示。"""
+        from PyQt6.QtCore import Qt as _Qt
+        if state == _Qt.CheckState.Checked.value:
+            QMessageBox.information(
+                self,
+                "下根K线预期",
+                "下根K线预期难度大，结果仅供参考。\n\n"
+                "AI 预测单根K线方向的准确率有限，请勿将其作为交易依据。",
+            )
 
     def _on_play_decision_flow_now(self) -> None:
         # Allow previewing playback without pressing “保存”:

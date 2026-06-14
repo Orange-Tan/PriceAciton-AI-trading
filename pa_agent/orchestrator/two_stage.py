@@ -23,6 +23,7 @@ from __future__ import annotations
 # Legacy flag kept for tests/docs; retry is governed by ValidationSettings.
 STAGE2_VALIDATION_AUTO_RETRY = False
 
+import copy
 import dataclasses
 import logging
 from datetime import datetime
@@ -93,6 +94,13 @@ def _json_truncation_hint(content: str, err: ValidationError) -> str | None:
 
 def _enrich_stage2_validation_message(err: ValidationError, reply: Any) -> str:
     """Add actionable context for empty content or truncated JSON."""
+    from pa_agent.ai.provider_errors import (
+        PROVIDER_QUOTA_USER_MESSAGE,
+        is_provider_quota_exhausted,
+    )
+
+    if err.category == "e" or is_provider_quota_exhausted(err.raw_text):
+        return err.message or PROVIDER_QUOTA_USER_MESSAGE
     from pa_agent.ai.validation_messages import format_validation_errors
 
     detail = format_validation_errors(
@@ -130,6 +138,13 @@ def _enrich_stage2_validation_message(err: ValidationError, reply: Any) -> str:
 
 def _enrich_stage1_validation_message(err: ValidationError, reply: Any) -> str:
     """Add actionable context for empty content or truncated JSON."""
+    from pa_agent.ai.provider_errors import (
+        PROVIDER_QUOTA_USER_MESSAGE,
+        is_provider_quota_exhausted,
+    )
+
+    if err.category == "e" or is_provider_quota_exhausted(err.raw_text):
+        return err.message or PROVIDER_QUOTA_USER_MESSAGE
     from pa_agent.ai.validation_messages import format_validation_errors
 
     detail = format_validation_errors(
@@ -399,6 +414,7 @@ class TwoStageOrchestrator:
                 previous_record,
                 incremental_new_bar_count,
                 analysis_mode=analysis_mode,
+                provider_settings=getattr(self._settings, "provider", None),
             )
         else:
             messages_s1 = self._assembler.build_stage1(frame, analysis_mode=analysis_mode)
@@ -534,6 +550,7 @@ class TwoStageOrchestrator:
                 "incremental_previous_stage1": prev_s1,
             },
             call_api=_call_s1_retry,
+            provider_settings=getattr(self._settings, "provider", None),
         )
         messages_s1 = vr_s1.messages
         reply_s1 = vr_s1.reply
@@ -555,7 +572,7 @@ class TwoStageOrchestrator:
                     "stage1_response": reply_s1.raw,
                     "usage_total": _accumulate_usage_calls(record.usage_total, s1_usage_calls),
                     "exception": {
-                        "type": "validation_error",
+                        "type": "provider_error" if err.category == "e" else "validation_error",
                         "stage": "stage1",
                         "category": err.category,
                         "message": err_message,
@@ -665,6 +682,9 @@ class TwoStageOrchestrator:
             return record
 
         # ── Step 14: Build Stage 2 messages ───────────────────────────────────
+        _enable_next_bar = bool(
+            getattr(getattr(self._settings, "general", None), "enable_next_bar_prediction", False)
+        )
         messages_s2 = self._assembler.build_stage2_continuation(
             frame=frame,
             stage1_messages=messages_s1,
@@ -674,6 +694,7 @@ class TwoStageOrchestrator:
             experience_entries=experience_entries,
             decision_stance=record.meta.decision_stance,
             previous_record=previous_record,
+            enable_next_bar_prediction=_enable_next_bar,
         )
 
         # ── Step 15: Call AI for Stage 2 ──────────────────────────────────────
@@ -820,8 +841,10 @@ class TwoStageOrchestrator:
                 "kline_frame": frame,
                 "decision_stance": record.meta.decision_stance,
                 "stage1_json": stage1_json,
+                "skip_next_bar": not _enable_next_bar,
             },
             call_api=_call_s2_retry,
+            provider_settings=getattr(self._settings, "provider", None),
         )
         messages_s2 = vr_s2.messages
         reply_s2 = vr_s2.reply
@@ -854,7 +877,7 @@ class TwoStageOrchestrator:
                         s2_usage_calls,
                     ),
                     "exception": {
-                        "type": "validation_error",
+                        "type": "provider_error" if err.category == "e" else "validation_error",
                         "stage": "stage2",
                         "category": err.category,
                         "message": err_message,
@@ -872,6 +895,9 @@ class TwoStageOrchestrator:
         # Validation passed
         assert isinstance(result_s2, Ok)
         stage2_json: dict = result_s2.obj
+        if not _enable_next_bar and isinstance(stage2_json, dict):
+            stage2_json = copy.deepcopy(stage2_json)
+            stage2_json.pop("next_bar_prediction", None)
 
         # ── Step 19: Stage 2 done ─────────────────────────────────────────────
         on_event(OrchestratorEvent.Stage2Done)
@@ -879,7 +905,9 @@ class TwoStageOrchestrator:
         # ── Step 19.5: Log next_bar_prediction (R9.3, NFR2.1) ───────────────────
         _pred = stage2_json if isinstance(stage2_json, dict) else {}
         _nb_pred = _pred.get("next_bar_prediction")
-        if isinstance(_nb_pred, dict):
+        if not _enable_next_bar:
+            logger.info("next_bar_prediction omitted (feature disabled)")
+        elif isinstance(_nb_pred, dict):
             if _nb_pred.get("unpredictable"):
                 logger.info("next_bar_prediction direction=null probs=null/null/null unpredictable=true")
             else:
@@ -891,7 +919,7 @@ class TwoStageOrchestrator:
                     _probs.get("bearish"),
                     _probs.get("neutral"),
                 )
-        else:
+        elif _enable_next_bar:
             logger.info("next_bar_prediction absent from stage2 response")
 
         # ── Step 20: Build final record ───────────────────────────────────────
@@ -951,6 +979,7 @@ class TwoStageOrchestrator:
             self._settings.provider.model if self._settings is not None else ""
         )
         tried_qclaw = False
+        tried_workbuddy = False
         while True:
             try:
                 return self._client.stream_chat(
@@ -964,16 +993,28 @@ class TwoStageOrchestrator:
             except Exception as exc:
                 if not self._is_network_error(exc):
                     raise
-                if tried_qclaw or not self._try_qclaw_fallback(
+                # Try WorkBuddy fallback first (if model is openclaw_wb),
+                # then QClaw fallback (if model is openclaw)
+                if not tried_workbuddy and self._try_workbuddy_fallback(
                     original_model=original_model
                 ):
+                    tried_workbuddy = True
+                    logger.info(
+                        "%s network error (%s); applied WorkBuddy provider — retrying",
+                        stage_label,
+                        exc,
+                    )
+                elif not tried_qclaw and self._try_qclaw_fallback(
+                    original_model=original_model
+                ):
+                    tried_qclaw = True
+                    logger.info(
+                        "%s network error (%s); applied QClaw provider — retrying",
+                        stage_label,
+                        exc,
+                    )
+                else:
                     raise
-                tried_qclaw = True
-                logger.info(
-                    "%s network error (%s); applied QClaw provider — retrying",
-                    stage_label,
-                    exc,
-                )
 
     def _try_qclaw_fallback(self, *, original_model: str = "") -> bool:
         """Apply local QClaw provider (like settings Save with model=openclaw)."""
@@ -1005,6 +1046,41 @@ class TwoStageOrchestrator:
 
         logger.info(
             "QClaw auto-fallback: model=%s base_url=%s",
+            self._settings.provider.model,
+            self._settings.provider.base_url,
+        )
+        return True
+
+    def _try_workbuddy_fallback(self, *, original_model: str = "") -> bool:
+        """Apply WorkBuddy provider (like settings Save with model=openclaw_wb)."""
+        from pa_agent.ai.workbuddy_connector import (
+            apply_workbuddy_provider_to_settings,
+            is_openclaw_wb_model,
+        )
+        from pa_agent.config.paths import SETTINGS_JSON_PATH
+
+        if not is_openclaw_wb_model(original_model):
+            return False
+        if self._settings is None:
+            return False
+
+        from pa_agent.config.settings import save_settings
+        from pa_agent.util.logging import update_api_key
+
+        err = apply_workbuddy_provider_to_settings(self._settings)
+        if err:
+            logger.warning("WorkBuddy auto-fallback unavailable: %s", err)
+            return False
+
+        self._client.update_provider(self._settings.provider)
+        try:
+            save_settings(self._settings, SETTINGS_JSON_PATH)
+            update_api_key(self._settings.provider.api_key)
+        except Exception as save_exc:  # noqa: BLE001
+            logger.warning("WorkBuddy fallback applied but settings save failed: %s", save_exc)
+
+        logger.info(
+            "WorkBuddy auto-fallback: model=%s base_url=%s",
             self._settings.provider.model,
             self._settings.provider.base_url,
         )

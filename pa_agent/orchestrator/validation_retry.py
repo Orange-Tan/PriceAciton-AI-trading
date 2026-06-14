@@ -32,6 +32,7 @@ def validate_with_retry(
     validation_settings: Any,
     validate_kwargs: dict[str, Any],
     call_api: Callable[[list[dict[str, Any]]], Any],
+    provider_settings: Any | None = None,
 ) -> ValidationRetryResult:
     """Validate *reply*; on retryable failure append feedback and re-call API."""
     max_attempts = int(getattr(validation_settings, "retry_max", 3) or 0)
@@ -120,8 +121,27 @@ def validate_with_retry(
             frame=validate_kwargs.get("kline_frame"),
             previous_raw=previous_raw,
         )
+        preserve_mimo = False
+        if provider_settings is not None:
+            from pa_agent.ai.mimo_compat import (
+                build_assistant_api_message,
+                is_mimo_provider,
+            )
+
+            preserve_mimo = is_mimo_provider(
+                getattr(provider_settings, "base_url", ""),
+                getattr(provider_settings, "model", ""),
+            )
+        if preserve_mimo:
+            reasoning = getattr(current_reply, "reasoning_content", None) or ""
+            assistant_msg = build_assistant_api_message(
+                content,
+                reasoning_content=reasoning,
+            )
+        else:
+            assistant_msg = {"role": "assistant", "content": content}
         current_messages = current_messages + [
-            {"role": "assistant", "content": content},
+            assistant_msg,
             {"role": "user", "content": feedback},
         ]
         current_reply = call_api(current_messages)

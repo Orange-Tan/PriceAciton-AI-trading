@@ -2,6 +2,8 @@
 
 本目录下的**运行时文件**默认已被 `.gitignore` 忽略，不会进入 Git 仓库。
 
+仓库同样**不会上传**：`records/`（分析落盘）、`experience/`（经验库内容）、`logs/`、`trade_records/`（交易 CSV/截图）、`.env`、根目录临时图片与个人笔记等。仅源代码、`prompt_engineering/` 策略文本、`tests/` 与 `docs/` 说明文档会进入 GitHub。
+
 ## 首次使用
 
 1. 复制模板为本地配置：
@@ -31,7 +33,7 @@
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `provider.model` | string | `"deepseek-v4-flash"` | 模型名称（须与网关支持的名称一致） |
-| `provider.base_url` | string | `"https://api.deepseek.com"` | OpenAI 兼容 API 根地址（DeepSeek 官方为 `https://api.deepseek.com`；部分代理需带 `/v1` 后缀，以网关文档为准） |
+| `provider.base_url` | string | `"https://api.deepseek.com"` | OpenAI 兼容 API 根地址。DeepSeek：`https://api.deepseek.com`；MiMo：`https://api.xiaomimimo.com/v1`（程序自动处理 `enable_thinking` 与 `reasoning_content` 回放） |
 | `provider.api_key` | string | `""` | API Key（明文，内存中临时使用；不持久化到文件） |
 | `provider.api_key_encrypted` | string | `""` | 加密后的 Key；留空表示未配置（通过 GUI 保存时自动加密写入） |
 | `provider.thinking` | bool | `true` | 是否启用思考/推理类扩展参数（依模型与网关而定）。关闭可 3–5 倍提速但分析质量下降 |

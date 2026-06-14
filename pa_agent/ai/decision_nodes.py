@@ -1460,6 +1460,48 @@ def _get_signal_seq(out: dict[str, Any], bars: Any) -> int:
     return 1  # default to K1
 
 
+def is_planned_limit_order(out: dict[str, Any]) -> bool:
+    """True when order is a pending limit plan without requiring a closed signal bar."""
+    decision = out.get("decision")
+    if not isinstance(decision, dict) or decision.get("order_type") != "限价单":
+        return False
+    bar_analysis = out.get("bar_analysis")
+    if not isinstance(bar_analysis, dict):
+        return False
+    entry_bar = bar_analysis.get("entry_bar")
+    signal_bar = bar_analysis.get("signal_bar")
+    if not isinstance(entry_bar, dict) or not isinstance(signal_bar, dict):
+        return False
+    strength = str(entry_bar.get("strength", "") or "").strip().lower()
+    freshness = str(entry_bar.get("freshness", "") or "").strip().lower()
+    pending = (
+        strength == "not_triggered"
+        or entry_bar.get("bar") is None
+        or freshness == "pending"
+    )
+    if not pending:
+        return False
+    quality = str(signal_bar.get("quality", "") or "").strip().lower()
+    pattern = str(signal_bar.get("pattern", "") or "").strip().lower()
+    if signal_bar.get("bar") is None and quality in ("invalid", "weak"):
+        return True
+    if quality == "weak" and pattern in (
+        "",
+        "none",
+        "tr_boundary",
+        "breakout_pullback",
+        "h1",
+        "h2",
+        "l1",
+        "l2",
+        "wedge",
+        "mtr",
+        "trendline",
+    ):
+        return True
+    return False
+
+
 
 
 
@@ -2829,16 +2871,17 @@ class DecisionNodeEngine:
         # "否"  = no valid signal bar exists right now
         # "等待" = AI semantically means "no valid signal bar" (should be "否" but
         #          AI sometimes conflates "does it exist?" with "should I wait?").
-        # Both map to skip §9.1-9.5.
+        # Both map to skip §9.1-9.5 — unless this is a planned limit order.
         _dt = out.get("decision_trace") or []
         _node_90 = next(
             (x for x in _dt if isinstance(x, dict) and str(x.get("node_id", "")) == "9.0"),
             None,
         )
+        _planned_limit = is_planned_limit_order(out)
         _section9_has_signal = True
         if _node_90 is not None:
             _ans_90 = str(_node_90.get("answer", "") or "").strip()
-            if _ans_90 in ("否", "等待"):
+            if _ans_90 in ("否", "等待") and not _planned_limit:
                 _section9_has_signal = False
 
 
@@ -2897,6 +2940,25 @@ class DecisionNodeEngine:
                 _node["skipped"] = True
                 _node["answer"] = "不适用"
                 _node["reason"] = _skip_reason
+        elif _planned_limit:
+            _bar_analysis = out.get("bar_analysis")
+            _signal_bar = (
+                _bar_analysis.get("signal_bar")
+                if isinstance(_bar_analysis, dict)
+                else None
+            )
+            _no_signal_bar = (
+                not isinstance(_signal_bar, dict) or not _signal_bar.get("bar")
+            )
+            if _no_signal_bar:
+                _skip_reason = (
+                    "计划型限价单，尚无已收盘信号棒，"
+                    "§9.1-9.3不适用（§9.0 已接受计划型入场）。"
+                )
+                for _node in (node_91, node_92, node_93):
+                    _node["skipped"] = True
+                    _node["answer"] = "不适用"
+                    _node["reason"] = _skip_reason
 
 
 

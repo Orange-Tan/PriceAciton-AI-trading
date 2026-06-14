@@ -130,3 +130,23 @@ def test_apply_qclaw_provider_forces_agent_model() -> None:
     assert err is None
     assert settings.provider.model == _PUBLIC_GATEWAY_MODEL
     assert settings.provider.base_url == "http://127.0.0.1:58579/v1"
+
+
+def test_openclaw_model_never_selects_workbuddy_on_stale_copilot_base() -> None:
+    """Stale copilot base_url must not hijack ``openclaw`` → QClaw routing."""
+    from pa_agent.ai.workbuddy_connector import (
+        is_workbuddy_route,
+        should_use_workbuddy_provider,
+    )
+
+    stale_copilot = "https://copilot.tencent.com/v2"
+    with patch("pa_agent.ai.workbuddy_connector.detect_workbuddy", return_value=True):
+        assert should_use_qclaw_provider("openclaw", stale_copilot)
+        assert not should_use_workbuddy_provider("openclaw", stale_copilot)
+
+    provider = type(
+        "P",
+        (),
+        {"model": "openclaw", "base_url": stale_copilot},
+    )()
+    assert not is_workbuddy_route(provider)
