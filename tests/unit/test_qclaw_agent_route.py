@@ -150,3 +150,52 @@ def test_openclaw_model_never_selects_workbuddy_on_stale_copilot_base() -> None:
         {"model": "openclaw", "base_url": stale_copilot},
     )()
     assert not is_workbuddy_route(provider)
+
+
+def test_openclaw_wb_model_never_selects_qclaw_on_stale_gateway_base() -> None:
+    """Stale QClaw gateway base_url must not hijack ``openclaw_wb`` → WorkBuddy."""
+    from pa_agent.ai.workbuddy_connector import (
+        is_workbuddy_route,
+        should_use_workbuddy_provider,
+    )
+
+    stale_qclaw = "http://127.0.0.1:58579/v1"
+    with patch("pa_agent.ai.qclaw_connector.detect_qclaw", return_value=True):
+        with patch(
+            "pa_agent.ai.qclaw_connector._get_qclaw_gateway_info",
+            return_value=("127.0.0.1", 58579, "tok"),
+        ):
+            assert not should_use_qclaw_provider("openclaw_wb", stale_qclaw)
+            assert should_use_workbuddy_provider("openclaw_wb", stale_qclaw)
+
+    provider = type(
+        "P",
+        (),
+        {"model": "openclaw_wb", "base_url": stale_qclaw},
+    )()
+    assert is_workbuddy_route(provider)
+
+
+def test_sync_qclaw_on_load_skips_openclaw_wb_with_stale_gateway_base() -> None:
+    """Startup QClaw sync must not rewrite openclaw_wb when base_url is stale."""
+    from pa_agent.ai.qclaw_connector import sync_qclaw_agent_provider_on_load
+    from pa_agent.config.settings import Settings
+
+    settings = Settings()
+    settings.provider.model = "openclaw_wb"
+    settings.provider.base_url = "http://127.0.0.1:58579/v1"
+    settings.provider.api_key = "wb-token"
+
+    with patch("pa_agent.ai.qclaw_connector.detect_qclaw", return_value=True):
+        with patch(
+            "pa_agent.ai.qclaw_connector._get_qclaw_gateway_info",
+            return_value=("127.0.0.1", 58579, "qclaw-tok"),
+        ):
+            with patch(
+                "pa_agent.ai.qclaw_connector.apply_qclaw_provider_to_settings"
+            ) as apply:
+                sync_qclaw_agent_provider_on_load(settings)
+                apply.assert_not_called()
+
+    assert settings.provider.model == "openclaw_wb"
+    assert settings.provider.api_key == "wb-token"

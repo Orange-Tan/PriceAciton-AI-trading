@@ -48,6 +48,12 @@ def should_use_qclaw_provider(
     base_url: str | None = None,
 ) -> bool:
     """True when settings Save should auto-configure from local QClaw."""
+    from pa_agent.ai.workbuddy_connector import is_openclaw_wb_model
+
+    # ``openclaw_wb`` / ``openclaw_wb/*`` is WorkBuddy's alias — never QClaw,
+    # even if a stale base_url still points at the local gateway.
+    if is_openclaw_wb_model(model):
+        return False
     if is_openclaw_model(model):
         return True
     if not detect_qclaw():
@@ -86,10 +92,14 @@ def sync_qclaw_agent_provider_on_load(
     save_path: Path | None = None,
 ) -> None:
     """Refresh token/base_url for openclaw Agent routing (no relay on 19004)."""
+    from pa_agent.ai.workbuddy_connector import is_openclaw_wb_model
+
     if not detect_qclaw():
         return
     provider = settings.provider
     model = str(getattr(provider, "model", "") or "").strip().lower()
+    if is_openclaw_wb_model(model):
+        return
     if not is_openclaw_model(model) and not _uses_qclaw_gateway(provider):
         return
 

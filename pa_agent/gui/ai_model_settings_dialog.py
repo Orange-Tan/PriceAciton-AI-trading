@@ -128,16 +128,16 @@ class AIModelSettingsDialog(QDialog):
         model = self._model_edit.text().strip()
         base_url = self._base_url_edit.text().strip()
 
-        # For explicit openclaw/openclaw_wb routes, ignore user-filled URL/KEY.
-        if is_openclaw_model(model) or should_use_qclaw_provider(model, base_url):
-            err = self._apply_qclaw_provider(preferred_model=model)
-            if err:
-                QMessageBox.warning(self, "QClaw 配置异常", err)
-                return
-        elif is_openclaw_wb_model(model) or should_use_workbuddy_provider(model, base_url):
+        # Explicit model aliases win over stale base_url (openclaw_wb before openclaw).
+        if is_openclaw_wb_model(model) or should_use_workbuddy_provider(model, base_url):
             err = self._apply_workbuddy_provider(preferred_model=model)
             if err:
                 QMessageBox.warning(self, "WorkBuddy 配置异常", err)
+                return
+        elif is_openclaw_model(model) or should_use_qclaw_provider(model, base_url):
+            err = self._apply_qclaw_provider(preferred_model=model)
+            if err:
+                QMessageBox.warning(self, "QClaw 配置异常", err)
                 return
         else:
             field_err = self._validate_provider_fields(model, base_url)
