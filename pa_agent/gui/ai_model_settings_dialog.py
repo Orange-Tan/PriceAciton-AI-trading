@@ -83,6 +83,10 @@ class AIModelSettingsDialog(QDialog):
         form.addRow("Reasoning Effort:", self._reasoning_effort_combo)
 
         self._api_key_help_btn = QPushButton("小白点这里！获取程序无限Token，无限分析")
+        self._api_key_help_btn.setStyleSheet(
+            "QPushButton { font-size: 13pt; font-weight: bold; "
+            "padding: 8px 16px; }"
+        )
         self._api_key_help_btn.clicked.connect(self._show_unlimited_token_info)
         form.addRow("", self._api_key_help_btn)
 

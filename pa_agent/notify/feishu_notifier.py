@@ -270,7 +270,8 @@ def _build_card(
 
     card: dict = {
         "schema": "2.0",
-        "config": {"update_multi": False},
+        # 飞书卡片 2.0 仅支持 update_multi=true（共享卡片模式）
+        "config": {"update_multi": True},
         "header": {
             "title": {
                 "tag": "plain_text",

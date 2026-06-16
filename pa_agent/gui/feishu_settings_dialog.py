@@ -132,7 +132,7 @@ class FeishuSettingsDialog(QDialog):
 
         root.addWidget(img_group)
 
-        # ── 测试按钮 ───────────────────────────────────────────────────────────
+        # ── 测试按钮 & 远程协助按钮 ──────────────────────────────────────────────
         test_row = QHBoxLayout()
         self._test_btn = QPushButton("发送测试消息")
         self._test_btn.setToolTip(
@@ -140,6 +140,18 @@ class FeishuSettingsDialog(QDialog):
         )
         self._test_btn.clicked.connect(self._on_test)
         test_row.addWidget(self._test_btn)
+
+        self._remote_help_btn = QPushButton("帮我远程协助设置")
+        self._remote_help_btn.setStyleSheet(
+            "QPushButton { font-size: 14pt; font-weight: bold; "
+            "padding: 10px 20px; background-color: #4a90d9; color: white; "
+            "border-radius: 6px; }"
+            "QPushButton:hover { background-color: #357abd; }"
+            "QPushButton:pressed { background-color: #2a5f9e; }"
+        )
+        self._remote_help_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._remote_help_btn.clicked.connect(self._on_remote_help)
+        test_row.addWidget(self._remote_help_btn)
         test_row.addStretch()
         root.addLayout(test_row)
 
@@ -212,6 +224,25 @@ class FeishuSettingsDialog(QDialog):
             self._show_app_secret_btn.setText("显示")
 
     # ── 测试发送 ──────────────────────────────────────────────────────────────
+
+    def _on_remote_help(self) -> None:
+        """显示远程协助设置信息."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("远程协助设置")
+        layout = QVBoxLayout(dlg)
+        label = QLabel(
+            "去问龙虾怎么添加飞书群组机器人，还是搞不定的话<br>"
+            "可以联系阿尔法本人QQ：564020069<br><br>"
+            "赞助49.9元可以帮你远程协助完成飞书设置<br><br>"
+            "如果之前已经支付过49.9元了，这次只需要赞助30元即可"
+        )
+        label.setStyleSheet("font-size: 20pt; font-weight: bold;")
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        bb.accepted.connect(dlg.accept)
+        layout.addWidget(bb)
+        dlg.exec()
 
     def _on_test(self) -> None:
         """用当前表单填写的值向飞书群发送测试文本消息."""
