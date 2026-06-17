@@ -39,15 +39,17 @@
 直接在系统中安装（推荐部署在本机）：
 
 ```cmd
-pip install -e ".[dev]"
+pip install -e .
 python -m pa_agent.main
 ```
 
 首次启动后在**设置**中填写 **Base URL**、**模型名** 与 **API Key**。
 
-> 如需隔离环境也可创建虚拟环境：`python -m venv .venv` 后激活再 `pip install`。
+> 如需隔离环境也可创建虚拟环境：`python -m venv .venv` 后激活再 `pip install -e .`。
 
-**安装内容**：PyQt6（GUI 框架）+ pyqtgraph（K 线图表绘图）+ numpy/pandas（数据处理）+ openai（AI API 客户端）+ json 校验、模型定义等全套依赖。
+**安装内容**：PyQt6（GUI 框架）+ pyqtgraph（K 线图表绘图）+ numpy/pandas（数据处理）+ openai（AI API 客户端）+ **akshare/baostock（A 股数据源）** + json 校验、模型定义等全套依赖。
+
+> 若需运行测试（pytest）或代码格式化（ruff/black），额外安装：`pip install -e ".[dev]"`。
 
 ---
 
