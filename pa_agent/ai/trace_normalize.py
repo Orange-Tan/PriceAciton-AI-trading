@@ -255,10 +255,9 @@ def fix_bar_range_string(text: str, *, default_max_seq: int | None = None) -> st
             capped = _cap_bar_seq(a, default_max_seq)
             return f"K{capped}"
         if a < b:
-            logger.warning(
+            logger.debug(
                 "bar_range=%r has reversed order (K%d before K%d); "
-                "K1=newest, K{N}=older. Auto-fixing to K%d-K%d but this "
-                "may indicate the model misinterprets bar numbering direction.",
+                "K1=newest, K{N}=older. Auto-fixing to K%d-K%d.",
                 text, a, b, b, a,
             )
             a, b = b, a

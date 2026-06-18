@@ -2,7 +2,7 @@
 
 When stage-2 produces an order (限价单 / 突破单 / 市价单), this module:
   1. Appends a rich row to  trade_records/<symbol>_<timeframe>.csv
-  2. Renders a K-line + EMA20 chart for the last ≤100 bars and saves it as a
+  2. Renders a K-line + EMA20 chart for the last ≤50 bars and saves it as a
      PNG next to the CSV.
 
 File naming convention
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 _TRADE_RECORDS_DIR = Path("trade_records")
 
 # Maximum bars to show in the chart image
-_CHART_MAX_BARS = 100
+_CHART_MAX_BARS = 50
 
 # ── CSV column definitions ─────────────────────────────────────────────────────
 

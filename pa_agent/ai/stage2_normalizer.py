@@ -352,6 +352,84 @@ def _normalize_stage2_enum_aliases(out: dict[str, Any]) -> bool:
     return changed
 
 
+def _hoist_terminal_from_decision(out: dict[str, Any]) -> bool:
+    """Move terminal nested under decision to the top level."""
+    if isinstance(out.get("terminal"), dict):
+        return False
+    decision = out.get("decision")
+    if not isinstance(decision, dict):
+        return False
+    nested = decision.pop("terminal", None)
+    if not isinstance(nested, dict):
+        return False
+    out["terminal"] = nested
+    logger.debug("Hoisted terminal from decision to top level")
+    return True
+
+
+def _ensure_decision_required_fields(
+    out: dict[str, Any],
+    *,
+    stage1_json: dict[str, Any] | None = None,
+) -> bool:
+    """Fill missing decision sub-fields that commonly trigger schema retries."""
+    decision = out.get("decision")
+    if not isinstance(decision, dict):
+        return False
+    s1 = stage1_json or {}
+    changed = False
+    if not isinstance(decision.get("key_factors"), list):
+        decision["key_factors"] = []
+        changed = True
+    if not isinstance(decision.get("watch_points"), list):
+        decision["watch_points"] = []
+        changed = True
+    text_defaults = {
+        "reasoning": "基于阶段一诊断与当前K线结构的阶段二决策说明",
+        "diagnosis_confidence_reasoning": (
+            str(s1.get("htf_context") or "").strip()[:500]
+            or "依据阶段一诊断与闸门结论"
+        ),
+        "risk_assessment": "见 watch_points 与 invalidation_condition",
+    }
+    for key, default in text_defaults.items():
+        if not isinstance(decision.get(key), str) or not str(decision.get(key)).strip():
+            decision[key] = default
+            changed = True
+    if decision.get("diagnosis_confidence") is None:
+        try:
+            decision["diagnosis_confidence"] = int(s1.get("diagnosis_confidence") or 50)
+        except (TypeError, ValueError):
+            decision["diagnosis_confidence"] = 50
+        changed = True
+    if decision.get("trade_confidence") is None:
+        decision["trade_confidence"] = (
+            0 if decision.get("order_type") == "不下单" else 50
+        )
+        changed = True
+    if (
+        not isinstance(decision.get("trade_confidence_reasoning"), str)
+        or not decision["trade_confidence_reasoning"].strip()
+    ):
+        decision["trade_confidence_reasoning"] = (
+            "无入场计划，不存在交易信心"
+            if decision.get("order_type") == "不下单"
+            else "基于结构与入场方案的综合评估"
+        )
+        changed = True
+    terminal = out.get("terminal")
+    if isinstance(terminal, dict) and not str(terminal.get("label") or "").strip():
+        outcome = str(terminal.get("outcome") or "wait")
+        terminal["label"] = {
+            "trade": "执行下单方案",
+            "reject": "交易者方程未通过",
+            "wait": "等待更好 setup",
+            "proceed": "继续评估",
+        }.get(outcome, "阶段二终局")
+        changed = True
+    return changed
+
+
 def _trace_node_answer(trace: Any, node_id: str) -> str | None:
     if not isinstance(trace, list):
         return None
@@ -619,7 +697,11 @@ def _coerce_decision_when_trade_metrics_fail(
     return True
 
 
-def _normalize_next_cycle_prediction(prediction: dict[str, Any]) -> None:
+def _normalize_next_cycle_prediction(
+    prediction: dict[str, Any],
+    *,
+    stage1_json: dict[str, Any] | None = None,
+) -> None:
     """In-place normalize next_cycle_prediction common model quirks. Idempotent."""
     from pa_agent.ai.cycle_enums import CYCLE_ORDER
 
@@ -669,6 +751,18 @@ def _normalize_next_cycle_prediction(prediction: dict[str, Any]) -> None:
 
     # 4. probabilities integer rounding, clamping, and sum normalization
     probs = prediction.get("probabilities")
+    if not unpredictable and not isinstance(probs, dict):
+        cycle_guess = str(
+            prediction.get("cycle")
+            or (stage1_json or {}).get("cycle_position")
+            or "trading_range"
+        ).strip().lower()
+        prediction["probabilities"] = _default_cycle_probs(cycle_guess)
+        probs = prediction["probabilities"]
+        logger.debug(
+            "Synthesized next_cycle_prediction.probabilities from cycle=%r",
+            cycle_guess,
+        )
     if isinstance(probs, dict):
         normalized: dict[str, int] = {}
         for key in CYCLE_ORDER:
@@ -1128,6 +1222,8 @@ def normalize_stage2(
     """Return a copy of *obj* with decision_trace quirks corrected."""
     out = copy.deepcopy(obj)
     frame_max = _max_bar_seq_from_frame(kline_frame)
+    _hoist_terminal_from_decision(out)
+    _ensure_decision_required_fields(out, stage1_json=stage1_json)
     _normalize_stage2_enum_aliases(out)
     _normalize_stage2_bar_analysis_enums(out, stage1_json=stage1_json)
     _coerce_decision_no_order(out)
@@ -1293,6 +1389,6 @@ def normalize_stage2(
 
     pred_c = out.get("next_cycle_prediction")
     if isinstance(pred_c, dict):
-        _normalize_next_cycle_prediction(pred_c)
+        _normalize_next_cycle_prediction(pred_c, stage1_json=stage1_json)
 
     return out

@@ -144,6 +144,9 @@ _STAGE2_TAIL_REMINDER = (
     "3. 你有入场方案且 10.3 通过？→ terminal.outcome=trade，node_id 为最终节点。\n"
     "   **禁止**写 action/execute/entry 等自创词，只能是 wait|reject|trade|proceed。\n"
     "4. 限价/突破尚未触发？→ entry_bar.freshness=pending（禁止 limit_order_pending 等自创词）。\n"
+    "5. `terminal` 与 `decision` **同级**（顶层字段），禁止把 terminal 嵌套在 decision 内。\n"
+    "6. `next_cycle_prediction` 在 `unpredictable=false` 时 **必须** 含 `probabilities` 对象（各 cycle 概率，和≈100）。\n"
+    "禁止在 JSON 前写「好的」「修改完成」等对话前缀；禁止 ```json 围栏。\n"
     "常见错误速查：§9.0=否 + §10.1=否 → outcome=wait（不是 reject！）"
 ).strip()
 
@@ -204,7 +207,16 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
       "reason": "K线结构特征清晰，可识别为正常通道",
       "branch": "normal_channel",
       "section": "K线识别",
-      "bar_range": "由你填写，如 K42-K1"
+      "bar_range": "K12-K1"
+    },
+    {
+      "node_id": "2.1",
+      "question": "近期结构是否呈现明确惯性方向？",
+      "answer": "是",
+      "reason": "LH+LL 结构清晰",
+      "branch": "bearish",
+      "section": "方向判断",
+      "bar_range": "K8-K1"
     }
   ],
   "gate_result": "proceed"

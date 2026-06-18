@@ -173,7 +173,7 @@ def _base_files_for_cycle(
         elif direction == "bearish":
             files.extend(_BEARISH_SPIKE_FILES)
         else:
-            logger.warning("Spike with neutral direction — no spike strategy files loaded")
+            logger.info("Spike with neutral direction — no spike strategy files loaded")
         if spike_stage == "ending":
             files.extend(_channel_files(direction))
 
@@ -200,7 +200,7 @@ def _channel_files(direction: str) -> list[str]:
     else:
         # Neutral in a channel: skip directional channel files, but preload
         # range strategy for boundary planned-limit setups (§9.0 path).
-        logger.warning(
+        logger.info(
             "Channel-like state with neutral direction — "
             "no directional channel files; loading range strategy for boundary setups"
         )

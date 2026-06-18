@@ -141,6 +141,55 @@ def _strip_fences(text: str) -> str:
     return _repair_unescaped_quotes(_repair_semicolon_separator(_extract_outer_json_object(t)))
 
 
+def _escape_control_chars_in_json_strings(text: str) -> str:
+    """Escape raw newlines/tabs/control chars inside JSON string literals."""
+    out: list[str] = []
+    in_string = False
+    escape = False
+    for ch in text:
+        if not in_string:
+            if ch == '"':
+                in_string = True
+            out.append(ch)
+            continue
+        if escape:
+            escape = False
+            out.append(ch)
+            continue
+        if ch == "\\":
+            escape = True
+            out.append(ch)
+            continue
+        if ch == '"':
+            in_string = False
+            out.append(ch)
+            continue
+        if ch == "\n":
+            out.append("\\n")
+        elif ch == "\r":
+            out.append("\\r")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ch < " ":
+            continue
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def coalesce_model_json_text(content: str, reasoning: str | None = None) -> str:
+    """Prefer content JSON; fall back to reasoning when content is empty or prose."""
+    stripped = _strip_fences(content or "")
+    if stripped.startswith("{") or stripped.startswith("["):
+        return content or ""
+    if reasoning:
+        from_reasoning = _strip_fences(reasoning)
+        if from_reasoning.startswith("{") or from_reasoning.startswith("["):
+            logger.info("Extracting JSON from reasoning_content (content was not JSON)")
+            return from_reasoning
+    return content or ""
+
+
 def format_model_json_for_context(raw_text: str) -> str | None:
     """Extract JSON from model output and return pretty-printed text for prompts."""
     stripped = _strip_fences(raw_text or "")
@@ -425,39 +474,53 @@ class JsonValidator:
             )
 
         # ── Category a: syntax error ──────────────────────────────────────────
+        obj: dict | list | None = None
+        parse_exc: json.JSONDecodeError | None = None
         try:
             obj = json.loads(stripped)
         except json.JSONDecodeError as exc:
-            # Stage 2: fail fast on syntax errors (no silent truncation repair).
-            allow_inject = (
-                stage == "stage1"
-                and not getattr(self._validation, "disable_truncation_repair", True)
-            )
-            repaired = (
-                _try_repair_json_syntax(stripped, stage, allow_tail_inject=allow_inject)
-                if stage == "stage1"
-                else None
-            )
-            if repaired is not None:
+            parse_exc = exc
+            escaped = _escape_control_chars_in_json_strings(stripped)
+            if escaped != stripped:
                 try:
-                    obj = json.loads(repaired)
-                    logger.warning(
-                        "Repaired truncated %s JSON (%d -> %d chars)",
-                        stage,
-                        len(stripped),
-                        len(repaired),
-                    )
-                except json.JSONDecodeError:
-                    repaired = None
-            if repaired is None:
-                pos = f"{exc.lineno}:{exc.colno}"
-                return ValidationError(
-                    category="a",
-                    stage=stage,
-                    raw_text=raw_text,
-                    parse_position=pos,
-                    message=f"JSON syntax error at {pos}: {exc.msg}",
+                    obj = json.loads(escaped)
+                    logger.debug("Parsed JSON after escaping control chars in strings")
+                    stripped = escaped
+                    parse_exc = None
+                except json.JSONDecodeError as exc2:
+                    parse_exc = exc2
+            if obj is None and parse_exc is not None:
+                exc = parse_exc
+                # Stage 2: fail fast on syntax errors (no silent truncation repair).
+                allow_inject = (
+                    stage == "stage1"
+                    and not getattr(self._validation, "disable_truncation_repair", True)
                 )
+                repaired = (
+                    _try_repair_json_syntax(stripped, stage, allow_tail_inject=allow_inject)
+                    if stage == "stage1"
+                    else None
+                )
+                if repaired is not None:
+                    try:
+                        obj = json.loads(repaired)
+                        logger.warning(
+                            "Repaired truncated %s JSON (%d -> %d chars)",
+                            stage,
+                            len(stripped),
+                            len(repaired),
+                        )
+                    except json.JSONDecodeError:
+                        repaired = None
+                if repaired is None:
+                    pos = f"{exc.lineno}:{exc.colno}"
+                    return ValidationError(
+                        category="a",
+                        stage=stage,
+                        raw_text=raw_text,
+                        parse_position=pos,
+                        message=f"JSON syntax error at {pos}: {exc.msg}",
+                    )
 
         if not isinstance(obj, dict):
             return ValidationError(
