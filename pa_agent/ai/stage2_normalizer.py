@@ -101,6 +101,22 @@ _SIGNAL_BAR_QUALITY_ENUM = frozenset({"strong", "medium", "weak", "invalid"})
 
 
 _TRADE_ORDER_TYPES = frozenset({"限价单", "突破单", "市价单"})
+
+_ORDER_TYPE_ALIASES: dict[str, str] = {
+    "no_order": "不下单",
+    "notrade": "不下单",
+    "no_trade": "不下单",
+    "hold": "不下单",
+    "skip": "不下单",
+    "none": "不下单",
+    "wait": "不下单",
+    "limit": "限价单",
+    "limit_order": "限价单",
+    "breakout": "突破单",
+    "breakout_order": "突破单",
+    "market": "市价单",
+    "market_order": "市价单",
+}
 _NO_ORDER_PRICE_FIELDS = (
     "order_direction",
     "entry_price",
@@ -177,6 +193,20 @@ def _normalize_entry_bar_freshness(entry_bar: dict[str, Any]) -> bool:
     return False
 
 
+def _normalize_order_type_aliases(decision: dict[str, Any]) -> bool:
+    """Map English order_type slips (no_order, limit, …) to schema enums."""
+    raw = str(decision.get("order_type", "") or "").strip()
+    if not raw:
+        return False
+    key = raw.lower().replace(" ", "_").replace("-", "_")
+    mapped = _ORDER_TYPE_ALIASES.get(key) or _ORDER_TYPE_ALIASES.get(raw.lower())
+    if mapped and mapped != raw:
+        decision["order_type"] = mapped
+        logger.debug("order_type %r -> %r", raw, mapped)
+        return True
+    return False
+
+
 def _normalize_stage2_bar_analysis_enums(
     out: dict[str, Any],
     *,
@@ -219,6 +249,13 @@ def _normalize_stage2_bar_analysis_enums(
         )
         if norm_q and norm_q != raw_q:
             signal_bar["quality"] = norm_q
+            changed = True
+        raw_pat = str(signal_bar.get("pattern", "") or "").strip().lower()
+        if raw_pat in ("no_signal", "no-signal", "nosignal", "not_triggered"):
+            signal_bar["pattern"] = "none"
+            changed = True
+        if not str(signal_bar.get("reason") or "").strip():
+            signal_bar["reason"] = "无独立信号棒（quality=invalid 或计划型观望）"
             changed = True
 
     second_entry = bar_analysis.get("second_entry")
@@ -377,7 +414,7 @@ def _ensure_decision_required_fields(
     if not isinstance(decision, dict):
         return False
     s1 = stage1_json or {}
-    changed = False
+    changed = _normalize_order_type_aliases(decision)
     if not isinstance(decision.get("key_factors"), list):
         decision["key_factors"] = []
         changed = True
@@ -417,6 +454,18 @@ def _ensure_decision_required_fields(
             else "基于结构与入场方案的综合评估"
         )
         changed = True
+    if decision.get("order_type") == "不下单":
+        if "estimated_win_rate" not in decision:
+            decision["estimated_win_rate"] = None
+            changed = True
+        if decision.get("estimated_win_rate_reasoning") is not None and not isinstance(
+            decision.get("estimated_win_rate_reasoning"), str
+        ):
+            decision["estimated_win_rate_reasoning"] = None
+            changed = True
+        elif "estimated_win_rate_reasoning" not in decision:
+            decision["estimated_win_rate_reasoning"] = None
+            changed = True
     terminal = out.get("terminal")
     if isinstance(terminal, dict) and not str(terminal.get("label") or "").strip():
         outcome = str(terminal.get("outcome") or "wait")
@@ -484,6 +533,7 @@ def _clear_decision_to_no_order(decision: dict[str, Any]) -> None:
     for field in _NO_ORDER_PRICE_FIELDS:
         decision[field] = None
     decision["estimated_win_rate"] = None
+    decision["estimated_win_rate_reasoning"] = None
     # trade_confidence / trade_confidence_reasoning: schema requires non-null values.
     # When the breaker forces 不下单, provide valid defaults.
     if decision.get("trade_confidence") is None:
@@ -518,16 +568,24 @@ def _coerce_decision_no_order(out: dict[str, Any]) -> bool:
     decision = out.get("decision")
     if not isinstance(decision, dict):
         return False
-    if decision.get("order_type") not in _TRADE_ORDER_TYPES:
-        return False
+    _normalize_order_type_aliases(decision)
 
-    trace = out.get("decision_trace")
     terminal = out.get("terminal")
     outcome = (
         str(terminal.get("outcome", "")).strip()
         if isinstance(terminal, dict)
         else ""
     )
+    order_type = decision.get("order_type")
+
+    if order_type not in _TRADE_ORDER_TYPES:
+        if outcome in ("wait", "reject") and order_type != "不下单":
+            _clear_decision_to_no_order(decision)
+            logger.debug("Coerced %r + terminal=%s to 不下单", order_type, outcome)
+            return True
+        return False
+
+    trace = out.get("decision_trace")
 
     triggers: list[str] = []
     if _trace_node_answer(trace, "10.3") == "否":
@@ -708,6 +766,15 @@ def _normalize_next_cycle_prediction(
     if not isinstance(prediction, dict):
         return
 
+    # 0. Migrate primary/secondary shorthand → cycle + probabilities
+    primary = prediction.pop("primary", None)
+    prediction.pop("primary_probability", None)
+    prediction.pop("secondary", None)
+    prediction.pop("secondary_probability", None)
+    if primary and not prediction.get("cycle"):
+        prediction["cycle"] = str(primary).strip().lower()
+    prediction.setdefault("unpredictable", False)
+
     # 1. unpredictable fallback
     unpredictable = bool(prediction.get("unpredictable", False))
     prediction["unpredictable"] = unpredictable
@@ -790,6 +857,10 @@ def _normalize_next_cycle_prediction(
             )
 
         prediction["probabilities"] = normalized
+
+        if not prediction.get("cycle"):
+            max_value = max(normalized[k] for k in CYCLE_ORDER)
+            prediction["cycle"] = next(k for k in CYCLE_ORDER if normalized[k] == max_value)
 
         # 5. cycle = argmax, tie-break by CYCLE_ORDER literal order
         max_value = max(normalized[k] for k in CYCLE_ORDER)
@@ -1223,6 +1294,9 @@ def normalize_stage2(
     out = copy.deepcopy(obj)
     frame_max = _max_bar_seq_from_frame(kline_frame)
     _hoist_terminal_from_decision(out)
+    decision = out.get("decision")
+    if isinstance(decision, dict):
+        _normalize_order_type_aliases(decision)
     _ensure_decision_required_fields(out, stage1_json=stage1_json)
     _normalize_stage2_enum_aliases(out)
     _normalize_stage2_bar_analysis_enums(out, stage1_json=stage1_json)

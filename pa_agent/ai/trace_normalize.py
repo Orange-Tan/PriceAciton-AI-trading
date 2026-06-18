@@ -113,6 +113,9 @@ _GENERIC_ANSWER: dict[str, str] = {
     "fail": "否",
     "yes": "是",
     "no": "否",
+    "not_applicable": "不适用",
+    "n/a": "不适用",
+    "na": "不适用",
     # Common AI synonyms outside the strict enum (map before schema validation).
     "部分": "中性",
     "部分一致": "中性",

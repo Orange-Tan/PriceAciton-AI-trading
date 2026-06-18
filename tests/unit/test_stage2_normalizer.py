@@ -846,3 +846,98 @@ def test_normalize_stage2_skip_next_bar_ui_path_omits_injection() -> None:
     out = normalize_stage2(obj, skip_next_bar=True)
     assert "next_bar_prediction" not in out
     assert isinstance(out.get("next_cycle_prediction"), dict)
+
+
+def test_normalize_stage2_no_order_english_alias_passes_schema() -> None:
+    """Regression: OpenClaw emits order_type=no_order + terminal=wait."""
+    payload = {
+        "decision": {
+            "order_type": "no_order",
+            "order_direction": None,
+            "entry_price": None,
+            "take_profit_price": None,
+            "stop_loss_price": None,
+            "reasoning": "等待更好 setup",
+            "diagnosis_confidence": 70,
+            "trade_confidence": 65,
+            "estimated_win_rate": None,
+            "key_factors": ["边界不清晰"],
+            "watch_points": ["等待反弹"],
+            "risk_assessment": "过渡期风险偏高",
+        },
+        "diagnosis_summary": {
+            "cycle_position": "trending_tr",
+            "direction": "bearish",
+            "key_signals": [],
+        },
+        "bar_analysis": {
+            "always_in": "short",
+            "last_closed_bar": "K1",
+            "bar_type": "trend_bear",
+            "signal_bar": {
+                "bar": None,
+                "quality": "invalid",
+                "pattern": "no_signal",
+            },
+            "entry_bar": {
+                "strength": "not_triggered",
+                "follow_through": False,
+                "freshness": "pending",
+            },
+            "second_entry": {"is_second_entry": False, "type": "none"},
+        },
+        "decision_trace": [
+            {
+                "node_id": "10.1",
+                "question": "是否能明确止损？",
+                "answer": "no",
+                "reason": "无结构止损",
+                "bar_range": "K8-K1",
+                "skipped": False,
+            },
+            {
+                "node_id": "10.2",
+                "question": "止损是否过大？",
+                "answer": None,
+                "reason": "跳过",
+                "bar_range": None,
+                "skipped": True,
+            },
+            {
+                "node_id": "14",
+                "question": "是否触犯禁止行为？",
+                "answer": "no",
+                "reason": "未触犯",
+                "bar_range": "K8-K1",
+                "skipped": False,
+            },
+        ],
+        "terminal": {"node_id": "10.1", "outcome": "wait"},
+        "next_cycle_prediction": {
+            "primary": "trading_range",
+            "primary_probability": 30,
+            "direction": "neutral",
+            "reasoning": "可能进入区间",
+            "probabilities": {
+                "spike": 2,
+                "micro_channel": 3,
+                "tight_channel": 5,
+                "normal_channel": 10,
+                "broad_channel": 25,
+                "trending_tr": 20,
+                "trading_range": 30,
+                "extreme_tr": 5,
+            },
+        },
+    }
+    out = normalize_stage2(payload)
+    assert out["decision"]["order_type"] == "不下单"
+    assert out["decision"]["estimated_win_rate_reasoning"] is None
+    assert out["bar_analysis"]["signal_bar"]["pattern"] == "none"
+    assert out["next_cycle_prediction"]["cycle"] == "trading_range"
+
+    result = schema_test_validator().validate(
+        "stage2",
+        json.dumps(out, ensure_ascii=False),
+    )
+    assert isinstance(result, Ok)
