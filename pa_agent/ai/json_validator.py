@@ -1007,27 +1007,36 @@ class JsonValidator:
             and pattern in ("", "none", "not_triggered", "pending")
             and signal_bar.get("bar") is None
         )
+        _planned_limit_boundary_patterns = (
+            "tr_boundary",
+            "breakout_pullback",
+            "h1",
+            "h2",
+            "l1",
+            "l2",
+            "wedge",
+            "mtr",
+        )
         planned_limit_weak = (
             pending_entry
             and order_type == "限价单"
             and quality == "weak"
             and (
                 signal_bar.get("bar") is None
-                or pattern in (
-                    "",
-                    "none",
-                    "tr_boundary",
-                    "breakout_pullback",
-                    "h1",
-                    "h2",
-                    "l1",
-                    "l2",
-                    "wedge",
-                    "mtr",
-                )
+                or pattern in ("", "none", *_planned_limit_boundary_patterns)
             )
         )
-        planned_entry = planned_without_signal or planned_limit_weak
+        # §9.0P planned limit: invalid + boundary pattern + no closed signal bar.
+        planned_limit_invalid_boundary = (
+            pending_entry
+            and order_type == "限价单"
+            and quality == "invalid"
+            and pattern in _planned_limit_boundary_patterns
+            and signal_bar.get("bar") is None
+        )
+        planned_entry = (
+            planned_without_signal or planned_limit_weak or planned_limit_invalid_boundary
+        )
         if sig_seq is None and not planned_entry:
             errors.append("bar_analysis.signal_bar.bar must be a K{n} reference")
         if entry_seq is None and not pending_entry:

@@ -176,6 +176,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
   "direction": "bullish|bearish|neutral",
   "diagnosis_confidence": 75,
   "spike_stage": null,
+  "climax_risk": "none|warning|triggered",
   "market_phase": "stable|transitioning",
   "transition_risk": null,
   "detected_patterns": [],
@@ -203,7 +204,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
       "bar": "K1",
       "role": "structure|signal|entry|confirmation|noise|trap|climax|test",
       "bar_type": "trend_bull|trend_bear|doji|inside|outside_bull|outside_bear|flat|other",
-      "context_effect": "strengthens_bull|weakens_bull|strengthens_bear|weakens_bear|neutral|transition",
+      "context_effect": "strengthens_bull|weakens_bull|strengthens_bear|weakens_bear|weakened_bull|weakened_bear|neutral|transition",
       "follow_through": "yes|no|pending|failed",
       "trapped_side": "bulls|bears|both|none|unknown",
       "reason": "一句话说明该K线对当前市场状态的增量影响"
@@ -253,7 +254,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 - **§9–§11**（入场、风险、下单均属阶段二）
 
 **逐K摘要硬规则：**
-- 必须输出 `bar_by_bar_summary`，**恰好 5 条**（分析窗口≥5根时），覆盖最近 **K5–K1** 每一根已收盘 K 线各 1 条；最多 8 条。数据不足 5 根则覆盖全部。
+- 必须输出 `bar_by_bar_summary`，**恰好 5 条**（分析窗口≥5根时），覆盖最近 **K5–K1** 每一根已收盘 K 线各 1 条。数据不足 5 根则覆盖全部已有 K 线（每条 1 根）。
 - 每条只写该 K 线对当前结构的增量作用，不写下单价格、不写止损止盈。
 - `role` 只能使用示例中的英文枚举（structure/signal/entry/confirmation/noise/trap/climax/test 等）；延续/跟随棒统一写 `confirmation`，不要写 `continuation`。
 - **`reversal_attempt`、`mtr`、`h2`、`l2` 等形态标签只能写在顶层 `detected_patterns` 数组中；禁止用作 `bar_by_bar_summary[].role`。**
@@ -286,9 +287,9 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 
 规则：
 - answer 只能是：是 / 否 / 中性 / 等待 / 不适用（**禁止**写「部分」「待确认」「待定」等——部分一致用 **中性**，尚需下一根K线确认用 **等待**）
-- **gate_result=wait/unknown 的合法触发条件只有两个：§1.2 answer≠是（无法识别周期）或 §1.3 answer=否（极端混乱 extreme_tr）。** §6/§9/§10 等后续节点的"否"答案（信号不一致、止损无法设定、交易者方程不通）不代表闸门阻断——这些是阶段二的判断依据
-- 任一闸门导致「等待/unknown」时，gate_result 设为 wait 或 unknown，并在最后一条 trace 写明 reason
-- gate_result=proceed 表示可通过闸门进入阶段二；wait/unknown 表示不应进入策略与下单评估
+- **gate_result=wait/unknown 的合法触发条件只有两个：§1.2 answer≠是（无法识别周期）或 §1.3 answer=否（极端混乱 extreme_tr）。** §2.1/§2.5 答「否」或「中性」、§2.3 中性、方向不明等**均不得**设 gate_result=wait——须 proceed 并在阶段二提高门槛或 wait 下单。
+- §6/§9/§10 等阶段二节点的"否"答案不代表阶段一闸门阻断。
+- gate_result=proceed 表示可通过闸门进入阶段二；wait/unknown 表示不应进入策略与下单评估（仅 §1.2/§1.3 可触发）
 - gate_trace 与 cycle_position、direction 不得矛盾
 - **中间节点 reason 可省略**：gate_trace / decision_trace 中除下列情况外，`reason` 可留空 `""` 或填 `"—"`，勿在每条分支重复长段说明：
   - 阶段一 **gate_trace 最后一条**（gate_result=proceed 时须含「闸门通过」或「进入阶段二」；wait/unknown 时写明等待原因）
@@ -309,7 +310,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 - 方向/分类类节点（如 4.2 上涨还是下跌）：**answer 只用 是/否/中性**，方向写在 **branch**（bullish/bearish），勿写「上涨」「下跌」作 answer
 - **6.2**（区间类型）：answer=是/否，branch=trending_tr 或 trading_range；勿把「趋势型交易区间」写在 answer
 - **6.3**（是否在边界）：answer=是/否，branch=lower/upper/middle；勿写「是，在下边界」——应写 answer=是、branch=lower
-- 扫描类节点（如禁止行为）：answer 用 **是**（通过）或 **否**（触犯），勿写「通过」
+- **阶段二 §14（禁止行为扫描，仅 decision_trace）**：`answer=是` = **触犯**禁止项；`answer=否` = **未触犯**。禁止用 `是` 表示「扫描完成/通过」。阶段一 gate_trace **不得**输出 §14/14.1。
 - **禁止照抄**本提示 JSON 示例里的占位文字或说明中的举例数字；必须对应当前 K 线表与你在 reason 中的分析
 - 跳过节点（skipped:true）：answer=不适用，bar_range 填字符串 `不适用`（**禁止填 null**）
 - question 只写问题本身，不要把 bar_range 写进 question
@@ -317,12 +318,13 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 diagnosis_confidence 必须为 0-100 的整数(满分100),表示对 cycle_position 等诊断结论的综合置信评分。
 禁止使用 high、medium、low 等字符串;分数越高表示对当前市场状态判断越有把握。
 
-diagnosis_confidence 分档说明:
+diagnosis_confidence 分档说明（全系统统一阈值 **50**）:
 - 90-100:周期位置非常典型,K线特征完全匹配频谱定义,长程背景与近期结构同向共振,信号充分无矛盾
 - 70-89:周期位置较明确,主要特征吻合频谱定义,可能有个别模糊信号但不影响核心判断
 - 50-69:周期位置存在歧义(如 trending_tr vs normal_channel),或长程背景与近期方向冲突(冲突不否决、不自动wait,仅降置信);需更多K线确认
-- 30-49:信号严重矛盾,周期位置难以判定,K线特征与多种状态都有部分重叠
+- 30-49:信号严重矛盾,周期位置难以判定,K线特征与多种状态都有部分重叠;阶段二应显著降低 trade_confidence
 - 0-29:数据不足以支撑任何诊断,或市场状态极度混乱(如极端交易区间)
+- **<50 且 key_signals 为空**：阶段二强烈倾向 `order_type=不下单`（仍须经 §9–§10 完整评估，不得跳过）
 
 **support_levels / resistance_levels 填写规则：**
 - `support_levels`：从近期 K 线结构中识别出的**当前价格下方**支撑价位，按由近到远排列，最多 3 个。每项填价格字符串（如 `"5402"` 或 `"5380-5400"` 表示区间），不识别时填空数组 `[]`。
@@ -491,7 +493,7 @@ JSON 字符串内不要用英文双引号强调，改用「」或不用引号。
 - 有下单时：盈亏比须 **≥ 1.0**（回报÷风险），且须满足 **胜率%×回报 > (100−胜率)%×风险**
 - 不满足上述任一条 → **10.3 必须判「否」**，order_type=**不下单**，不得输出限价/突破/市价单
 - **10.3 通过之前**不得输出具体下单类型；**10.3 之后**才写 §11
-- 因方程不通过而放弃：terminal.node_id 应为 **10.3**，outcome=reject 或 wait
+- 因方程不通过而放弃（已有三价方案）：terminal.node_id 应为 **10.3**，outcome=**reject**（有方案可拒，不用 wait）
 - 完成 10.3 后，必须把你在方程中使用的**胜率主观估计**写入 decision.estimated_win_rate（0–100 整数），并在 estimated_win_rate_reasoning 简要说明依据；**禁止**留空或仅从 trace 文字里暗示
 
 **结构型止损 / 止盈质量规则（防止噪音内小单）：**
@@ -598,8 +600,8 @@ terminal 必须与 order_type 一致（**decision 与 decision_trace 同步**）
 → **不能** terminal 在 10.3，因为从未有过可评估的交易方案
 → **不能** 写 outcome="reject"——拒绝一个不存在的方案在语义上是无意义的
 
-常见错误：§9.0=否 → §10.1=否 → §10.3 写"不适用"或"否" → terminal=10.3/reject
-正确做法：§9.0=否 时 terminal 应是 §9.0，outcome=wait，10.3 不应出现在 trace 里（或标 skipped=true）
+常见错误：§9.0=否 → **跳过 §9.0P** → §10.1=否 → terminal=10.3/reject
+正确做法：§9.0=否 时**必须先写 §9.0P**；仅当 §9.0P 也=否（或 §10.1 因无锚点=否）→ terminal.node_id=**9.0P**（或 9.0），outcome=**wait**；10.3 不应出现在 trace 里（或标 skipped=true）。**禁止**在未评估 §9.0P 时因 §9.0=否 直接 terminal=9.0。
 
 阶段一 gate_result 为 wait/unknown 时：系统会短路，不应调用本阶段。
 
@@ -1277,6 +1279,13 @@ class PromptAssembler:
         feature_table = self._render_kline_feature_table(frame)
         simple_features_block = self._render_simple_market_features_block(frame)
         n_bars = len(frame.bars)
+        if n_bars > 40:
+            bg_window = f"**长程背景 K{n_bars}–K41**（较老部分）：\n"
+        else:
+            bg_window = (
+                f"**长程背景**（当前仅 {n_bars} 根，不足 41 根，与近期窗口重叠；"
+                f"以程序预填 §2.2 为准）：\n"
+            )
         return (
             "## 阶段一任务\n\n"
             "你现在只执行阶段一：市场诊断与闸门判断。不要评估具体下单、止损、止盈或仓位。\n\n"
@@ -1286,20 +1295,20 @@ class PromptAssembler:
             f"品种:{frame.symbol} 周期:{frame.timeframe} K线数量:{n_bars}\n"
             f"（K线序号：1=最新已收盘，最大 K{n_bars}；"
             f"每个决策节点的 bar_range 由你自行选择子区间，勿超出 K{n_bars}-K1）\n\n"
-            f"## ⚠️ 分析窗口分层规则（强制，必须遵守）\n\n"
-            f"你收到全部 {n_bars} 根 K 线数据，但分析深度必须严格分层：\n\n"
-            f"**即时惯性区 K1–K8（Brooks：市场继续做刚刚在做的事）：**\n"
-            f"- bar_by_bar_summary **必须**覆盖 K5–K1 共 5 根（勿写 K8–K6）\n"
-            f"- spike_stage / 尖峰识别、§2.5 惯性强度优先看此窗口\n"
-            f"- cycle_position 若为 spike，结构依据必须来自此窗口\n\n"
-            f"**近期结构区 K1–K40：**\n"
-            f"- 通道/波段/趋势结构、信号棒、反转判断的主窗口\n"
-            f"- `direction` 与交易主方向以此为准（程序 §2.3 亦用近端窗口）\n"
-            f"- 各闸门 bar_range 优先选取此区间\n\n"
-            f"**长程背景区 K41–K{n_bars}（全部数据中较老部分，不截断）：**\n"
-            f"- 提取 swing highs/lows 写入 `htf_context`，作磁力位/阻力支撑参考\n"
-            f"- **禁止**用长程方向否决近期方向（Brooks：近期或主要任一同向即顺势）\n"
-            f"- node 2.2 记录背景与近期的关系（同向/冲突），冲突时近期为主\n\n"
+            f"## ⚠️ 分析窗口分层规则（与程序 §2.2/§2.3/§2.4 预填一致，必须遵守）\n\n"
+            f"你收到全部 {n_bars} 根 K 线数据；下列分层与 `市场诊断框架.txt`、程序三窗口摘要**同一标准**：\n\n"
+            f"{bg_window}"
+            f"- swing 高低点、磁力位参考 → 写入 `htf_context`；§2.2 背景方向\n"
+            f"- **禁止**用背景方向否决近期 `direction`；冲突时近期为主、背景作风险参考\n\n"
+            f"**近期结构 K{min(40, n_bars)}–K1：**\n"
+            f"- `cycle_position`、`direction`、通道/区间/波段主结构\n"
+            f"- 程序 §2.3 方向投票与多数闸门 bar_range 优先此窗口\n\n"
+            f"**即时惯性 K{min(8, n_bars)}–K1：**\n"
+            f"- §2.4 Always In、§2.5 惯性强度、近端 spike_stage / 尖峰识别\n\n"
+            f"**即时信号 K{min(10, n_bars)}–K1：**\n"
+            f"- 信号棒/入场棒/二次入场/突破失败（阶段二 §9 裁定窗口）\n\n"
+            f"**逐棒摘要 K5–K1：**\n"
+            f"- `bar_by_bar_summary` **必须**恰好 5 条（窗口≥5 根时），每条 1 句 reason\n\n"
             f"## K线数据(序号1=最新已收盘K线,序号越大越早;不含当前未收盘K线;"
             f"阳阴列由程序按收盘价与开盘价计算:收盘>开盘=阳线,收盘<开盘=阴线,相等=平)\n\n"
             f"{kline_table}\n\n"
@@ -1720,7 +1729,7 @@ class PromptAssembler:
             f"\n```\n\n"
             f"{kline_block}"
             f"{prev_pred_block + chr(10) if prev_pred_block else ''}"
-            f"请根据以上诊断和K线数据,按《二元决策.txt》§3–§15 输出 JSON 决策结果"
+            f"请根据以上诊断和K线数据,按《二元决策.txt》§3–§11、§14 输出 JSON 决策结果"
             f"(含 decision_trace 与 terminal)。\n"
             f"注意:如果判断不下单,entry_price、take_profit_price、take_profit_price_2、stop_loss_price、order_direction 必须全部为 null。\n\n"
             f"{_STAGE2_TAIL_REMINDER}"

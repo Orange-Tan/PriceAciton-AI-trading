@@ -352,6 +352,63 @@ def test_stage2_validator_accepts_planned_limit_without_signal_bar() -> None:
     assert isinstance(result, Ok), f"Expected Ok, got {result}"
 
 
+def test_stage2_validator_accepts_planned_limit_invalid_tr_boundary_null() -> None:
+    """§9.0P zone-boundary limit: invalid + tr_boundary + bar=null must not retry."""
+    obj = _stage2_trade_obj(
+        order_type="限价单",
+        order_direction="做空",
+        entry_price=101.0,
+        take_profit_price=98.0,
+        stop_loss_price=103.0,
+        trade_confidence=50,
+        trade_confidence_reasoning="极度激进档接受无信号棒瑕疵",
+        estimated_win_rate=55,
+        entry_basis_bar=None,
+        entry_basis_extreme=None,
+        entry_rule="区间上边界反弹挂空",
+    )
+    obj["bar_analysis"]["always_in"] = "short"
+    obj["bar_analysis"]["signal_bar"] = {
+        "bar": None,
+        "quality": "invalid",
+        "pattern": "tr_boundary",
+        "reason": "计划型限价单，尚无已收盘信号棒，边界 setup",
+    }
+    obj["bar_analysis"]["entry_bar"] = {
+        "bar": None,
+        "strength": "not_triggered",
+        "follow_through": "pending",
+        "still_valid": True,
+        "freshness": "pending",
+    }
+    obj["decision_trace"] = [
+        {
+            "node_id": "9.0",
+            "question": "信号棒是否已经收盘且质量足够？",
+            "answer": "否",
+            "reason": "无合格信号棒，改走背景限价路径",
+            "skipped": False,
+            "bar_range": "K3-K1",
+        },
+        {
+            "node_id": "9.0P",
+            "question": "背景驱动限价单评估（§9.0=否 时必须评估）",
+            "answer": "是",
+            "reason": "计划型限价挂阻力区，周期/边界支持",
+            "skipped": False,
+            "bar_range": "K10-K1",
+        },
+        *obj["decision_trace"],
+    ]
+    result = validator.validate(
+        "stage2",
+        json.dumps(obj),
+        decision_stance="balanced",
+        kline_frame=_frame(),
+    )
+    assert isinstance(result, Ok), f"Expected Ok, got {result}"
+
+
 def test_stage2_validator_accepts_planned_limit_with_weak_signal_bar() -> None:
     obj = _stage2_trade_obj(
         order_type="限价单",

@@ -100,6 +100,8 @@ _CONTEXT_EFFECT_ALIASES: dict[str, str] = {
     "weakens_bear": "weakens_bear",
     "weaken_bull": "weakens_bull",
     "weaken_bear": "weakens_bear",
+    "weakened_bull": "weakened_bull",
+    "weakened_bear": "weakened_bear",
     "weakens_bulls": "weakens_bull",           # AI typo: extra 's'
     "weakens_bears": "weakens_bear",           # AI typo: extra 's'
     "neutral": "neutral",
@@ -565,6 +567,16 @@ def normalize_stage1(
             logger.warning("build_program_features_dict failed: %s", exc)
 
     ensure_detected_patterns_coherent(out, kline_frame=kline_frame)
+
+    if not out.get("climax_risk"):
+        patterns = out.get("detected_patterns") or []
+        if isinstance(patterns, list):
+            if "climax_triggered" in patterns:
+                out["climax_risk"] = "triggered"
+            elif "climax_warning" in patterns:
+                out["climax_risk"] = "warning"
+        if not out.get("climax_risk"):
+            out["climax_risk"] = "none"
 
     _hoist_bar_by_bar_summary(out)
     normalize_stage1_traces(out, normalization_mode=normalization_mode)

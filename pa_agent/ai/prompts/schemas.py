@@ -87,7 +87,7 @@ _SIGNAL_BAR: dict = {
 
 _ENTRY_BAR: dict = {
     "type": "object",
-    "required": ["bar", "strength", "follow_through"],
+    "required": ["strength", "follow_through"],
     "properties": {
         "bar": {"type": ["string", "null"]},
         "strength": {"type": "string", "enum": ["strong", "weak", "not_triggered"]},
@@ -148,8 +148,6 @@ _BAR_BY_BAR_ITEM: dict = {
             "enum": [
                 "structure", "signal", "entry", "confirmation",
                 "noise", "trap", "climax", "test",
-                "trend_bull", "trend_bear",
-                "trapped_traders",
             ],
         },
         "bar_type": {
@@ -208,7 +206,13 @@ STAGE1_SCHEMA: dict = {
             "type": ["string", "null"],
             "enum": ["active", "ending", "transitioning", None],
         },
+        "climax_risk": {
+            "type": ["string", "null"],
+            "enum": ["none", "warning", "triggered", None],
+        },
         "market_phase": {"type": "string", "enum": ["stable", "transitioning"]},
+        "support_levels": {"type": "array", "items": {"type": "string"}},
+        "resistance_levels": {"type": "array", "items": {"type": "string"}},
         "transition_risk": {
             "type": ["string", "null"],
             "enum": ["high", "medium", "low", None],
