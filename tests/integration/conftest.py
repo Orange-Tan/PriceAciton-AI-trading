@@ -78,7 +78,7 @@ SAMPLE_DECISION_TRACE = [
     },
 ]
 
-SAMPLE_BAR_BY_BAR_SUMMARY = make_bar_by_bar_summary(8)
+SAMPLE_BAR_BY_BAR_SUMMARY = make_bar_by_bar_summary(5)
 
 VALID_STAGE1 = {
     "cycle_position": "normal_channel",

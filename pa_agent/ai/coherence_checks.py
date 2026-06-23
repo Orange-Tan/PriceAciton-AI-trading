@@ -381,17 +381,12 @@ def validate_stage1_coherence(
         count = len(summary)
         if n_bars is not None and n_bars > 0:
             target = BAR_BY_BAR_TARGET_COUNT
-            expected_min = min(target, n_bars) if n_bars >= target else n_bars
-            expected_max = min(max(target, 8), n_bars)
-            if count < expected_min:
+            expected = min(target, n_bars)
+            if count != expected:
                 errors.append(
                     f"bar_by_bar_summary has {count} items; "
-                    f"expected at least {expected_min} for {n_bars} bars"
-                )
-            if count > expected_max:
-                errors.append(
-                    f"bar_by_bar_summary has {count} items; "
-                    f"expected at most {expected_max}"
+                    f"expected exactly {expected} for {n_bars} bars "
+                    f"(K5–K1 when ≥{target} bars)"
                 )
         elif count < 1:
             errors.append("bar_by_bar_summary must not be empty")
