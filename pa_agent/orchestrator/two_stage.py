@@ -1006,6 +1006,7 @@ class TwoStageOrchestrator:
             self._settings.provider.model if self._settings is not None else ""
         )
         tried_qclaw = False
+        tried_cursor = False
         tried_workbuddy = False
         while True:
             try:
@@ -1028,6 +1029,15 @@ class TwoStageOrchestrator:
                     tried_workbuddy = True
                     logger.info(
                         "%s network error (%s); applied WorkBuddy provider — retrying",
+                        stage_label,
+                        exc,
+                    )
+                elif not tried_cursor and self._try_cursor_fallback(
+                    original_model=original_model
+                ):
+                    tried_cursor = True
+                    logger.info(
+                        "%s network error (%s); applied Cursor provider — retrying",
                         stage_label,
                         exc,
                     )
@@ -1073,6 +1083,44 @@ class TwoStageOrchestrator:
 
         logger.info(
             "QClaw auto-fallback: model=%s base_url=%s",
+            self._settings.provider.model,
+            self._settings.provider.base_url,
+        )
+        return True
+
+    def _try_cursor_fallback(self, *, original_model: str = "") -> bool:
+        """Apply Cursor route via QClaw (like settings Save with model=openclaw_cs)."""
+        from pa_agent.ai.cursor_connector import (
+            apply_cursor_provider_to_settings,
+            is_openclaw_cs_model,
+        )
+        from pa_agent.config.paths import SETTINGS_JSON_PATH
+
+        if not is_openclaw_cs_model(original_model):
+            return False
+        if self._settings is None:
+            return False
+
+        from pa_agent.config.settings import save_settings
+        from pa_agent.util.logging import update_api_key
+
+        err = apply_cursor_provider_to_settings(
+            self._settings,
+            preferred_model=original_model,
+        )
+        if err:
+            logger.warning("Cursor auto-fallback unavailable: %s", err)
+            return False
+
+        self._client.update_provider(self._settings.provider)
+        try:
+            save_settings(self._settings, SETTINGS_JSON_PATH)
+            update_api_key(self._settings.provider.api_key)
+        except Exception as save_exc:  # noqa: BLE001
+            logger.warning("Cursor fallback applied but settings save failed: %s", save_exc)
+
+        logger.info(
+            "Cursor auto-fallback: model=%s base_url=%s",
             self._settings.provider.model,
             self._settings.provider.base_url,
         )

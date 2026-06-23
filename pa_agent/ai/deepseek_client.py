@@ -81,18 +81,22 @@ def _is_deepseek_native(base_url: str) -> bool:
 def _is_deepseek_model(model: str) -> bool:
     """True for DeepSeek model ids; excludes QClaw ``openclaw`` and WorkBuddy ``openclaw_wb`` Agent aliases."""
     m = (model or "").lower()
-    if m in ("openclaw", "openclaw_wb"):
+    if m in ("openclaw", "openclaw_wb", "openclaw_cs"):
         return False
-    if m.startswith("openclaw/") or m.startswith("openclaw_wb/"):
+    if m.startswith("openclaw/") or m.startswith("openclaw_wb/") or m.startswith("openclaw_cs/"):
         return False
     return "deepseek" in m
 
 
 def _is_qclaw_openclaw_agent(settings: AIProviderSettings) -> bool:
     """True when requests go through QClaw's public-gateway OpenClaw Agent."""
+    from pa_agent.ai.cursor_connector import is_openclaw_cs_model
     from pa_agent.ai.qclaw_connector import detect_qclaw, is_openclaw_model
 
-    return bool(is_openclaw_model(settings.model) and detect_qclaw())
+    if not detect_qclaw():
+        return False
+    model = settings.model or ""
+    return is_openclaw_model(model) or is_openclaw_cs_model(model)
 
 
 def _openclaw_agent_request_extra(settings: AIProviderSettings) -> dict[str, Any]:
@@ -110,10 +114,13 @@ def _is_workbuddy_agent(settings: AIProviderSettings) -> bool:
 
 
 def _is_openclaw_agent_model(model: str) -> bool:
-    """True for QClaw/WorkBuddy OpenClaw Agent model aliases."""
+    """True for QClaw/WorkBuddy/Cursor OpenClaw Agent model aliases."""
     m = (model or "").lower()
-    return m in ("openclaw", "openclaw_wb") or m.startswith("openclaw/") or m.startswith(
-        "openclaw_wb/"
+    return (
+        m in ("openclaw", "openclaw_wb", "openclaw_cs")
+        or m.startswith("openclaw/")
+        or m.startswith("openclaw_wb/")
+        or m.startswith("openclaw_cs/")
     )
 
 
@@ -148,7 +155,7 @@ def _extract_cached_prompt_tokens(usage: Any) -> int:
 
 
 def _effective_api_model(settings: AIProviderSettings) -> str:
-    """Model id sent to the upstream API (resolve WorkBuddy aliases)."""
+    """Model id sent to the upstream API (resolve provider aliases)."""
     if _is_workbuddy_agent(settings):
         from pa_agent.ai.workbuddy_connector import resolve_workbuddy_api_model
 
