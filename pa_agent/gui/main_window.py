@@ -3507,6 +3507,16 @@ class MainWindow(QMainWindow):
 
         # ── Debug tab: add Stage1 and Stage2 turns ────────────────────────────
         debug = getattr(self, "_debug_widget", None)
+
+        def _add_debug_turn(turn: dict[str, Any]) -> None:
+            """Keep a torn-down debug widget from aborting result handling."""
+            if debug is None:
+                return
+            try:
+                debug.add_turn(turn)
+            except (AttributeError, RuntimeError) as exc:
+                logger.debug("Debug widget unavailable while recording analysis: %s", exc)
+
         if debug is not None:
             # Stage 1 turn
             s1_msgs = getattr(record, "stage1_messages", []) or []
@@ -3520,7 +3530,7 @@ class MainWindow(QMainWindow):
                 s1_validation = _json.dumps(s1_diag, ensure_ascii=False, indent=2)
             else:
                 s1_validation = "（验证失败或无数据）"
-            debug.add_turn({
+            _add_debug_turn({
                 "label": "Stage1 诊断",
                 "system_prompt": s1_system,
                 "user_prompt": s1_user,
@@ -3540,7 +3550,7 @@ class MainWindow(QMainWindow):
                 s2_validation = _json.dumps(s2_decision, ensure_ascii=False, indent=2)
             else:
                 s2_validation = "（验证失败或无数据）"
-            debug.add_turn({
+            _add_debug_turn({
                 "label": "Stage2 决策",
                 "system_prompt": s2_system,
                 "user_prompt": s2_user,
@@ -3553,7 +3563,7 @@ class MainWindow(QMainWindow):
             self._maybe_show_truncation_help_dialog(exc_info)
 
             if exc_info:
-                debug.add_turn({
+                _add_debug_turn({
                     "label": "⚠ 异常",
                     "system_prompt": "",
                     "user_prompt": "",
