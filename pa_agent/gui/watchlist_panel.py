@@ -103,8 +103,11 @@ class WatchlistPanel(QWidget):
         self._add_group_btn = QPushButton("+")
         self._add_group_btn.setFixedSize(28, 28)
         self._add_group_btn.setStyleSheet(
-            f"QPushButton {{ border: none; background: transparent; color: {T.FG_2}; "
-            "font-size: 17px; } QPushButton:hover { background: rgba(127, 127, 127, 0.12); }"
+            f"QPushButton {{ min-width: 26px; max-width: 26px; min-height: 26px; "
+            f"max-height: 26px; border: 1px solid transparent; background: transparent; "
+            f"color: {T.ACCENT_PRIMARY}; font-size: 20px; font-weight: 600; padding: 0; }} "
+            "QPushButton:hover { background: rgba(127, 127, 127, 0.12); "
+            f"border-color: {T.ACCENT_PRIMARY}; }}"
         )
         self._add_group_btn.setToolTip("新增板块")
         group_header_row.addWidget(self._add_group_btn)
@@ -150,8 +153,11 @@ class WatchlistPanel(QWidget):
         self._add_symbol_btn = QPushButton("+")
         self._add_symbol_btn.setFixedSize(28, 28)
         self._add_symbol_btn.setStyleSheet(
-            f"QPushButton {{ border: none; background: transparent; color: {T.FG_2}; "
-            "font-size: 17px; } QPushButton:hover { background: rgba(127, 127, 127, 0.12); }"
+            f"QPushButton {{ min-width: 26px; max-width: 26px; min-height: 26px; "
+            f"max-height: 26px; border: 1px solid transparent; background: transparent; "
+            f"color: {T.ACCENT_PRIMARY}; font-size: 20px; font-weight: 600; padding: 0; }} "
+            "QPushButton:hover { background: rgba(127, 127, 127, 0.12); "
+            f"border-color: {T.ACCENT_PRIMARY}; }}"
         )
         self._add_symbol_btn.setToolTip("添加自选股")
         stock_header_row.addWidget(self._add_symbol_btn)

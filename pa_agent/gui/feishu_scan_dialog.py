@@ -247,7 +247,30 @@ class FeishuScanDialog(QDialog):
     def _on_close_clicked(self) -> None:
         self.reject()
 
+    def _shutdown_worker(self) -> None:
+        """Detach a running scan thread before destroying the dialog."""
+        worker = getattr(self, "_worker", None)
+        if worker is None:
+            return
+        worker.stop()
+        if not worker.isRunning():
+            worker.deleteLater()
+            self._worker = None
+            return
+        for signal in (
+            worker.qr_ready,
+            worker.status_changed,
+            worker.success,
+            worker.failed,
+        ):
+            try:
+                signal.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+        worker.setParent(None)
+        worker.finished.connect(worker.deleteLater)
+        self._worker = None
+
     def reject(self) -> None:  # noqa: N802
-        self._worker.stop()
-        self._worker.wait(3000)
+        self._shutdown_worker()
         super().reject()
