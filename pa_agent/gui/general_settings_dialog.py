@@ -234,7 +234,7 @@ class GeneralSettingsPanel(QWidget):
 
     def load_values(self) -> None:
         g = self._settings.general
-        theme = getattr(g, "theme", "dark_gray") or "dark_gray"
+        theme = getattr(g, "theme", "light") or "light"
         ti = self._theme_combo.findData(theme)
         if ti >= 0:
             self._theme_combo.setCurrentIndex(ti)
@@ -363,7 +363,7 @@ class GeneralSettingsDialog(QDialog):
         self.setMinimumSize(680, 480)
         self._settings = settings
         # 打开对话框时已生效的主题：取消时回滚界面风格预览用
-        self._theme_on_open = getattr(settings.general, "theme", "dark_gray") or "dark_gray"
+        self._theme_on_open = getattr(settings.general, "theme", "light") or "light"
 
         self._panel = GeneralSettingsPanel(settings, self)
 

@@ -140,8 +140,8 @@ class GeneralSettings(BaseModel):
     analysis_bar_count: int = Field(default=100, ge=2, le=5000)
     refresh_interval_ms: int = 1000
     context_warning_threshold_pct: float = 80.0
-    #: 软件显示风格：深灰（默认）/ 浅色，应用启动与切换时全局生效
-    theme: ThemeKind = "dark_gray"
+    #: 软件显示风格：浅色（默认）/ 深灰，应用启动与切换时全局生效
+    theme: ThemeKind = "light"
     last_data_source: DataSourceKind = "tradingview"
     #: A-share K-line adjust for East Money / Baostock (qfq=前复权)
     kline_adjust: Literal["qfq", "hfq", "none"] = "qfq"
@@ -374,9 +374,9 @@ def load_settings(path: Path | None = None) -> "Settings":
     if not isinstance(general, dict):
         logger.warning("settings.general has invalid type; using defaults for general")
         general = {}
-    # 深蓝主题已移除，旧配置回退为默认深灰
+    # 深蓝主题已移除，旧配置回退为默认浅色
     if general.get("theme") == "dark_blue":
-        general["theme"] = "dark_gray"
+        general["theme"] = "light"
     if "cost_warning_threshold_pct" in general and "context_warning_threshold_pct" not in general:
         general["context_warning_threshold_pct"] = general.pop("cost_warning_threshold_pct")
     general.pop("last_htf_text", None)

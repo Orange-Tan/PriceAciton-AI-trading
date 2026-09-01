@@ -13,6 +13,7 @@ from pa_agent.config.settings import Settings
 from pa_agent.gui.ai_stream_window import AIStreamPanel
 from pa_agent.gui.decision_panel import DecisionPanel
 from pa_agent.gui.theme import tokens as T
+from pa_agent.gui.theme import apply as theme_apply
 from pa_agent.util.event_bus import EventBus
 
 _APP: QApplication | None = None
@@ -104,3 +105,26 @@ def test_api_key_alert_lives_inside_analysis_settings():
     assert window._api_key_alert_label.parentWidget() is window._analysis_settings_content
     assert window._api_key_alert_label in window._analysis_settings_content.findChildren(QLabel)
     window.close()
+
+
+def test_workbench_uses_zero_outer_spacing():
+    from pa_agent.gui.main_window import MainWindow
+
+    _qapp()
+    ctx = AppContext(
+        settings=Settings(),
+        event_bus=EventBus(),
+        data_source=SimpleNamespace(_connected=False),
+    )
+    window = MainWindow(ctx)
+    layout = window.centralWidget().layout()
+    assert layout is not None
+    margins = layout.contentsMargins()
+    assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (0, 0, 0, 0)
+    assert layout.spacing() == 0
+    window.close()
+
+
+def test_light_theme_is_the_default_for_new_settings():
+    assert Settings().general.theme == "light"
+    assert theme_apply._DEFAULT_KIND == "light"

@@ -223,7 +223,7 @@ class AppSettingsDialog(QDialog):
         self._settings = settings
         self._decision_flow_play_handler = decision_flow_play_handler
         # 打开对话框时已生效的主题：取消时回滚界面风格预览用
-        self._theme_on_open = getattr(settings.general, "theme", "dark_gray") or "dark_gray"
+        self._theme_on_open = getattr(settings.general, "theme", "light") or "light"
         self.selected_data_source_kind = normalize_data_source_kind(current_data_source_kind)
         # 本次打开设置内的数据源连通检测结果：{kind: (ok, detail)}
         self._ds_probe_status: dict[str, tuple[bool, str]] = {}

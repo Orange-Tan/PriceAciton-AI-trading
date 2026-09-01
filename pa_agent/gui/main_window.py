@@ -363,8 +363,9 @@ class MainWindow(QMainWindow):
 
         tab = QWidget()
         outer_layout = QVBoxLayout(tab)
-        outer_layout.setContentsMargins(8, 8, 8, 8)
-        outer_layout.setSpacing(6)
+        # Keep the chart/sidebar workbench flush with the window frame.
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
 
         # ── Control bar ───────────────────────────────────────────────────────
         # 拆成两行，避免一行内控件最小宽度之和撑爆窗口（导致窗口过宽且无法缩窄）。

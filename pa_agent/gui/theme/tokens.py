@@ -125,7 +125,7 @@ THEME_LABELS: dict[str, str] = {
     "light": "浅色",
 }
 
-_ACTIVE: str = "dark_gray"
+_ACTIVE: str = "light"
 
 
 def active_theme() -> str:

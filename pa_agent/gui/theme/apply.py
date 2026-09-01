@@ -10,7 +10,7 @@ from pa_agent.gui.theme import tokens as T
 
 #: 内置主题 kind（与 pa_agent/gui/theme/*.qss 一一对应）。
 THEME_KINDS: tuple[str, ...] = ("dark_gray", "light")
-_DEFAULT_KIND: str = "dark_gray"
+_DEFAULT_KIND: str = "light"
 _QSS_DIR = Path(__file__).parent
 
 
