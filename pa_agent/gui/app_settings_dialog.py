@@ -260,8 +260,12 @@ class AppSettingsDialog(QDialog):
         self._ds_probe_status: dict[str, tuple[bool, str]] = {}
         self._ds_probe_worker: _DataSourceProbeWorker | None = None
         self._model_probe_worker: _ModelProbeWorker | None = None
+        self._loading_values = True
+        self._active_provider_id: str | None = None
+        self._provider_key_cache: dict[str, str] = {}
         self._setup_ui()
         self._load_values()
+        self._loading_values = False
 
     # ── UI ────────────────────────────────────────────────────────────────────
 
@@ -404,7 +408,7 @@ class AppSettingsDialog(QDialog):
 
         api_key_row = QHBoxLayout()
         self._api_key_edit = QLineEdit()
-        self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Normal)
+        self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._api_key_edit.setPlaceholderText("输入 API Key")
         api_key_row.addWidget(self._api_key_edit)
         self._show_key_btn = QPushButton("隐藏")
@@ -473,7 +477,11 @@ class AppSettingsDialog(QDialog):
                 self._model_combo.addItem(model, model)
             self._model_combo.setCurrentIndex(self._model_combo.findData(model))
 
-        self._api_key_edit.setText(p.api_key)
+        self._api_key_edit.clear()
+        self._api_key_edit.setPlaceholderText("已输入" if p.api_key else "输入 API Key")
+        self._active_provider_id = pid
+        if p.api_key:
+            self._provider_key_cache[pid] = p.api_key
         self._thinking_check.setChecked(p.thinking)
         ri = self._reasoning_effort_combo.findText(p.reasoning_effort)
         if ri >= 0:
@@ -633,7 +641,17 @@ class AppSettingsDialog(QDialog):
 
     def _on_provider_changed(self, _index: int) -> None:
         pid = self._provider_combo.currentData()
+        if self._loading_values:
+            return
+        previous = self._active_provider_id
+        if previous:
+            self._provider_key_cache[previous] = self._effective_api_key()
+        self._active_provider_id = str(pid or _CUSTOM_ID)
         self._apply_provider_preset(pid)
+        key = self._provider_key_cache.get(self._active_provider_id, "")
+        self._api_key_edit.setText(key)
+        self._api_key_edit.setPlaceholderText("已输入" if key else "输入 API Key")
+        self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
 
     def _apply_provider_preset(self, pid: str | None) -> None:
         preset = find_provider(pid)
@@ -659,13 +677,23 @@ class AppSettingsDialog(QDialog):
             self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Normal)
             self._show_key_btn.setText("隐藏")
 
+    def _effective_api_key(self) -> str:
+        """Return a newly entered key, or the saved key when the field is untouched."""
+        return self._api_key_edit.text().strip() or self._provider_key_cache.get(
+            self._active_provider_id or "", ""
+        )
+
+    def _model_form_value(self) -> str:
+        """Read the editable model text, avoiding stale combo-box user data."""
+        return self._model_combo.currentText().strip()
+
     def _probe_model(self) -> None:
         """Test unsaved model form values with a short background request."""
         if self._model_probe_worker is not None and self._model_probe_worker.isRunning():
             return
-        model = str(self._model_combo.currentData() or self._model_combo.currentText()).strip()
+        model = self._model_form_value()
         base_url = self._base_url_edit.text().strip()
-        api_key = self._api_key_edit.text().strip()
+        api_key = self._effective_api_key()
         if not model or not base_url or not api_key:
             self._model_probe_label.setStyleSheet(f"color: {T.WARNING}; font-size: 12px;")
             self._model_probe_label.setText("请先填写 Base URL、模型和 API Key")
@@ -707,11 +735,9 @@ class AppSettingsDialog(QDialog):
 
     def _on_save(self) -> None:
         p = self._settings.provider
-        model = self._model_combo.currentData() or ""
-        if not model:
-            model = self._model_combo.currentText().strip()
+        model = self._model_form_value()
         base_url = self._base_url_edit.text().strip()
-        api_key = self._api_key_edit.text().strip()
+        api_key = self._effective_api_key()
 
         if not model:
             QMessageBox.warning(self, "模型 API 配置有误", "请填写模型名称。")

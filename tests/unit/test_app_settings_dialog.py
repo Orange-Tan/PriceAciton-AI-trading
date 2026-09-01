@@ -67,3 +67,58 @@ def test_model_probe_worker_masks_api_key_on_failure(monkeypatch):
 
     assert result[0][0] is False
     assert settings.api_key not in result[0][1]
+
+
+def test_editable_model_text_wins_over_stale_combo_data(qtbot):
+    from pa_agent.gui.app_settings_dialog import AppSettingsDialog
+
+    dialog = AppSettingsDialog(Settings())
+    qtbot.addWidget(dialog)
+    dialog._model_combo.setCurrentText("gpt-5.6-luna")
+
+    assert dialog._model_form_value() == "gpt-5.6-luna"
+
+
+def test_switching_provider_does_not_reuse_previous_api_key(qtbot):
+    from pa_agent.gui.app_settings_dialog import AppSettingsDialog
+
+    settings = Settings()
+    settings.provider.api_key = "token-deepseek-value"
+    dialog = AppSettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    openai_index = dialog._provider_combo.findData("openai")
+    assert openai_index >= 0
+
+    dialog._provider_combo.setCurrentIndex(openai_index)
+
+    assert dialog._api_key_edit.text() == ""
+    assert dialog._api_key_edit.placeholderText() == "输入 API Key"
+
+
+def test_existing_api_key_is_not_rendered_as_plaintext(qtbot):
+    from PyQt6.QtWidgets import QLineEdit
+    from pa_agent.gui.app_settings_dialog import AppSettingsDialog
+
+    settings = Settings()
+    settings.provider.api_key = "token-existing-value"
+    dialog = AppSettingsDialog(settings)
+    qtbot.addWidget(dialog)
+
+    assert dialog._api_key_edit.echoMode() == QLineEdit.EchoMode.Password
+    assert dialog._api_key_edit.text() == ""
+    assert dialog._api_key_edit.placeholderText() == "已输入"
+
+
+def test_save_preserves_existing_key_when_field_is_untouched(qtbot, monkeypatch):
+    from pa_agent.gui.app_settings_dialog import AppSettingsDialog
+
+    settings = Settings()
+    settings.provider.api_key = "token-existing-value"
+    dialog = AppSettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    monkeypatch.setattr("pa_agent.gui.app_settings_dialog.save_settings", lambda *_: None)
+    monkeypatch.setattr(dialog, "accept", lambda: None)
+
+    dialog._on_save()
+
+    assert settings.provider.api_key == "token-existing-value"
