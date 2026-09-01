@@ -684,8 +684,14 @@ class AppSettingsDialog(QDialog):
         )
 
     def _model_form_value(self) -> str:
-        """Read the editable model text, avoiding stale combo-box user data."""
-        return self._model_combo.currentText().strip()
+        """Read edited text while preserving the clean id of a preset item."""
+        text = self._model_combo.currentText().strip()
+        index = self._model_combo.currentIndex()
+        if index >= 0 and self._model_combo.itemText(index).strip() == text:
+            data = self._model_combo.itemData(index)
+            if data:
+                return str(data).strip()
+        return text
 
     def _probe_model(self) -> None:
         """Test unsaved model form values with a short background request."""

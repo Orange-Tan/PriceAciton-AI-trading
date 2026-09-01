@@ -79,6 +79,18 @@ def test_editable_model_text_wins_over_stale_combo_data(qtbot):
     assert dialog._model_form_value() == "gpt-5.6-luna"
 
 
+def test_preset_model_uses_clean_model_id(qtbot):
+    from pa_agent.gui.app_settings_dialog import AppSettingsDialog
+
+    dialog = AppSettingsDialog(Settings())
+    qtbot.addWidget(dialog)
+    index = dialog._model_combo.findData("deepseek-v4-flash")
+    assert index >= 0
+    dialog._model_combo.setCurrentIndex(index)
+
+    assert dialog._model_form_value() == "deepseek-v4-flash"
+
+
 def test_switching_provider_does_not_reuse_previous_api_key(qtbot):
     from pa_agent.gui.app_settings_dialog import AppSettingsDialog
 
