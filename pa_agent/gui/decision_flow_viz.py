@@ -825,7 +825,7 @@ class DecisionFlowVizPanel(QWidget):
         self._view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self._view.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self._view.setBackgroundBrush(QBrush(QColor("#05070b")))
+        self._view.setBackgroundBrush(QBrush(QColor(T.BG)))
 
         title = QLabel("决策路径可视化")
         title.setObjectName("toolbarTitle")
@@ -885,6 +885,12 @@ class DecisionFlowVizPanel(QWidget):
         """Receive persisted settings (auto-play toggle)."""
         self._settings = settings
         self.schedule_refit_view()
+
+    def refresh_theme(self) -> None:
+        """主题切换后刷新画布底色并重绘（节点/连线在 paint 时读取当前 token）。"""
+        self._view.setBackgroundBrush(QBrush(QColor(T.BG)))
+        self._scene.update()
+        self._view.viewport().update()
 
     def schedule_refit_view(self, *, delay_ms: int = 0) -> None:
         """Defer refit until the graphics view has a real viewport size."""

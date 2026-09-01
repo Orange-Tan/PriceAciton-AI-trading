@@ -9,7 +9,7 @@ from pa_agent.data.base import KlineBar
 
 _TIMEFRAME_SECONDS_RE = re.compile(r"^(\d+)([mhdw])$", re.IGNORECASE)
 
-# Month uses uppercase M in MT5; UI combos use lowercase units only.
+# Month uses uppercase M in some sources; UI combos use lowercase units only.
 _TIMEFRAME_SECONDS = {
     "1m": 60,
     "5m": 5 * 60,

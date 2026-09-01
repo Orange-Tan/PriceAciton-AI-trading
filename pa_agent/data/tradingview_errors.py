@@ -44,7 +44,7 @@ def format_tradingview_fetch_error(
     if sym.lower().endswith("m") and len(sym) > 2:
         return (
             f"TradingView 无数据（{ex_hint} / {sym}）："
-            "品种名像 MT5 券商后缀（…m），请去掉 m 或改用「数据来源 → MT5」。"
+            "品种名带了 m 后缀，请去掉 m。"
             "黄金示例：交易所 OANDA + 品种 XAUUSD"
         )
 

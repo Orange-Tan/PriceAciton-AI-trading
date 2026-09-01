@@ -2,8 +2,41 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+import sys
+import time
+import types
 
 from pa_agent.data.tradingview_connectivity import check_tradingview_connectivity
+
+# Keep connectivity tests runnable when the optional tvDatafeed package is not
+# installed; production code still reports ImportError normally.
+sys.modules.setdefault(
+    "tvDatafeed",
+    types.SimpleNamespace(Interval=MagicMock(), TvDatafeed=MagicMock()),
+)
+
+
+def test_probe_once_returns_promptly_on_timeout(monkeypatch) -> None:
+    from pa_agent.data import tradingview_connectivity as connectivity
+
+    class Interval:
+        in_1_minute = object()
+
+    class SlowTv:
+        def get_hist(self, **kwargs):
+            time.sleep(0.5)
+            return object()
+
+    monkeypatch.setitem(
+        sys.modules,
+        "tvDatafeed",
+        types.SimpleNamespace(Interval=Interval, TvDatafeed=SlowTv),
+    )
+    started = time.monotonic()
+    result = connectivity._probe_once(timeout_s=0.01)
+
+    assert result == (False, "连接超时", True)
+    assert time.monotonic() - started < 0.15
 
 
 def _mock_tv_ok() -> tuple[MagicMock, MagicMock]:

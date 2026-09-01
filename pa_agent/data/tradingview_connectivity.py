@@ -28,10 +28,10 @@ def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
         if df is None or getattr(df, "empty", True):
             raise RuntimeError("TradingView 返回空数据")
 
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(_probe)
-            fut.result(timeout=timeout_s)
+        fut = pool.submit(_probe)
+        fut.result(timeout=timeout_s)
         return True, None, False
     except concurrent.futures.TimeoutError:
         logger.warning(
@@ -46,6 +46,9 @@ def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("TradingView connectivity probe failed: %s", exc)
         return False, str(exc), True
+    finally:
+        # Do not wait for a blocked third-party socket after the public timeout.
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def check_tradingview_connectivity(

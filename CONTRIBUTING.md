@@ -4,8 +4,8 @@
 
 ## 开发环境
 
-1. Windows 10/11，Python 3.11+
-2. 安装 MetaTrader 5 并登录（用于真实 K 线联调）
+1. Windows 10/11 或 macOS 12+，Python 3.11+
+2. 无需安装行情终端；真实 K 线联调可选用任一数据源（TradingView / AkShare / 东方财富 / Tushare / 通达信 / 腾讯财经）
 3. 克隆仓库后：
 
    ```cmd

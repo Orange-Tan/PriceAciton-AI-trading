@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -18,7 +19,6 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
-    QSpinBox,
     QSplitter,
     QStatusBar,
     QVBoxLayout,
@@ -27,12 +27,21 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from pa_agent.app_context import AppContext
+from pa_agent.gui.theme import tokens as T
 from pa_agent.gui.validation_debug_dialog import show_validation_debug_dialog
 
 logger = logging.getLogger(__name__)
 
 # Zombie timeout in milliseconds (5 seconds)
 _WORKER_JOIN_TIMEOUT_MS = 5000
+
+
+def _default_window_size(screen: Any | None) -> tuple[int, int]:
+    """Return 90% of the primary screen's usable area, with a safe fallback."""
+    available = screen.availableGeometry() if screen is not None else None
+    if available is None:
+        return 1280, 820
+    return int(available.width() * 0.90), int(available.height() * 0.90)
 
 
 def _qobject_alive(obj: QObject | None) -> bool:
@@ -219,7 +228,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(
             "PA Agent — Trading Terminal（分析仅供参考，不构成投资建议）"
         )
-        self.resize(1440, 900)
+        # 初始窗口尺寸：按主屏幕可用区域的 90%，四周留出边距，避免遮挡系统区域。
+        from PyQt6.QtGui import QGuiApplication
+
+        _screen = QGuiApplication.primaryScreen()
+        self.resize(*_default_window_size(_screen))
         self._ctx = ctx
         self._worker: _AnalysisWorker | None = None
         self._analysis_worker_id: object | None = None
@@ -290,6 +303,8 @@ class MainWindow(QMainWindow):
         self._future_trend_panel = self._ai_sidebar.future_trend
         self._decision_tree_panel = self._ai_sidebar.decision_tree
         self._decision_flow_viz_panel = self._ai_sidebar.decision_flow_viz
+        # Summary metrics are rendered inside the decision tab.
+        self._summary_strip = self._decision_panel.summary_strip
 
         # Auto demo: when flow playback ends, return to stream tab.
         try:
@@ -317,23 +332,18 @@ class MainWindow(QMainWindow):
 
         # ── Menu bar ─── 顶层直接触发按钮 + 演示模式下拉 ────────────────────
         menu_bar: QMenuBar = self.menuBar()  # type: ignore[assignment]
+        # macOS 系统菜单栏（屏幕顶部）对顶层菜单项渲染不稳定，曾多次出现「设置」
+        # 看不到。强制在窗口内渲染菜单栏（QMainWindow 顶部），保证始终可见。
+        menu_bar.setNativeMenuBar(False)
 
-        # 1. AI 模型设置 — 点击直接弹对话框（无下拉）
-        _ai_model_action = QAction("AI 模型设置", self)
-        _ai_model_action.triggered.connect(self._open_ai_model_settings_dialog)
-        menu_bar.addAction(_ai_model_action)
+        # 1. 设置 — 点击直接弹出设置对话框（数据源 / 模型 API / 飞书通知 / 通用设置），
+        #    模型配置统一在这里的「模型 API」页完成。
+        #    窗口内菜单栏上裸 QAction 可正常渲染并直接触发，无需下拉子项。
+        _settings_action = QAction("设置", self)
+        _settings_action.triggered.connect(self._open_app_settings_dialog)
+        menu_bar.addAction(_settings_action)
 
-        # 2. 飞书发送通知设置 — 点击直接弹对话框（无下拉）
-        _feishu_action = QAction("飞书发送通知设置", self)
-        _feishu_action.triggered.connect(self._open_feishu_settings_dialog)
-        menu_bar.addAction(_feishu_action)
-
-        # 3. 其他通用设置 — 点击直接弹对话框（无下拉）
-        _general_action = QAction("其他通用设置", self)
-        _general_action.triggered.connect(self._open_general_settings_dialog)
-        menu_bar.addAction(_general_action)
-
-        # 4. 演示模式 — 保留下拉菜单
+        # 2. 演示模式 — 保留下拉菜单
         demo_menu = menu_bar.addMenu("演示模式")
         self._demo_manual_action = QAction("手动选择记录…", self)
         self._demo_manual_action.triggered.connect(lambda: self._on_demo_menu_action("manual"))
@@ -357,27 +367,30 @@ class MainWindow(QMainWindow):
         outer_layout.setSpacing(6)
 
         # ── Control bar ───────────────────────────────────────────────────────
-        ctrl_layout = QHBoxLayout()
+        # 拆成两行，避免一行内控件最小宽度之和撑爆窗口（导致窗口过宽且无法缩窄）。
+        ctrl_layout = QGridLayout()
         ctrl_layout.setSpacing(8)
+        ctrl_row2 = QGridLayout()
+        ctrl_row2.setSpacing(8)
 
         _settings = getattr(self._ctx, "settings", None)
-        _last_symbol = "XAUUSDm"
+        _last_symbol = "XAUUSD"
         _last_tf = "15m"
         if _settings is not None:
-            _last_symbol = getattr(_settings.general, "last_symbol", "XAUUSDm") or "XAUUSDm"
+            _last_symbol = getattr(_settings.general, "last_symbol", "XAUUSD") or "XAUUSD"
             _last_tf = getattr(_settings.general, "last_timeframe", "15m") or "15m"
 
         # Data source
         from pa_agent.data.factory import DATA_SOURCE_CHOICES, normalize_data_source_kind
 
-        _last_ds = "mt5"
+        _last_ds = "tradingview"
         if _settings is not None:
             _last_ds = normalize_data_source_kind(
-                getattr(_settings.general, "last_data_source", "mt5")
+                getattr(_settings.general, "last_data_source", "tradingview")
             )
         self._active_data_source_kind = _last_ds
 
-        ctrl_layout.addWidget(QLabel("数据来源:"))
+        ctrl_layout.addWidget(QLabel("数据来源:"), 0, 0)
         self._data_source_combo = QComboBox()
         for kind, label in DATA_SOURCE_CHOICES:
             self._data_source_combo.addItem(label, kind)
@@ -386,13 +399,15 @@ class MainWindow(QMainWindow):
             self._data_source_combo.setCurrentIndex(ds_index)
         self._data_source_combo.setMinimumWidth(108)
         self._data_source_combo.setToolTip(
-            "K 线数据来源：MT5（需终端登录）、TradingView（tvDatafeed）、"
-            "本地仅支持 MT5 与 TradingView"
+            "K 线数据来源：\n"
+            "· TradingView（tvDatafeed）：全球外汇/贵金属/A股/港股/美股/指数/期货/加密货币\n"
+            "· AkShare / 东方财富 / Tushare / 通达信 / 腾讯财经（A股）：A股与指数\n"
+            "各来源的支持行情与连通条件详见菜单栏「设置 → 数据源」。"
         )
         self._data_source_combo.currentIndexChanged.connect(
             self._on_data_source_combo_changed
         )
-        ctrl_layout.addWidget(self._data_source_combo)
+        ctrl_layout.addWidget(self._data_source_combo, 0, 1)
 
         # TradingView exchange is forced to «auto» whenever the data source is TV.
         # We still keep the field visible for clarity, but it is not user-editable.
@@ -452,43 +467,41 @@ class MainWindow(QMainWindow):
         self._tv_exchange_combo.currentIndexChanged.connect(
             self._on_tv_exchange_changed
         )
-        ctrl_layout.addWidget(self._tv_exchange_label)
-        ctrl_layout.addWidget(self._tv_exchange_combo)
+        ctrl_layout.addWidget(self._tv_exchange_label, 0, 2)
+        ctrl_layout.addWidget(self._tv_exchange_combo, 0, 3)
 
-        # Symbol — editable combo (user can type any MT5 symbol)
-        ctrl_layout.addWidget(QLabel("品种:"))
+        # Symbol — editable combo (user can type any symbol)
+        ctrl_layout.addWidget(QLabel("品种:"), 1, 0)
         self._symbol_combo = QComboBox()
         self._symbol_combo.setEditable(True)
         self._symbol_combo.setCurrentText(_last_symbol)
         self._symbol_combo.setMinimumWidth(110)
         self._apply_data_source_symbol_placeholder()
-        ctrl_layout.addWidget(self._symbol_combo)
+        ctrl_layout.addWidget(self._symbol_combo, 1, 1)
         self._populate_symbol_combo_for_source()
 
         self._symbol_alert_label = QLabel("")
         self._symbol_alert_label.setStyleSheet("color: #f85149; font-size: 11px;")
         self._symbol_alert_label.setWordWrap(True)
         self._symbol_alert_label.hide()
-        ctrl_layout.addWidget(self._symbol_alert_label)
+        ctrl_layout.addWidget(self._symbol_alert_label, 2, 0, 1, 4)
 
         # Timeframe
-        ctrl_layout.addWidget(QLabel("周期:"))
+        ctrl_layout.addWidget(QLabel("周期:"), 1, 2)
         self._tf_combo = QComboBox()
         self._tf_combo.addItems(["1m", "5m", "15m", "1h", "4h", "1d"])
         self._tf_combo.setCurrentText(_last_tf)
         self._tf_combo.setMinimumWidth(60)
-        ctrl_layout.addWidget(self._tf_combo)
+        ctrl_layout.addWidget(self._tf_combo, 1, 3)
         self._populate_timeframe_combo_for_source()
         self._sync_tv_exchange_visibility()
-
-        ctrl_layout.addStretch()
 
         self._fetch_data_btn = QPushButton("获取数据")
         self._fetch_data_btn.setObjectName("primaryButton")
         self._fetch_data_btn.setMinimumWidth(90)
         self._fetch_data_btn.setToolTip("开始从当前数据源持续拉取 K 线数据并实时更新图表")
         self._fetch_data_btn.clicked.connect(self._on_fetch_data_clicked)
-        ctrl_layout.addWidget(self._fetch_data_btn)
+        ctrl_layout.addWidget(self._fetch_data_btn, 3, 0, 1, 2)
 
         self._wait_close_checkbox = QCheckBox("等待最新K线收盘后再提交分析")
         self._wait_close_checkbox.setObjectName("waitCloseCheckbox")
@@ -497,18 +510,18 @@ class MainWindow(QMainWindow):
             "勾选后，点击提交分析将先等待当前未收盘K线走完，再抓取数据并开始分析"
         )
         self._wait_close_checkbox.stateChanged.connect(self._on_wait_close_checkbox_changed)
-        ctrl_layout.addWidget(self._wait_close_checkbox)
+        ctrl_row2.addWidget(self._wait_close_checkbox, 0, 0, 1, 2)
 
         self._wait_close_countdown_label = QLabel("")
         self._wait_close_countdown_label.setObjectName("mutedLabel")
         self._wait_close_countdown_label.setMinimumWidth(100)
-        ctrl_layout.addWidget(self._wait_close_countdown_label)
+        ctrl_row2.addWidget(self._wait_close_countdown_label, 0, 2)
 
         self._submit_btn = QPushButton("提交分析")
         self._submit_btn.setObjectName("primaryButton")
         self._submit_btn.setMinimumWidth(100)
         self._submit_btn.clicked.connect(self._on_submit_analysis)
-        ctrl_layout.addWidget(self._submit_btn)
+        ctrl_row2.addWidget(self._submit_btn, 1, 0, 1, 2)
 
         # Incremental button is kept for programmatic use but hidden from the
         # toolbar — the submit button's label changes to "增量分析" automatically
@@ -536,7 +549,7 @@ class MainWindow(QMainWindow):
             "勾选后，每当有新的K线收盘时自动开始新一轮分析"
         )
         self._keep_analysis_checkbox.stateChanged.connect(self._on_keep_analysis_checkbox_changed)
-        ctrl_layout.addWidget(self._keep_analysis_checkbox)
+        ctrl_row2.addWidget(self._keep_analysis_checkbox, 1, 2, 1, 2)
 
         # Reset persisted keep_analysis flag so future restarts also start unchecked
         if _settings is not None:
@@ -551,27 +564,45 @@ class MainWindow(QMainWindow):
             "恢复 K 线实时刷新；最右侧未收盘 K 线为浅色空心 K 线，不参与 AI 分析"
         )
         self._resume_chart_btn.clicked.connect(self._on_resume_chart_refresh)
-        ctrl_layout.addWidget(self._resume_chart_btn)
+        ctrl_layout.addWidget(self._resume_chart_btn, 3, 2)
 
         self._fit_chart_btn = QPushButton("恢复图表")
         self._fit_chart_btn.setToolTip(
             "自动调整图表缩放，将 K 线和价格线适配到可视区域"
         )
         self._fit_chart_btn.clicked.connect(self._on_fit_chart)
-        ctrl_layout.addWidget(self._fit_chart_btn)
+        ctrl_layout.addWidget(self._fit_chart_btn, 3, 3)
 
         self._decision_badge = QLabel("")
         self._decision_badge.setObjectName("mutedLabel")
-        ctrl_layout.addWidget(self._decision_badge)
+        ctrl_row2.addWidget(self._decision_badge, 2, 0, 1, 2)
 
         self._ai_mode_label = QLabel("")
         self._ai_mode_label.setObjectName("mutedLabel")
-        ctrl_layout.addWidget(self._ai_mode_label)
+        # 状态标签不强制撑宽，窗口变窄时允许其被压缩/裁剪
+        self._ai_mode_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        ctrl_row2.addWidget(self._ai_mode_label, 2, 2, 1, 2)
 
-        outer_layout.addLayout(ctrl_layout)
+        analysis_controls = QWidget()
+        analysis_controls.setObjectName("analysisSettingsContent")
+        analysis_controls.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        analysis_controls_layout = QVBoxLayout(analysis_controls)
+        analysis_controls_layout.setContentsMargins(0, 0, 0, 0)
+        analysis_controls_layout.setSpacing(8)
+        analysis_title = QLabel("分析设置")
+        analysis_title.setObjectName("sectionTitle")
+        analysis_controls_layout.addWidget(analysis_title)
+        analysis_controls_layout.addLayout(ctrl_layout)
+        analysis_controls_layout.addLayout(ctrl_row2)
+        self._analysis_settings_content = analysis_controls
+        self._ai_sidebar.set_analysis_settings_content(analysis_controls)
 
         self._api_key_alert_label = QLabel(
-            "未配置 API Key：请点击左上角「AI 模型」按钮，在设置中填写 API Key 后才能进行 AI 分析。"
+            "未配置 API Key：请点击左上角「设置 → 模型 API」填写 API Key 后才能进行 AI 分析。"
         )
         self._api_key_alert_label.setWordWrap(True)
         self._api_key_alert_label.setStyleSheet(
@@ -579,16 +610,16 @@ class MainWindow(QMainWindow):
             "border: 1px solid #8a6d2f; border-radius: 4px; font-weight: 600;"
         )
         self._api_key_alert_label.hide()
-        outer_layout.addWidget(self._api_key_alert_label)
+        analysis_controls_layout.addWidget(self._api_key_alert_label)
 
         # Risk disclaimer (UI-only; never included in AI prompts)
         self._disclaimer_label = QLabel("分析仅供参考，不构成投资建议")
         self._disclaimer_label.setObjectName("mutedLabel")
         self._disclaimer_label.setWordWrap(True)
         self._disclaimer_label.setStyleSheet(
-            "color: #8b949e; font-size: 11px; padding: 2px 0;"
+            f"color: {T.FG_2}; font-size: 11px; padding: 2px 0;"
         )
-        outer_layout.addWidget(self._disclaimer_label)
+        analysis_controls_layout.addWidget(self._disclaimer_label)
 
         status_row = QHBoxLayout()
         status_row.addStretch()
@@ -603,18 +634,30 @@ class MainWindow(QMainWindow):
         self._elapsed_ticker.timeout.connect(self._update_refresh_elapsed)
         self._elapsed_ticker.start()
 
-        outer_layout.addLayout(status_row)
-
-        # ── FlowBar: 5-step analysis progress indicator ───────────────────────
-        from pa_agent.gui.widgets.flow_bar import FlowBar
-        self._flow_bar = FlowBar()
-        self._flow_bar.setFixedHeight(52)
-        self._flow_bar.setStyleSheet(
-            "background-color: #161b22; border-bottom: 1px solid #30363d;"
-        )
-        outer_layout.addWidget(self._flow_bar)
+        analysis_controls_layout.addLayout(status_row)
 
         workbench = QSplitter(Qt.Orientation.Horizontal)
+
+        # ── 左侧自选股栏 ─────────────────────────────────────────────────────
+        from pa_agent.gui.watchlist_panel import WatchlistPanel
+
+        watchlist_groups: dict[str, list[str]] = {"全部": []}
+        if _settings is not None:
+            general = getattr(_settings, "general", None)
+            from pa_agent.config.watchlist_store import migrate_watchlist
+
+            watchlist_groups = migrate_watchlist(
+                getattr(general, "watchlist_groups", None),
+                getattr(general, "watchlist", []),
+            )
+        self._watchlist_panel = WatchlistPanel(watchlist_groups, parent=workbench)
+        self._watchlist_panel.setMinimumWidth(220)
+        self._watchlist_panel.setMaximumWidth(460)
+        self._watchlist_panel.symbol_selected.connect(self._on_watchlist_symbol_selected)
+        self._watchlist_panel.list_changed.connect(self._persist_watchlist)
+        self._watchlist_panel.group_selected.connect(self._on_watchlist_group_selected)
+        self._watchlist_panel.scan_requested.connect(self._on_watchlist_scan_requested)
+        workbench.addWidget(self._watchlist_panel)
 
         self._chart_widget = ChartWidget()
         self._chart_widget.setSizePolicy(
@@ -626,13 +669,11 @@ class MainWindow(QMainWindow):
         self._ai_sidebar.setMinimumWidth(400)
         workbench.addWidget(self._ai_sidebar)
 
-        workbench.setStretchFactor(0, 3)
-        workbench.setStretchFactor(1, 2)
 
-        # ── SummaryStrip: 5-metric card strip above workbench ─────────────────
-        from pa_agent.gui.widgets.summary_strip import SummaryStrip
-        self._summary_strip = SummaryStrip()
-        outer_layout.addWidget(self._summary_strip)
+        workbench.setStretchFactor(0, 1)
+        workbench.setStretchFactor(1, 3)
+        workbench.setStretchFactor(2, 2)
+        workbench.setCollapsible(0, False)
 
         outer_layout.addWidget(workbench, stretch=1)
 
@@ -691,7 +732,11 @@ class MainWindow(QMainWindow):
         if settings is not None:
             interval_ms = getattr(settings.general, "refresh_interval_ms", 1000)
             n_bars = self._analysis_bar_count()
-        if self._current_data_source_kind() in ("akshare", "eastmoney", "tushare") and interval_ms < 2500:
+        if (
+            self._current_data_source_kind()
+            in ("akshare", "eastmoney", "tushare", "tdx", "tencent")
+            and interval_ms < 2500
+        ):
             interval_ms = 2500
 
         self._refresh_cancel_token = CancelToken()
@@ -914,7 +959,7 @@ class MainWindow(QMainWindow):
             logger.debug("disconnect failed: %s", exc)
 
     def _current_data_source_kind(self) -> str:
-        return getattr(self, "_active_data_source_kind", "mt5")
+        return getattr(self, "_active_data_source_kind", "tradingview")
 
     def _tv_exchange_text(self) -> str:
         combo = getattr(self, "_tv_exchange_combo", None)
@@ -1050,10 +1095,10 @@ class MainWindow(QMainWindow):
             line.setPlaceholderText(
                 "A股 6 位 / 港股 1810 / 名称 小米集团；交易所可自动；或 XAUUSD+OANDA"
             )
-        elif kind in ("akshare", "eastmoney", "tushare"):
+        elif kind in ("akshare", "eastmoney", "tushare", "tdx", "tencent"):
             line.setPlaceholderText("A股 6 位代码，如 600519；指数 000300 或 sh000300")
         else:
-            line.setPlaceholderText("输入 MT5 品种名，如 XAUUSDm…")
+            line.setPlaceholderText("输入品种名，如 XAUUSD…")
 
     def _populate_symbol_combo_for_source(self) -> None:
         """Refresh symbol suggestions for the active data source."""
@@ -1072,8 +1117,7 @@ class MainWindow(QMainWindow):
         self._symbol_combo.blockSignals(True)
         self._symbol_combo.clear()
         if symbols:
-            cap = 80 if kind == "mt5" else len(symbols)
-            self._symbol_combo.addItems(symbols[:cap])
+            self._symbol_combo.addItems(symbols)
         if current:
             if self._symbol_combo.findText(current) < 0:
                 self._symbol_combo.addItem(current)
@@ -1126,7 +1170,7 @@ class MainWindow(QMainWindow):
             self._switch_data_source(kind)
 
     def _on_data_source_combo_changed(self, index: int) -> None:
-        """Switch K-line data source (MT5 / TradingView)."""
+        """Switch K-line data source (TradingView / A股来源)."""
         if getattr(self, "_switching", False):
             return
         if getattr(self, "_demo_mode", False):
@@ -1164,6 +1208,12 @@ class MainWindow(QMainWindow):
         if self._switching:
             return
         self._switching = True
+        previous_source = getattr(self._ctx, "data_source", None)
+        previous_kind = getattr(self, "_active_data_source_kind", "tradingview")
+        previous_symbol = self._symbol_combo.currentText()
+        previous_timeframe = self._tf_combo.currentText()
+        previous_tv_exchange = self._tv_exchange_text()
+        new_source = None
         try:
             self._cancel_analysis_worker()
             self._analysis_in_progress = False
@@ -1250,9 +1300,217 @@ class MainWindow(QMainWindow):
             )
             self._update_symbol_data_alert()
             self._refresh_chart_once()
+        except Exception:
+            # Restore the old source and visible selection so a failed switch
+            # cannot leave the UI pointing at a disconnected object.
+            if new_source is not None and new_source is not previous_source:
+                self._disconnect_data_source(new_source)
+            self._active_data_source_kind = previous_kind
+            self._symbol_combo.blockSignals(True)
+            self._symbol_combo.setCurrentText(previous_symbol)
+            self._symbol_combo.blockSignals(False)
+            self._tf_combo.blockSignals(True)
+            self._tf_combo.setCurrentText(previous_timeframe)
+            self._tf_combo.blockSignals(False)
+            if hasattr(self, "_tv_exchange_combo"):
+                idx = self._tv_exchange_combo.findData(previous_tv_exchange)
+                if idx >= 0:
+                    self._tv_exchange_combo.blockSignals(True)
+                    self._tv_exchange_combo.setCurrentIndex(idx)
+                    self._tv_exchange_combo.blockSignals(False)
+            self._ctx.data_source = previous_source
+            if previous_source is not None:
+                try:
+                    previous_source.connect()
+                    previous_source.subscribe(previous_symbol, previous_timeframe)
+                except Exception as restore_exc:  # noqa: BLE001
+                    logger.warning("Failed to restore previous data source: %s", restore_exc)
+            self._sync_tv_exchange_visibility()
+            raise
         finally:
             self._switching = False
             self._update_submit_button_state()
+
+    # ── 自选股栏 ──────────────────────────────────────────────────────────────
+
+    def _is_ashare_symbol(self, symbol: str) -> bool:
+        """True when *symbol* is (or normalizes to) an A-share code / index."""
+        from pa_agent.data.ashare_common import is_index_symbol, normalize_ashare_symbol
+
+        sym = normalize_ashare_symbol(symbol)
+        if not sym:
+            return False
+        if is_index_symbol(sym):
+            return True
+        return len(sym) == 6 and sym.isdigit()
+
+    def _domestic_source_kind_for_ashare(self, symbol: str) -> str | None:
+        """为 A 股自选股挑选国内数据源，全程不阻塞 UI。
+
+        优先级：当前已连通的国内来源 → 已有探测缓存中连通的来源。
+        返回 None 表示尚无已知连通来源，调用方应转后台探测。
+        """
+        from pa_agent.data.factory import (
+            A_SHARE_SOURCE_KINDS,
+            cached_domestic_source_status,
+        )
+
+        current = self._current_data_source_kind()
+        if current in A_SHARE_SOURCE_KINDS:
+            ds = getattr(self._ctx, "data_source", None)
+            if ds is not None and getattr(ds, "_connected", False):
+                return current
+        status = cached_domestic_source_status()
+        for kind in A_SHARE_SOURCE_KINDS:
+            ok, _detail = status.get(kind, (False, ""))
+            if ok:
+                return kind
+        return None
+
+    def _set_watchlist_combos(self, symbol: str, timeframe: str) -> None:
+        """设置品种/周期下拉框，不触发各自的切换槽（避免重入）。"""
+        self._symbol_combo.blockSignals(True)
+        self._symbol_combo.setCurrentText(symbol)
+        self._symbol_combo.blockSignals(False)
+        self._tf_combo.blockSignals(True)
+        self._tf_combo.setCurrentText(timeframe)
+        self._tf_combo.blockSignals(False)
+
+    def _apply_watchlist_switch(self, symbol: str, timeframe: str) -> None:
+        """把中间 K 线板块切到 (symbol, timeframe) 并启动实时刷新。"""
+        self._set_watchlist_combos(symbol, timeframe)
+        self._on_symbol_or_tf_changed(symbol, timeframe)
+
+    def _on_watchlist_symbol_selected(self, symbol: str) -> None:
+        """自选股点选：A 股优先自动选择国内已连通数据源，默认切到日线图。"""
+        symbol = (symbol or "").strip()
+        if not symbol:
+            return
+        if getattr(self, "_demo_mode", False):
+            return
+        timeframe = "1d"  # 自选股默认日线图
+        try:
+            if self._is_ashare_symbol(symbol):
+                target = self._domestic_source_kind_for_ashare(symbol)
+                if target is None:
+                    self._start_ashare_source_probe(symbol, timeframe)
+                    return
+                if target != self._current_data_source_kind():
+                    self._set_watchlist_combos(symbol, timeframe)
+                    self._select_data_source_kind(target, switch=True)
+                self._apply_watchlist_switch(symbol, timeframe)
+                return
+            # 非 A 股：在当前数据源上直接切换
+            self._apply_watchlist_switch(symbol, timeframe)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("切换自选股失败: %s", exc)
+            self._status_bar.showMessage(f"切换自选股失败：{exc}")
+
+    def _start_ashare_source_probe(self, symbol: str, timeframe: str) -> None:
+        """后台并行探测国内数据源连通性，探测完成后自动切换自选股。"""
+        worker = getattr(self, "_ashare_probe_worker", None)
+        if worker is not None and worker.isRunning():
+            return
+        self._pending_watchlist_symbol = symbol
+        self._pending_watchlist_timeframe = timeframe
+        self._status_bar.showMessage("正在探测国内数据源连通性…")
+        from pa_agent.data.factory import _WATCHLIST_PROBE_TIMEOUT_S
+        from pa_agent.gui.watchlist_worker import AshareSourceProbeWorker
+
+        self._ashare_probe_worker = worker = AshareSourceProbeWorker(self)
+        worker.set_timeout_s(_WATCHLIST_PROBE_TIMEOUT_S)
+        worker.result_ready.connect(self._on_ashare_probe_done)
+        worker.start()
+
+    def _on_ashare_probe_done(self, kind: str, _detail: str) -> None:
+        """后台探测结束：已连通来源则切换；否则尽力在当前来源上加载。"""
+        if not _qobject_alive(self):
+            return
+        self._ashare_probe_worker = None
+        symbol = getattr(self, "_pending_watchlist_symbol", "")
+        timeframe = getattr(self, "_pending_watchlist_timeframe", "1d")
+        self._pending_watchlist_symbol = ""
+        if not symbol:
+            return
+        if not kind:
+            # 国内来源均不可达 → 当前来源若已连通，仍尽力加载（如 TradingView 的 A股）
+            ds = getattr(self._ctx, "data_source", None)
+            if ds is not None and getattr(ds, "_connected", False):
+                self._status_bar.showMessage(
+                    "国内数据源均不可用，已使用当前数据来源尽力切换"
+                )
+                try:
+                    self._apply_watchlist_switch(symbol, timeframe)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("切换自选股失败: %s", exc)
+                    self._status_bar.showMessage(f"切换自选股失败：{exc}")
+                return
+            self._status_bar.showMessage(
+                "国内数据源均不可用，请先在「设置 → 数据源」检测连通"
+            )
+            return
+        try:
+            if kind != self._current_data_source_kind():
+                self._set_watchlist_combos(symbol, timeframe)
+                self._select_data_source_kind(kind, switch=True)
+            self._apply_watchlist_switch(symbol, timeframe)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("切换自选股失败: %s", exc)
+            self._status_bar.showMessage(f"切换自选股失败：{exc}")
+
+    def _persist_watchlist(self) -> None:
+        """Persist grouped watchlists and a flat compatibility list."""
+        panel = getattr(self, "_watchlist_panel", None)
+        if panel is None:
+            return
+        settings = getattr(self._ctx, "settings", None)
+        if settings is None:
+            return
+        try:
+            from pa_agent.config.watchlist_store import serialize_watchlist_groups
+
+            groups = serialize_watchlist_groups(panel.groups())
+            flattened: list[str] = []
+            seen: set[str] = set()
+            for symbols in groups.values():
+                for symbol in symbols:
+                    if symbol not in seen:
+                        flattened.append(symbol)
+                        seen.add(symbol)
+            settings.general.watchlist_groups = groups
+            settings.general.watchlist = flattened
+            from pa_agent.config.settings import save_settings
+
+            save_settings(settings)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Failed to persist watchlist: %s", exc)
+
+    def _on_watchlist_group_selected(self, group: str) -> None:
+        """Keep group selection local to the watchlist table."""
+        if group:
+            self._status_bar.showMessage(f"已切换自选板块：{group}")
+
+    def _on_watchlist_scan_requested(self, group: str, count: int) -> None:
+        """Reserve the batch-analysis entry point without starting AI work yet."""
+        self._status_bar.showMessage(
+            f"已确认分析板块「{group}」的 {count} 只个股；批量执行功能后续开放"
+        )
+
+    def _update_watchlist_current_quote(self, bars: Any) -> None:
+        """Update the active symbol row from the same refresh payload as the chart."""
+        panel = getattr(self, "_watchlist_panel", None)
+        if panel is None or not bars:
+            return
+        try:
+            latest = next((bar for bar in bars if getattr(bar, "closed", True)), bars[0])
+            symbol = self._symbol_combo.currentText().strip()
+            panel.update_quote(
+                symbol,
+                price=getattr(latest, "close", ""),
+                change=getattr(latest, "pct_chg", ""),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Watchlist quote update skipped: %s", exc)
 
     # ── Slots ─────────────────────────────────────────────────────────────────
 
@@ -1285,7 +1543,7 @@ class MainWindow(QMainWindow):
         return f"已切换至 {symbol} {timeframe}"
 
     def _update_symbol_data_alert(self) -> None:
-        """Show hints when the symbol is unavailable (MT5) or source disconnected."""
+        """Show hints when the symbol is unavailable or the source disconnected."""
         label = getattr(self, "_symbol_alert_label", None)
         if label is None:
             return
@@ -1297,11 +1555,10 @@ class MainWindow(QMainWindow):
         if not getattr(data_source, "_connected", False):
             label.hide()
             return
-        kind = self._current_data_source_kind()
-        if kind == "tradingview":
+        if self._current_data_source_kind() == "tradingview":
             if symbol.lower().endswith("m") and len(symbol) > 2:
                 label.setText(
-                    "TradingView 提示：品种名勿用 MT5 的 m 后缀；"
+                    "TradingView 提示：品种名带 m 后缀无效，"
                     "请用交易所 OANDA + 品种 XAUUSD"
                 )
                 label.setStyleSheet("color: #e6b800; font-size: 11px;")
@@ -1309,21 +1566,7 @@ class MainWindow(QMainWindow):
                 return
             label.hide()
             return
-        if kind != "mt5":
-            label.hide()
-            return
-        checker = getattr(data_source, "is_symbol_available", None)
-        if not callable(checker):
-            label.hide()
-            return
-        if checker(symbol):
-            label.hide()
-            return
-        label.setText(
-            "未在 MT5 获取到该品种，请检查当前输入是否与 MT5「市场报价」中的名称完全一致"
-            "（含后缀，如 XAUUSDm）。"
-        )
-        label.show()
+        label.hide()
 
     def _analysis_bar_count(self) -> int:
         """Closed-bar count for AI analysis and chart fetch (from settings)."""
@@ -1341,11 +1584,14 @@ class MainWindow(QMainWindow):
             if not self._analysis_in_progress:
                 self._status_bar.clearMessage()
             return
+        stream_panel = getattr(self, "_stream_panel", None)
+        if stream_panel is not None:
+            stream_panel.set_status(text)
         self._status_bar.showMessage(text)
         if text == "数据延迟":
             self._update_symbol_data_alert()
         if self._analysis_in_progress:
-            panel = getattr(self, "_stream_panel", None)
+            panel = stream_panel
             if panel is not None:
                 if text in ("阶段一重试",):
                     panel.mark_retry("stage1")
@@ -1428,8 +1674,8 @@ class MainWindow(QMainWindow):
                     logger.info("TradingView unreachable: %s", detail)
                 from pa_agent.gui.tv_connectivity_dialog import show_tv_connectivity_blocked_dialog
                 choice = show_tv_connectivity_blocked_dialog(self)
-                if choice == "mt5":
-                    self._select_data_source_kind("mt5", switch=True)
+                if choice == "tencent":
+                    self._select_data_source_kind("tencent", switch=True)
                 return
             # Brief pause to let the probe's WebSocket fully disconnect before
             # the refresh loop opens its own connection (avoids TV rate-limiting)
@@ -1505,7 +1751,7 @@ class MainWindow(QMainWindow):
         return not self._chart_refresh_paused
 
     def _reference_now_ms(self) -> int:
-        """Broker/server time when available (MT5), else local — for forming-bar semantics."""
+        """Broker/server time when available, else local — for forming-bar semantics."""
         from pa_agent.data.bar_close_wait import reference_now_ms
 
         return reference_now_ms(data_source=getattr(self._ctx, "data_source", None))
@@ -1569,7 +1815,6 @@ class MainWindow(QMainWindow):
 
         from pa_agent.ai.prompt_assembler import PromptAssembler
 
-        data_source = getattr(self._ctx, "data_source", None)
         chart = getattr(self, "_chart_widget", None)
         display_frame = None
         export_frame = None
@@ -1708,6 +1953,8 @@ class MainWindow(QMainWindow):
         if not bars:
             self._update_symbol_data_alert()
             return
+
+        self._update_watchlist_current_quote(bars)
 
         alert = getattr(self, "_symbol_alert_label", None)
         if alert is not None:
@@ -2622,7 +2869,6 @@ class MainWindow(QMainWindow):
 
     def _exit_demo_mode(self, *, silent: bool = False) -> None:
         """Leave demo mode and restore live controls."""
-        from pathlib import Path
 
         self._demo_auto_next_armed = False
         self._demo_waiting_flow_playback = False
@@ -3433,14 +3679,14 @@ class MainWindow(QMainWindow):
         box.setInformativeText(
             "建议操作：\n"
             "1) 换一个更长上下文/更稳的模型；或\n"
-            "2) 在「AI 模型」设置里关闭「Thinking」后重试。\n\n"
+            "2) 在「设置 → 模型 API」里关闭「Thinking」后重试。\n\n"
             f"诊断摘要：{key}"
         )
-        btn_open = box.addButton("打开 AI 模型设置", QMessageBox.ButtonRole.AcceptRole)
+        btn_open = box.addButton("打开设置", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("知道了", QMessageBox.ButtonRole.RejectRole)
         box.exec()
         if box.clickedButton() == btn_open:
-            self._open_ai_model_settings_dialog()
+            self._open_app_settings_dialog()
 
     def _on_analysis_error(self, message: str) -> None:
         """Unhandled exception in the analysis worker thread."""
@@ -3578,6 +3824,12 @@ class MainWindow(QMainWindow):
                     headline = "API 积分不足"
                     detail = msg or "OpenClaw 积分不足，请充值或更换 API"
                     self._status_bar.showMessage(detail)
+                elif err_type == "auth_error":
+                    headline = "API Key 无效"
+                    detail = (
+                        f"{msg}\n\n请打开「设置 → 模型 API」，重新填写有效的 API Key 后再提交分析。"
+                    )
+                    self._status_bar.showMessage("API Key 无效，请到设置中重新填写")
                 else:
                     detail = f"{category}: {msg}" if category else (msg or err_type)
                     headline = f"分析未通过（{err_type}）"
@@ -3634,6 +3886,15 @@ class MainWindow(QMainWindow):
                 s2_full,
                 s1_diag if isinstance(s1_diag, dict) else None,
             )
+            try:
+                from pa_agent.gui.watchlist_decisions import decision_for_record
+
+                symbol = str(getattr(getattr(record, "meta", None), "symbol", "") or "")
+                decision_text, decision_day = decision_for_record(record)
+                if symbol and decision_text:
+                    self._watchlist_panel.update_decision(symbol, decision_text, decision_day)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Watchlist decision update skipped: %s", exc)
 
         panel = getattr(self, "_stream_panel", None)
         if panel is not None:
@@ -3973,6 +4234,19 @@ class MainWindow(QMainWindow):
         """Stop background work before Qt destroys widgets."""
         self._window_closing = True
         try:
+            worker = getattr(self, "_ashare_probe_worker", None)
+            if worker is not None and worker.isRunning():
+                worker.requestInterruption()
+                # Do not block the UI while a data-source request is stuck.
+                try:
+                    worker.result_ready.disconnect(self._on_ashare_probe_done)
+                except (TypeError, RuntimeError):
+                    pass
+                worker.setParent(None)
+                worker.finished.connect(worker.deleteLater)
+                self._ashare_probe_worker = None
+            else:
+                self._ashare_probe_worker = None
             self._cancel_analysis_worker()
             self._cancel_snapshot_fetch_worker()
             self._stop_refresh_loop()
@@ -3981,7 +4255,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def showEvent(self, event: QShowEvent | None) -> None:
-        """On first show, prompt for API Key when missing."""
+        """On first show, silently refresh API Key UI state (no popup)."""
         super().showEvent(event)
         if self._startup_api_key_check_done:
             return
@@ -3996,15 +4270,9 @@ class MainWindow(QMainWindow):
         self._ensure_tradingview_reachable()
 
     def _on_startup_api_key_check(self) -> None:
+        # 未配置 API Key 时不弹框、不强制打开设置窗口，
+        # 仅刷新内联提示横幅与提交按钮状态，由用户自行决定何时配置。
         self._refresh_api_key_ui_state()
-        if not self._has_api_key_configured():
-            QMessageBox.information(
-                self,
-                "需要配置 API Key",
-                "尚未配置 API Key，将打开设置窗口。\n"
-                "请填写 API Key 并点击「保存」，才能使用「提交分析」与「增量分析」。",
-            )
-            self._open_settings_dialog(focus_api_key=True)
 
     def _has_api_key_configured(self) -> bool:
         from pa_agent.config.settings import provider_api_key_configured
@@ -4027,16 +4295,32 @@ class MainWindow(QMainWindow):
         cur = status_bar.currentMessage() or ""
         if cur in ("就绪", "") or "API Key" in cur or "提交分析已锁定" in cur:
             status_bar.showMessage(
-                "未配置 API Key：请点击左上角「AI 模型」填写后才能分析"
+                "未配置 API Key：请点击左上角「设置 → 模型 API」填写后才能分析"
             )
 
-    def _open_settings_dialog(self, *, focus_api_key: bool = False) -> None:
-        """内部使用：启动时检测到 API Key 未配置时直接打开 AI 模型设置."""
-        self._open_ai_model_settings_dialog(focus_api_key=focus_api_key)
+    def _refresh_theme_ui(self) -> None:
+        """主题切换后刷新各组件中硬编码的颜色（图表 / 流程 / 汇总 / 面板）。"""
+        for name in (
+            "_chart_widget",
+            "_decision_tree_panel",
+            "_decision_flow_viz_panel",
+            "_flow_bar",
+            "_summary_strip",
+            "_stream_panel",
+            "_decision_panel",
+            "_future_trend_panel",
+        ):
+            widget = getattr(self, name, None)
+            refresh = getattr(widget, "refresh_theme", None)
+            if refresh is not None:
+                try:
+                    refresh()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("refresh_theme(%s) failed: %s", name, exc)
 
-    def _open_ai_model_settings_dialog(self, *, focus_api_key: bool = False) -> None:
-        """打开 AI 模型设置对话框."""
-        from pa_agent.gui.ai_model_settings_dialog import AIModelSettingsDialog
+    def _open_app_settings_dialog(self) -> None:
+        """打开菜单栏「设置」对话框（数据源 + 模型 API + 飞书通知 + 通用设置）。"""
+        from pa_agent.gui.app_settings_dialog import AppSettingsDialog
         from pa_agent.config.settings import Settings
         from pa_agent.util.logging import update_api_key
 
@@ -4044,52 +4328,47 @@ class MainWindow(QMainWindow):
         if settings is None:
             settings = Settings()
 
-        dlg = AIModelSettingsDialog(settings, parent=self)
-        if focus_api_key:
-            dlg.focus_api_key_field()
-        if dlg.exec():
-            self._ctx.settings = settings
-            client = getattr(self._ctx, "client", None)
-            if client is not None:
-                try:
-                    client._settings = settings.provider  # type: ignore[attr-defined]
-                except Exception:  # noqa: BLE001
-                    pass
-            if settings is not None:
-                key = getattr(settings.provider, "api_key", "") or ""
-                self._debug_widget._api_key = key
-                self._ai_sidebar.bind_settings(settings)
-                update_api_key(key)
-            self._update_ai_mode_label()
-            self._refresh_api_key_ui_state()
+        dlg = AppSettingsDialog(
+            settings,
+            parent=self,
+            current_data_source_kind=self._current_data_source_kind(),
+            decision_flow_play_handler=self._trigger_decision_flow_playback,
+        )
+        if not dlg.exec():
+            return
 
-    def _open_feishu_settings_dialog(self) -> None:
-        """打开飞书机器人设置对话框."""
-        from pa_agent.gui.feishu_settings_dialog import FeishuSettingsDialog
-        from pa_agent.config.settings import Settings
+        self._ctx.settings = settings
 
-        settings: Settings = self._ctx.settings  # type: ignore[assignment]
-        if settings is None:
-            settings = Settings()
+        # ── 模型 API 配置已由对话框写入 settings.provider 并落盘，这里同步运行时 ──
+        client = getattr(self._ctx, "client", None)
+        if client is not None:
+            try:
+                client._settings = settings.provider  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                pass
+        key = getattr(settings.provider, "api_key", "") or ""
+        self._debug_widget._api_key = key
+        self._ai_sidebar.bind_settings(settings)
+        update_api_key(key)
+        self._update_ai_mode_label()
+        self._refresh_api_key_ui_state()
 
-        dlg = FeishuSettingsDialog(settings=settings, parent=self)
-        dlg.exec()
+        # 通用设置可能改变图表字号/决策树缩放；界面风格可能已切换
+        self._apply_chart_display_settings()
+        self._refresh_theme_ui()
 
-    def _open_general_settings_dialog(self) -> None:
-        """打开通用设置对话框."""
-        from pa_agent.gui.general_settings_dialog import GeneralSettingsDialog
-        from pa_agent.config.settings import Settings
-
-        settings: Settings = self._ctx.settings  # type: ignore[assignment]
-        if settings is None:
-            settings = Settings()
-
-        dlg = GeneralSettingsDialog(settings, parent=self)
-        dlg.set_decision_flow_play_handler(self._trigger_decision_flow_playback)
-        if dlg.exec():
-            self._ctx.settings = settings
-            self._ai_sidebar.bind_settings(settings)
-            self._apply_chart_display_settings()
+        # ── 数据源切换 ────────────────────────────────────────────────────────
+        new_kind = dlg.selected_data_source_kind
+        if new_kind and new_kind != self._current_data_source_kind():
+            try:
+                self._select_data_source_kind(new_kind, switch=True)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Data source switch from settings failed: %s", exc)
+                QMessageBox.warning(
+                    self,
+                    "切换数据来源失败",
+                    f"无法切换到 {new_kind}：\n{exc}",
+                )
 
     def _apply_chart_display_settings(self) -> None:
         """Sync chart label font sizes and decision-flow zoom from persisted settings."""
@@ -4138,8 +4417,12 @@ class MainWindow(QMainWindow):
                 f"PackyAPI 思考: {thinking} · {mode}={effort} · {p.model}"
             )
         else:
+            from pa_agent.config.model_providers import find_provider, guess_provider
+
+            preset = find_provider(guess_provider(p.base_url, p.model))
+            vendor = f"{preset.name} · " if preset else ""
             self._ai_mode_label.setText(
-                f"模型: {p.model} · 思考={('开' if p.thinking else '关')}"
+                f"{vendor}{p.model} · 思考={('开' if p.thinking else '关')}"
             )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -4151,7 +4434,7 @@ class MainWindow(QMainWindow):
     def _submit_block_reason(self) -> str | None:
         """Human-readable reason when submit is disabled, or None if allowed."""
         if not self._has_api_key_configured():
-            return "未配置 API Key，请点击左上角「AI 模型」填写后才能分析"
+            return "未配置 API Key，请点击左上角「设置 → 模型 API」填写后才能分析"
         if self._demo_mode:
             return "演示模式中，请退出演示后再提交真实分析"
         if self._analysis_in_progress:
@@ -4226,7 +4509,6 @@ class MainWindow(QMainWindow):
                 compute_incremental_bar_delta,
                 find_latest_successful_record,
             )
-            from pa_agent.data.snapshot import INDICATOR_WARMUP_BARS
 
             bar_count = self._analysis_bar_count()
             frame = self._build_chart_frame_from_bars(

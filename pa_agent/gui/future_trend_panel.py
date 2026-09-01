@@ -24,16 +24,11 @@ from pa_agent.ai.cycle_enums import (
 )
 from pa_agent.gui.prediction_format import (
     _PREDICTION_DOMINANT_COLOR,
-    _PREDICTION_UNPREDICTABLE_COLOR,
     _PREDICTION_UNPREDICTABLE_LABEL,
     _dominant_prediction_direction,
     _format_prediction_probs_line,
 )
-
-_REASON_EDIT_CSS = (
-    "font-size: 16px; color: #e6edf3; line-height: 1.45;"
-    "font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;"
-)
+from pa_agent.gui.theme import tokens as T
 
 _DIRECTION_ZH: dict[str, str] = {
     "bullish": "看涨",
@@ -41,14 +36,23 @@ _DIRECTION_ZH: dict[str, str] = {
     "neutral": "中性",
 }
 
-_CHIP_BASE_CSS = (
-    "font-size: 14px; font-weight: bold; padding: 8px 10px;"
-    "background-color: #21262d; border-radius: 8px;"
-)
+
+def _reason_edit_css() -> str:
+    return (
+        f"font-size: 16px; color: {T.FG}; line-height: 1.45;"
+        "font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;"
+    )
+
+
+def _chip_base_css() -> str:
+    return (
+        "font-size: 14px; font-weight: bold; padding: 8px 10px;"
+        f"background-color: {T.SURFACE_3}; border-radius: 8px;"
+    )
 
 
 def _chip_style(color: str) -> str:
-    return f"{_CHIP_BASE_CSS} color: {color};"
+    return f"{_chip_base_css()} color: {color};"
 
 
 class FutureTrendPanel(QWidget):
@@ -92,15 +96,15 @@ class FutureTrendPanel(QWidget):
         self._bar_direction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._bar_direction_label.setWordWrap(True)
         self._bar_direction_label.setStyleSheet(
-            "font-size: 16px; font-weight: bold; padding: 8px;"
-            "background-color: #21262d; border-radius: 6px; color: #8b949e;"
+            f"font-size: 16px; font-weight: bold; padding: 8px;"
+            f"background-color: {T.SURFACE_3}; border-radius: 6px; color: {T.FG_2};"
         )
         bar_layout.addWidget(self._bar_direction_label)
 
         self._bar_reasoning_edit = QTextEdit()
         self._bar_reasoning_edit.setReadOnly(True)
         self._bar_reasoning_edit.setObjectName("answerPane")
-        self._bar_reasoning_edit.setStyleSheet(_REASON_EDIT_CSS)
+        self._bar_reasoning_edit.setStyleSheet(_reason_edit_css())
         self._bar_reasoning_edit.setMinimumHeight(80)
         self._bar_reasoning_edit.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
@@ -138,7 +142,7 @@ class FutureTrendPanel(QWidget):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setWordWrap(True)
             lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-            lbl.setStyleSheet(_chip_style("#8b949e"))
+            lbl.setStyleSheet(_chip_style(T.FG_2))
             top3_layout.addWidget(lbl, stretch=1)
             self._chip_labels.append(lbl)
 
@@ -147,7 +151,7 @@ class FutureTrendPanel(QWidget):
         self._cycle_direction_label = QLabel("—")
         self._cycle_direction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._cycle_direction_label.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: #8b949e;"
+            f"font-size: 14px; font-weight: bold; color: {T.FG_2};"
         )
         cycle_layout.addWidget(self._cycle_direction_label)
 
@@ -155,15 +159,15 @@ class FutureTrendPanel(QWidget):
         self._cycle_probs_label = QLabel("—")
         self._cycle_probs_label.setWordWrap(True)
         self._cycle_probs_label.setStyleSheet(
-            "font-size: 13px; color: #c9d1d9; padding: 6px;"
-            "background-color: #161b22; border-radius: 6px;"
+            f"font-size: 13px; color: {T.FG}; padding: 6px;"
+            f"background-color: {T.SURFACE_1}; border-radius: 6px;"
         )
         cycle_layout.addWidget(self._cycle_probs_label)
 
         self._cycle_reasoning_edit = QTextEdit()
         self._cycle_reasoning_edit.setReadOnly(True)
         self._cycle_reasoning_edit.setObjectName("answerPane")
-        self._cycle_reasoning_edit.setStyleSheet(_REASON_EDIT_CSS)
+        self._cycle_reasoning_edit.setStyleSheet(_reason_edit_css())
         self._cycle_reasoning_edit.setMinimumHeight(100)
         self._cycle_reasoning_edit.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
@@ -187,21 +191,21 @@ class FutureTrendPanel(QWidget):
         unpredictable = bool(pred.get("unpredictable", False))
         if unpredictable:
             line = _PREDICTION_UNPREDICTABLE_LABEL
-            color = _PREDICTION_UNPREDICTABLE_COLOR
+            color = T.FG_2
         else:
             probs = pred.get("probabilities")
             if isinstance(probs, dict):
                 line = _format_prediction_probs_line(probs)
                 dominant = _dominant_prediction_direction(probs)
-                color = _PREDICTION_DOMINANT_COLOR.get(dominant, _PREDICTION_UNPREDICTABLE_COLOR)
+                color = _PREDICTION_DOMINANT_COLOR.get(dominant, T.FG_2)
             else:
                 line = "—"
-                color = _PREDICTION_UNPREDICTABLE_COLOR
+                color = T.FG_2
 
         self._bar_direction_label.setText(line)
         self._bar_direction_label.setStyleSheet(
             f"font-size: 16px; font-weight: bold; padding: 8px;"
-            f"background-color: #21262d; border-radius: 6px; color: {color};"
+            f"background-color: {T.SURFACE_3}; border-radius: 6px; color: {color};"
         )
 
         reasoning = str(pred.get("reasoning", "")).strip()
@@ -217,7 +221,7 @@ class FutureTrendPanel(QWidget):
     def _reset_chips(self) -> None:
         for lbl in self._chip_labels:
             lbl.setText("—")
-            lbl.setStyleSheet(_chip_style("#8b949e"))
+            lbl.setStyleSheet(_chip_style(T.FG_2))
 
     def _apply_next_cycle_prediction(self, decision: dict) -> None:
         """Render 下一个市场周期预期 module. Hides on missing/invalid data."""
@@ -234,7 +238,7 @@ class FutureTrendPanel(QWidget):
         if unpredictable:
             self._reset_chips()
             self._chip_labels[0].setText(_PREDICTION_UNPREDICTABLE_LABEL)
-            self._chip_labels[0].setStyleSheet(_chip_style(_PREDICTION_UNPREDICTABLE_COLOR))
+            self._chip_labels[0].setStyleSheet(_chip_style(T.FG_2))
             self._chip_labels[1].setVisible(False)
             self._chip_labels[2].setVisible(False)
             self._cycle_direction_label.setVisible(False)
@@ -281,7 +285,7 @@ class FutureTrendPanel(QWidget):
                 lbl.setStyleSheet(_chip_style(cycle_color))
             else:
                 lbl.setText("—")
-                lbl.setStyleSheet(_chip_style("#8b949e"))
+                lbl.setStyleSheet(_chip_style(T.FG_2))
 
         self._cycle_direction_label.setText(f"方向：{direction_zh}")
         self._cycle_direction_label.setStyleSheet(
@@ -310,16 +314,28 @@ class FutureTrendPanel(QWidget):
 
     def set_prediction(self, decision: dict) -> None:
         """Render both prediction modules from the decision dict."""
+        self._last_decision = decision
         self._apply_next_bar_prediction(decision)
         self._apply_next_cycle_prediction(decision)
 
+    def refresh_theme(self) -> None:
+        """主题切换后重绘容器 / 静态样式，并重渲染已缓存的数据。"""
+        self._bar_title.setStyleSheet("font-weight: bold; color: #79c0ff;")
+        self._cycle_title.setStyleSheet("font-weight: bold; color: #79c0ff;")
+        last = getattr(self, "_last_decision", None)
+        if last is not None:
+            self.set_prediction(last)
+        else:
+            self.clear()
+
     def clear(self) -> None:
         """Reset both modules to initial empty state and hide them."""
+        self._last_decision = None
         self._bar_group.setVisible(False)
         self._bar_direction_label.setText("—")
         self._bar_direction_label.setStyleSheet(
-            "font-size: 16px; font-weight: bold; padding: 8px;"
-            "background-color: #21262d; border-radius: 6px; color: #8b949e;"
+            f"font-size: 16px; font-weight: bold; padding: 8px;"
+            f"background-color: {T.SURFACE_3}; border-radius: 6px; color: {T.FG_2};"
         )
         self._bar_reasoning_edit.clear()
 

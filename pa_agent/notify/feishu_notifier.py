@@ -13,7 +13,7 @@
 2. （可选）开启签名校验，复制 Secret。
 3. （图片功能）在飞书开放平台创建企业自建应用，申请 im:resource 权限，
    获取 App ID 和 App Secret，在设置中填写（保存到 config/settings.json）。
-4. 在程序菜单「飞书发送通知设置」中配置，或编辑 config/settings.json 的 feishu 段。
+4. 在右上角齿轮「设置」→「飞书通知」页签中配置，或编辑 config/settings.json 的 feishu 段。
 
 飞书官方文档
 ------------
@@ -27,6 +27,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import logging
 import time
 import threading
@@ -41,6 +42,8 @@ logger = logging.getLogger(__name__)
 # ── 飞书 Open API 端点 ─────────────────────────────────────────────────────────
 _TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
 _IMAGE_UPLOAD_URL = "https://open.feishu.cn/open-apis/im/v1/images"
+#: 发送消息（receive_id_type=open_id 时推送到与机器人的单聊）
+_MESSAGE_URL = "https://open.feishu.cn/open-apis/im/v1/messages"
 
 # tenant_access_token 有效期 2 小时；提前 5 分钟刷新
 _TOKEN_TTL_BUFFER_S = 300
@@ -53,11 +56,16 @@ class _TokenCache:
         self._lock = threading.Lock()
         self._token: str = ""
         self._expire_at: float = 0.0
+        self._credentials: tuple[str, str] | None = None
 
     def get(self, app_id: str, app_secret: str) -> str | None:
         """返回有效的 tenant_access_token，过期则自动刷新."""
         with self._lock:
-            if self._token and time.time() < self._expire_at:
+            if (
+                self._token
+                and self._credentials == (app_id, app_secret)
+                and time.time() < self._expire_at
+            ):
                 return self._token
             return self._refresh(app_id, app_secret)
 
@@ -76,6 +84,7 @@ class _TokenCache:
                 logger.warning("飞书 token 获取失败: %s", data)
                 return None
             self._token = data["tenant_access_token"]
+            self._credentials = (app_id, app_secret)
             expire = int(data.get("expire", 7200))
             self._expire_at = time.time() + expire - _TOKEN_TTL_BUFFER_S
             logger.debug("飞书 tenant_access_token 已刷新，有效期 %ds", expire)
@@ -144,6 +153,100 @@ def _upload_image(image_path: Path, app_id: str, app_secret: str) -> str | None:
     except Exception as exc:
         logger.warning("飞书图片上传异常: %s", exc)
         return None
+
+
+# ── 单聊推送（扫码绑定的机器人）───────────────────────────────────────────────
+def _send_card_via_api(
+    card: dict,
+    app_id: str,
+    app_secret: str,
+    open_id: str,
+) -> tuple[bool, str]:
+    """经 ``im/v1/messages``（receive_id_type=open_id）把卡片发到手机飞书单聊.
+
+    需要已申请 ``im:message:send_as_bot`` 权限（扫码一键创建的应用已预置）。
+
+    Returns
+    -------
+    (True, "") 成功；(False, 错误描述) 失败。
+    """
+    token = _token_cache.get(app_id, app_secret)
+    if not token:
+        return False, "无法获取 tenant_access_token，请检查 App ID / App Secret"
+    try:
+        import requests  # type: ignore[import]
+    except ImportError:
+        return False, "未安装 requests 库"
+
+    payload = {
+        "receive_id": open_id,
+        "msg_type": "interactive",
+        # im/v1/messages 的 content 必须是 JSON 字符串（卡片体）
+        "content": json.dumps(card),
+    }
+    try:
+        resp = requests.post(
+            _MESSAGE_URL,
+            params={"receive_id_type": "open_id"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            json=payload,
+            timeout=_REQUEST_TIMEOUT_S,
+        )
+        data = resp.json()
+    except Exception as exc:
+        return False, f"HTTP 请求失败：\n{exc}"
+    if data.get("code") == 0:
+        return True, ""
+    code = data.get("code")
+    msg = data.get("msg", "")
+    hint = ""
+    if code in (230001, 230004):
+        hint = "\n\n原因：缺少 im:message:send_as_bot 权限或应用未发布。"
+    elif code == 230034:
+        hint = "\n\n原因：open_id 无效，请重新扫码绑定。"
+    return False, f"飞书返回错误 code={code}，msg={msg}{hint}"
+
+
+def send_test_text_via_api(
+    text: str = "✅ PA Agent 飞书通知测试消息，配置正常！",
+    *,
+    app_id: str = "",
+    app_secret: str = "",
+    open_id: str = "",
+) -> tuple[bool, str]:
+    """向扫码绑定的单聊发一条测试文本（供设置面板「发送测试消息」复用）。"""
+    if not (app_id and app_secret and open_id):
+        return False, "尚未完成扫码绑定，无法发送。"
+    token = _token_cache.get(app_id, app_secret)
+    if not token:
+        return False, "无法获取 tenant_access_token，请检查 App ID / App Secret"
+    payload = {
+        "receive_id": open_id,
+        "msg_type": "text",
+        "content": json.dumps({"text": text}),
+    }
+    try:
+        import requests  # type: ignore[import]
+
+        resp = requests.post(
+            _MESSAGE_URL,
+            params={"receive_id_type": "open_id"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            json=payload,
+            timeout=_REQUEST_TIMEOUT_S,
+        )
+        data = resp.json()
+    except Exception as exc:
+        return False, f"HTTP 请求失败：\n{exc}"
+    if data.get("code") == 0:
+        return True, ""
+    return False, f"飞书返回错误 code={data.get('code')}，msg={data.get('msg')}"
 
 
 # ── 辅助格式化 ────────────────────────────────────────────────────────────────
@@ -308,7 +411,7 @@ def send_order_signal(
     stage2_full:
         完整的 stage2_decision 字典（含 next_cycle_prediction）。
     symbol:
-        交易品种，如 "XAUUSDm"。
+        交易品种，如 "XAUUSD" 或 "600519"。
     timeframe:
         K线周期，如 "15m"。
     chart_image_path:
@@ -329,25 +432,19 @@ def send_order_signal(
         return False
 
     webhook_url = (cfg.get("webhook_url") or "").strip()
-    if not webhook_url:
-        logger.warning(
-            "飞书通知：settings.json 未配置 feishu.webhook_url，跳过推送。"
-            " 请在菜单「飞书发送通知设置」中完成配置。"
-        )
-        return False
+    app_id = (cfg.get("app_id") or "").strip()
+    app_secret = (cfg.get("app_secret") or "").strip()
+    bound_open_id = (cfg.get("bound_open_id") or "").strip()
 
-    try:
-        import requests  # type: ignore[import]
-    except ImportError:
+    if not webhook_url and not (app_id and app_secret and bound_open_id):
         logger.warning(
-            "飞书通知：requests 库未安装，请运行 pip install requests"
+            "飞书通知：既未配置 Webhook URL，也未完成扫码绑定，跳过推送。"
+            " 请在右上角齿轮「设置」→「飞书通知」页签中配置。"
         )
         return False
 
     # ── 图片上传（可选）──────────────────────────────────────────────────────
     image_key: str | None = None
-    app_id = (cfg.get("app_id") or "").strip()
-    app_secret = (cfg.get("app_secret") or "").strip()
     if chart_image_path and app_id and app_secret:
         p = Path(chart_image_path)
         if p.exists():
@@ -369,32 +466,40 @@ def send_order_signal(
         image_key=image_key,
     )
 
-    # ── 签名（可选）─────────────────────────────────────────────────────────
-    secret = (cfg.get("secret") or "").strip()
-    if secret:
-        ts = int(time.time())
-        payload["timestamp"] = str(ts)
-        payload["sign"] = _gen_sign(secret, ts)
-
-    # ── 发送 ─────────────────────────────────────────────────────────────────
-    try:
-        resp = requests.post(
-            webhook_url,
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=_REQUEST_TIMEOUT_S,
-        )
-        result = resp.json()
-        # 飞书返回 code=0 或 StatusCode=0 均为成功
-        if result.get("code") == 0 or result.get("StatusCode") == 0:
-            logger.info(
-                "飞书通知发送成功 [%s %s %s]",
-                symbol,
-                timeframe,
-                decision_inner.get("order_type", "?"),
+    # ── 通道 1：群机器人 Webhook ──────────────────────────────────────────────
+    if webhook_url:
+        try:
+            import requests  # type: ignore[import]
+        except ImportError:
+            logger.warning(
+                "飞书通知：requests 库未安装，请运行 pip install requests"
             )
-            return True
-        else:
+            return False
+
+        # 签名（可选）
+        secret = (cfg.get("secret") or "").strip()
+        if secret:
+            ts = int(time.time())
+            payload["timestamp"] = str(ts)
+            payload["sign"] = _gen_sign(secret, ts)
+
+        try:
+            resp = requests.post(
+                webhook_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=_REQUEST_TIMEOUT_S,
+            )
+            result = resp.json()
+            # 飞书返回 code=0 或 StatusCode=0 均为成功
+            if result.get("code") == 0 or result.get("StatusCode") == 0:
+                logger.info(
+                    "飞书通知发送成功（群机器人） [%s %s %s]",
+                    symbol,
+                    timeframe,
+                    decision_inner.get("order_type", "?"),
+                )
+                return True
             logger.warning(
                 "飞书通知返回错误 [%s %s]: %s",
                 symbol,
@@ -402,6 +507,24 @@ def send_order_signal(
                 result,
             )
             return False
-    except Exception as exc:
-        logger.warning("飞书通知 HTTP 请求失败: %s", exc)
-        return False
+        except Exception as exc:
+            logger.warning("飞书通知 HTTP 请求失败: %s", exc)
+            return False
+
+    # ── 通道 2：扫码绑定的单聊机器人（im/v1/messages → 手机飞书）─────────────
+    if app_id and app_secret and bound_open_id:
+        ok, err = _send_card_via_api(
+            payload["card"], app_id, app_secret, bound_open_id
+        )
+        if ok:
+            logger.info(
+                "飞书通知发送成功（单聊） [%s %s %s]",
+                symbol,
+                timeframe,
+                decision_inner.get("order_type", "?"),
+            )
+        else:
+            logger.warning("飞书通知（单聊）发送失败: %s", err)
+        return ok
+
+    return False

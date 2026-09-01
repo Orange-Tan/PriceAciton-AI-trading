@@ -45,6 +45,13 @@ _PRESET_SYMBOLS: tuple[str, ...] = (
 _TS_CODE_RE = re.compile(r"^\d{6}\.(SH|SZ|BJ)$", re.IGNORECASE)
 _DAILY_CACHE_TTL_S = 300.0
 _MINUTE_CACHE_TTL_S = 3600.0
+_MINUTES_BY_TIMEFRAME: dict[str, int] = {
+    "1m": 1,
+    "5m": 5,
+    "15m": 15,
+    "30m": 30,
+    "1h": 60,
+}
 
 
 def normalize_tushare_symbol(symbol: str) -> str:
@@ -103,7 +110,28 @@ def _number(row: Any, key: str, default: float = 0.0) -> float:
     return float(value)
 
 
-def _df_to_bars_newest_first(df: Any, n: int) -> list[KlineBar]:
+def _bar_is_closed(
+    ts_open_ms: float,
+    timeframe: str,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Return whether a Tushare bar has finished at the current China time."""
+    current = now or datetime.now(_CN_TZ)
+    if timeframe == "1d":
+        bar_date = datetime.fromtimestamp(ts_open_ms / 1000, _CN_TZ).date()
+        return bar_date < current.date() or current.hour >= 15
+    minutes = _MINUTES_BY_TIMEFRAME.get(timeframe)
+    if minutes is None:
+        return True
+    return ts_open_ms + minutes * 60_000 <= current.timestamp() * 1000
+
+
+def _df_to_bars_newest_first(
+    df: Any,
+    n: int,
+    timeframe: str = "1d",
+) -> list[KlineBar]:
     if df is None or getattr(df, "empty", True):
         return []
     time_col = "trade_time" if "trade_time" in df.columns else "trade_date"
@@ -130,7 +158,7 @@ def _df_to_bars_newest_first(df: Any, n: int) -> list[KlineBar]:
                     low=_number(row, "low"),
                     close=_number(row, "close"),
                     volume=vol,
-                    closed=True,
+                    closed=_bar_is_closed(ts_open, timeframe),
                 )
             )
         )
@@ -214,7 +242,7 @@ class TushareSource(DataSource):
                 if self._is_minute_timeframe()
                 else self._fetch_daily(fetch_n)
             )
-            bars = _df_to_bars_newest_first(df, fetch_n)
+            bars = _df_to_bars_newest_first(df, fetch_n, self._timeframe)
         except DataSourceTransientError:
             raise
         except Exception as exc:

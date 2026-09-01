@@ -462,6 +462,21 @@ class TwoStageOrchestrator:
                 stage_label="Stage 1",
             )
         except Exception as exc:
+            if self._is_auth_error(exc):
+                logger.warning("Stage 1 authentication error: %s", exc)
+                record = record.model_copy(
+                    update={
+                        "stage1_messages": messages_s1,
+                        "exception": {
+                            "type": "auth_error",
+                            "stage": "stage1",
+                            "message": str(exc),
+                        },
+                    }
+                )
+                self._pending_writer.save_partial(record, "auth_error")
+                on_event(OrchestratorEvent.Stage1Failed)
+                return record
             if self._is_network_error(exc):
                 logger.warning("Stage 1 network error: %s", exc)
                 record = record.model_copy(
@@ -751,6 +766,30 @@ class TwoStageOrchestrator:
                 stage_label="Stage 2",
             )
         except Exception as exc:
+            if self._is_auth_error(exc):
+                logger.warning("Stage 2 authentication error: %s", exc)
+                record = record.model_copy(
+                    update={
+                        "stage1_messages": messages_s1,
+                        "stage1_response": reply_s1.raw,
+                        "stage1_diagnosis": stage1_json,
+                        "stage2_messages": messages_s2,
+                        "strategy_files_used": strategy_files,
+                        "experience_loaded": [
+                            e.model_dump() if hasattr(e, "model_dump") else dict(e)
+                            for e in experience_entries
+                        ],
+                        "usage_total": _accumulate_usage(record.usage_total, reply_s1.usage),
+                        "exception": {
+                            "type": "auth_error",
+                            "stage": "stage2",
+                            "message": str(exc),
+                        },
+                    }
+                )
+                self._pending_writer.save_partial(record, "auth_error")
+                on_event(OrchestratorEvent.Stage2Failed)
+                return record
             if self._is_network_error(exc):
                 logger.warning("Stage 2 network error: %s", exc)
                 record = record.model_copy(
@@ -1162,6 +1201,27 @@ class TwoStageOrchestrator:
         return True
 
     @staticmethod
+    def _is_auth_error(exc: Exception) -> bool:
+        """Return True for invalid/unauthorized provider credentials."""
+        try:
+            import openai  # type: ignore[import]
+
+            if isinstance(exc, openai.APIStatusError):
+                return getattr(exc, "status_code", None) in (401, 403)
+        except ImportError:
+            pass
+        message = str(exc).lower()
+        return any(
+            marker in message
+            for marker in (
+                "invalid api key",
+                "authentication fails",
+                "authentication failed",
+                "unauthorized",
+            )
+        )
+
+    @staticmethod
     def _is_network_error(exc: Exception) -> bool:
         """Return True if *exc* is a network/timeout error (SDK, httpx, or OS reset)."""
         from pa_agent.ai.deepseek_client import CancelledError
@@ -1172,15 +1232,11 @@ class TwoStageOrchestrator:
         try:
             import openai  # type: ignore[import]
 
-            if isinstance(
-                exc,
-                (
-                    openai.APITimeoutError,
-                    openai.APIConnectionError,
-                    openai.APIStatusError,
-                ),
-            ):
+            if isinstance(exc, (openai.APITimeoutError, openai.APIConnectionError)):
                 return True
+            if isinstance(exc, openai.APIStatusError):
+                # HTTP responses are provider-side results, not network failures.
+                return False
         except ImportError:
             pass
 

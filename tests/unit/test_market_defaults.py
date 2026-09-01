@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pa_agent.data.market_defaults import (
-    GOLD_MT5_SYMBOL,
+    A_SHARE_DEFAULT_SYMBOL,
     GOLD_TV_EXCHANGE,
     GOLD_TV_SYMBOL,
     ashare_tv_probe_order,
@@ -21,12 +21,18 @@ from pa_agent.data.tradingview import TV_EXCHANGE_PRESETS
 
 
 def test_crypto_symbol_migrates_to_gold():
-    assert normalize_gold_symbol_for_kind("mt5", "BTCUSD") == GOLD_MT5_SYMBOL
     assert normalize_gold_symbol_for_kind("tradingview", "BTCUSDT") == GOLD_TV_SYMBOL
 
 
-def test_mt5_suffix_on_tv_becomes_xauusd():
-    assert normalize_gold_symbol_for_kind("tradingview", "XAUUSDm") == GOLD_TV_SYMBOL
+def test_legacy_mt5_kind_maps_to_tradingview_gold():
+    assert normalize_gold_symbol_for_kind("mt5", "BTCUSD") == GOLD_TV_SYMBOL
+    assert normalize_gold_symbol_for_kind("mt5", "XAUUSDm") == GOLD_TV_SYMBOL
+
+
+def test_ashare_kinds_default_to_ashare_symbol():
+    for kind in ("akshare", "eastmoney", "tushare", "tdx", "tencent"):
+        assert normalize_gold_symbol_for_kind(kind, "") == A_SHARE_DEFAULT_SYMBOL
+        assert normalize_gold_symbol_for_kind(kind, "600519") == "600519"
 
 
 def test_tv_exchange_auto_preserved():

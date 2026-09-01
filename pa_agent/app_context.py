@@ -36,9 +36,8 @@ class AppContext:
             PROMPT_DIR,
         )
         from pa_agent.config.settings import load_settings
-        from pa_agent.util.logging import configure_logging, update_api_key
+        from pa_agent.util.logging import configure_logging
         from pa_agent.util.event_bus import EventBus
-        from pa_agent.util.mask_secret import mask_secret
         from pa_agent.data.factory import create_data_source, normalize_data_source_kind
         from pa_agent.ai.cursor_connector import is_openclaw_cs_model
         from pa_agent.ai.deepseek_client import DeepSeekClient
@@ -72,7 +71,7 @@ class AppContext:
 
         apply_kline_adjust_from_settings(settings)
         ds_kind = normalize_data_source_kind(
-            getattr(settings.general, "last_data_source", "mt5")
+            getattr(settings.general, "last_data_source", "tradingview")
         )
         data_source = create_data_source(ds_kind)
 

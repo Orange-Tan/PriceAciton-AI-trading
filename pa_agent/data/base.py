@@ -1,10 +1,8 @@
 """Core data types and DataSource abstract base class."""
 from __future__ import annotations
 
-import math
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Sequence
+from dataclasses import dataclass
 
 
 # ── KlineBar ──────────────────────────────────────────────────────────────────
@@ -92,7 +90,8 @@ class DataSourceTransientError(DataSourceError):
 class DataSource(ABC):
     """Abstract interface for K-line data providers.
 
-    Implementations: TradingViewSource (active), MT5Source (stub).
+    Implementations: TradingViewSource, AkShareSource, EastMoneySource,
+    TushareSource, TdxSource, TencentSource.
     """
 
     @abstractmethod

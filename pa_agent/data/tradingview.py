@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 
@@ -17,7 +18,7 @@ from pa_agent.data.market_defaults import (
     resolve_tv_fetch_pair,
     tv_auto_probe_plan,
 )
-from pa_agent.data.tv_symbol_lookup import TvSymbolNotFoundError, is_tv_name_input
+from pa_agent.data.tv_symbol_lookup import TvSymbolNotFoundError
 from pa_agent.data.tradingview_errors import format_tradingview_fetch_error
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,53 @@ _TV_WS_TIMEOUT_S = 10.0
 
 # Name-mangled attribute tvDatafeed uses internally for its socket timeout.
 _TV_WS_TIMEOUT_ATTR = "_TvDatafeed__ws_timeout"
+
+
+def _tv_proxy_env() -> tuple[str, int] | None:
+    """Parse ``PA_TV_PROXY`` env var (``host:port``) for TradingView WebSocket."""
+    raw = (os.environ.get("PA_TV_PROXY") or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("http://"):
+        raw = raw[len("http://"):]
+    host, _, port = raw.partition(":")
+    try:
+        return host.strip(), int(port)
+    except ValueError:
+        logger.warning("PA_TV_PROXY 格式无效（应为 host:port）: %r", raw)
+        return None
+
+
+def _apply_websocket_proxy() -> None:
+    """Route tvDatafeed WebSocket traffic through the proxy in ``PA_TV_PROXY``.
+
+    websocket-client does NOT honour standard ``https_proxy`` env vars, so we
+    wrap tvDatafeed's ``create_connection`` reference to inject proxy kwargs.
+    Direct connections to data.tradingview.com are blocked on some networks;
+    the launcher script auto-detects a local proxy and sets ``PA_TV_PROXY``.
+    Idempotent: called on every connect(), patches at most once.
+    """
+    if getattr(_apply_websocket_proxy, "_patched", False):
+        return
+    proxy = _tv_proxy_env()
+    if proxy is None:
+        return
+    try:
+        import tvDatafeed.main as _tv_main  # type: ignore[import]
+    except Exception:  # noqa: BLE001
+        logger.debug("tvDatafeed not importable during proxy patch", exc_info=True)
+        return
+    host, port = proxy
+    _orig_create_connection = _tv_main.create_connection
+
+    def _create_connection_with_proxy(url: str, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs.setdefault("http_proxy_host", host)
+        kwargs.setdefault("http_proxy_port", port)
+        return _orig_create_connection(url, **kwargs)
+
+    _tv_main.create_connection = _create_connection_with_proxy
+    _apply_websocket_proxy._patched = True  # type: ignore[attr-defined]
+    logger.info("TradingView WebSocket 将通过代理 %s:%s 连接", host, port)
 
 # Map our timeframe strings to tvDatafeed Interval enum names
 _TF_MAP: dict[str, str] = {
@@ -106,6 +154,9 @@ class TradingViewSource(DataSource):
     def connect(self) -> None:
         try:
             from tvDatafeed import TvDatafeed  # type: ignore[import]
+            # Route WebSocket through local proxy when PA_TV_PROXY is set
+            # (needed on networks where data.tradingview.com is unreachable).
+            _apply_websocket_proxy()
             if self._username and self._password:
                 self._tv = TvDatafeed(self._username, self._password)
             else:

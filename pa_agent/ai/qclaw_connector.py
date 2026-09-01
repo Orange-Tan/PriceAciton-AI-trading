@@ -14,6 +14,11 @@ Usage::
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pa_agent.config.settings import AIProviderSettings
+
 import json
 import logging
 from pathlib import Path

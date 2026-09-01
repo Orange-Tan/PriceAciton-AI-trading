@@ -1,4 +1,4 @@
-"""飞书机器人设置对话框.
+"""飞书机器人设置 — 面板（可嵌入齿轮设置对话框）+ 独立对话框.
 
 提供 GUI 界面填写并保存到 config/settings.json 的 feishu 段。
 包含：Webhook URL、签名密钥、企业自建应用 App ID / App Secret，
@@ -30,20 +30,19 @@ from PyQt6.QtWidgets import (
 
 from pa_agent.config.paths import SETTINGS_JSON_PATH
 from pa_agent.config.settings import Settings, save_settings
+from pa_agent.gui.theme import tokens as T
 
 logger = logging.getLogger(__name__)
 
 
-class FeishuSettingsDialog(QDialog):
-    """填写飞书机器人 Webhook 等配置的模态对话框."""
+class FeishuSettingsPanel(QWidget):
+    """飞书机器人配置表单（不含「保存/取消」按钮，供嵌入设置对话框复用）。"""
 
     def __init__(self, settings: Settings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._settings = settings
-        self.setWindowTitle("飞书机器人设置")
-        self.setMinimumWidth(520)
         self._setup_ui()
-        self._load_values()
+        self.load_values()
 
     # ── UI 搭建 ───────────────────────────────────────────────────────────────
 
@@ -52,11 +51,31 @@ class FeishuSettingsDialog(QDialog):
         root.setSpacing(12)
 
         # ── 状态开关 ───────────────────────────────────────────────────────────
-        self._enabled_check = QCheckBox("启用飞书通知（下单信号推送到飞书群）")
+        self._enabled_check = QCheckBox("启用飞书通知（下单信号推送到飞书）")
         self._enabled_check.setToolTip(
             "关闭后即使有下单决策也不发送飞书消息，其余配置保留。"
         )
         root.addWidget(self._enabled_check)
+
+        # ── 扫码一键创建并绑定（推荐，无需建群）─────────────────────────────────
+        scan_group = QGroupBox("扫码一键创建并绑定（推荐，无需建群）")
+        scan_form = QFormLayout(scan_group)
+        scan_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self._scan_btn = QPushButton("📱 扫码一键创建机器人并绑定")
+        self._scan_btn.setToolTip(
+            "手机飞书扫码后自动创建带机器人能力的应用并开通消息推送权限，\n"
+            "下单信号直接推送到手机飞书里「与机器人的单聊」，无需手动建群或配置 Webhook。"
+        )
+        self._scan_btn.clicked.connect(self._on_scan)
+        scan_form.addRow("一键绑定:", self._scan_btn)
+
+        self._bound_label = QLabel("未绑定")
+        self._bound_label.setWordWrap(True)
+        self._bound_label.setStyleSheet(f"color: {T.FG_2}; font-size: 11px;")
+        scan_form.addRow("当前绑定:", self._bound_label)
+
+        root.addWidget(scan_group)
 
         # ── 基础配置 ───────────────────────────────────────────────────────────
         basic_group = QGroupBox("自定义机器人（必填）")
@@ -99,7 +118,7 @@ class FeishuSettingsDialog(QDialog):
             "未填写时发送纯文字卡片（无图表截图）。"
         )
         img_hint.setWordWrap(True)
-        img_hint.setStyleSheet("color: #8b949e; font-size: 11px;")
+        img_hint.setStyleSheet(f"color: {T.FG_2}; font-size: 11px;")
         img_form.addRow(img_hint)
 
         self._app_id_edit = QLineEdit()
@@ -143,32 +162,21 @@ class FeishuSettingsDialog(QDialog):
         test_row.addStretch()
         root.addLayout(test_row)
 
-        # ── 确认 / 取消 ────────────────────────────────────────────────────────
-        btn_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        save_btn = btn_box.button(QDialogButtonBox.StandardButton.Save)
-        if save_btn is not None:
-            save_btn.setText("保存")
-        cancel_btn = btn_box.button(QDialogButtonBox.StandardButton.Cancel)
-        if cancel_btn is not None:
-            cancel_btn.setText("取消")
-        btn_box.accepted.connect(self._on_save)
-        btn_box.rejected.connect(self.reject)
-        root.addWidget(btn_box)
+        root.addStretch()
 
-    # ── 加载 / 保存 ────────────────────────────────────────────────────────────
+    # ── 加载 / 应用 ────────────────────────────────────────────────────────────
 
-    def _load_values(self) -> None:
+    def load_values(self) -> None:
         cfg = self._settings.feishu
         self._enabled_check.setChecked(cfg.enabled)
         self._webhook_edit.setText(cfg.webhook_url)
         self._secret_edit.setText(cfg.secret)
         self._app_id_edit.setText(cfg.app_id)
         self._app_secret_edit.setText(cfg.app_secret)
+        self._refresh_bound_label()
 
-    def _apply_values_to_settings(self) -> None:
+    def apply_values(self) -> str | None:
+        """写回 settings.feishu；返回错误提示，或 None 表示通过。"""
         feishu = self._settings.feishu
         feishu.enabled = self._enabled_check.isChecked()
         feishu.webhook_url = self._webhook_edit.text().strip()
@@ -176,23 +184,34 @@ class FeishuSettingsDialog(QDialog):
         feishu.app_id = self._app_id_edit.text().strip()
         feishu.app_secret = self._app_secret_edit.text().strip()
 
-    def _on_save(self) -> None:
-        self._apply_values_to_settings()
-        if self._settings.feishu.enabled and not self._settings.feishu.webhook_url:
-            QMessageBox.warning(
-                self,
-                "配置不完整",
-                "已启用飞书通知，但 Webhook URL 为空。\n请填写 Webhook URL 或关闭启用开关。",
+        if feishu.enabled and not feishu.webhook_url:
+            return "已启用飞书通知，但 Webhook URL 为空。\n请填写 Webhook URL 或关闭启用开关。"
+        return None
+
+    # ── 扫码一键创建并绑定 ───────────────────────────────────────────────────
+
+    def _on_scan(self) -> None:
+        from pa_agent.gui.feishu_scan_dialog import FeishuScanDialog
+
+        dlg = FeishuScanDialog(
+            self._settings, self, on_bound=self._refresh_bound_label
+        )
+        dlg.exec()
+        # 绑定后把新 app_id / app_secret 同步回表单字段与绑定状态
+        self.load_values()
+
+    def _refresh_bound_label(self) -> None:
+        cfg = self._settings.feishu
+        if (cfg.app_id or "").strip() and (cfg.bound_open_id or "").strip():
+            who = cfg.bound_name or cfg.bound_open_id
+            self._bound_label.setText(f"✅ 已绑定：{who}\nApp ID：{cfg.app_id}")
+            self._bound_label.setStyleSheet(
+                f"color: {T.ACCENT_PRIMARY}; font-size: 11px;"
             )
-            return
-        try:
-            save_settings(self._settings, SETTINGS_JSON_PATH)
-            self.accept()
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                "保存失败",
-                f"写入 config/settings.json 失败：\n{exc}",
+        else:
+            self._bound_label.setText("未绑定")
+            self._bound_label.setStyleSheet(
+                f"color: {T.FG_2}; font-size: 11px;"
             )
 
     # ── 显示 / 隐藏密钥 ───────────────────────────────────────────────────────
@@ -236,10 +255,33 @@ class FeishuSettingsDialog(QDialog):
         dlg.exec()
 
     def _on_test(self) -> None:
-        """用当前表单填写的值向飞书群发送测试文本消息."""
+        """用当前表单填写的值发送测试消息（群 Webhook 或扫码绑定的单聊）."""
         webhook_url = self._webhook_edit.text().strip()
         if not webhook_url:
-            QMessageBox.warning(self, "缺少配置", "请先填写 Webhook URL 再测试。")
+            # 无 Webhook：尝试扫码绑定的单聊推送
+            from pa_agent.notify.feishu_notifier import send_test_text_via_api
+
+            app_id = self._app_id_edit.text().strip()
+            app_secret = self._app_secret_edit.text().strip()
+            open_id = (self._settings.feishu.bound_open_id or "").strip()
+            if app_id and app_secret and open_id:
+                ok, err = send_test_text_via_api(
+                    app_id=app_id, app_secret=app_secret, open_id=open_id
+                )
+                if ok:
+                    QMessageBox.information(
+                        self,
+                        "发送成功",
+                        "测试消息已发送到手机飞书的机器人单聊，请查收！",
+                    )
+                else:
+                    QMessageBox.warning(self, "发送失败", err)
+                return
+            QMessageBox.warning(
+                self,
+                "缺少配置",
+                "请先填写 Webhook URL，或完成「扫码一键创建并绑定」再测试。",
+            )
             return
 
         try:
@@ -299,4 +341,46 @@ class FeishuSettingsDialog(QDialog):
                 self,
                 "发送失败",
                 f"飞书返回错误 code={code}，msg={msg}{hint}",
+            )
+
+
+class FeishuSettingsDialog(QDialog):
+    """填写飞书机器人 Webhook 等配置的模态对话框（独立入口）。"""
+
+    def __init__(self, settings: Settings, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._settings = settings
+        self.setWindowTitle("飞书机器人设置")
+        self.setMinimumWidth(520)
+
+        self._panel = FeishuSettingsPanel(settings, self)
+
+        root = QVBoxLayout(self)
+        root.addWidget(self._panel)
+
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        save_btn = btn_box.button(QDialogButtonBox.StandardButton.Save)
+        if save_btn is not None:
+            save_btn.setText("保存")
+        cancel_btn = btn_box.button(QDialogButtonBox.StandardButton.Cancel)
+        if cancel_btn is not None:
+            cancel_btn.setText("取消")
+        btn_box.accepted.connect(self._on_save)
+        btn_box.rejected.connect(self.reject)
+        root.addWidget(btn_box)
+
+    def _on_save(self) -> None:
+        # 未配置完整也静默保存，不弹框打断；用户可稍后在设置面板中补全。
+        self._panel.apply_values()
+        try:
+            save_settings(self._settings, SETTINGS_JSON_PATH)
+            self.accept()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "保存失败",
+                f"写入 config/settings.json 失败：\n{exc}",
             )

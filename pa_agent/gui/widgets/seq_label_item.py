@@ -5,6 +5,8 @@ import pyqtgraph as pg
 from PyQt6.QtCore import QPointF
 from PyQt6.QtGui import QColor, QFont
 
+from pa_agent.gui.theme import tokens as T
+
 
 class SeqLabelItem(pg.TextItem):
     """A small text label showing a candle's sequence number.
@@ -21,8 +23,6 @@ class SeqLabelItem(pg.TextItem):
         Y-axis position (typically the bar's high price).
     """
 
-    _COLOR = QColor(180, 180, 180)  # light grey — unobtrusive
-
     def __init__(
         self,
         seq: int,
@@ -33,7 +33,7 @@ class SeqLabelItem(pg.TextItem):
         forming: bool = False,
     ) -> None:
         label = f"#{seq}" if not forming else f"#{seq}"
-        color = QColor(120, 200, 220, 200) if forming else self._COLOR
+        color = QColor(120, 200, 220, 200) if forming else QColor(T.FG_3)
         super().__init__(
             text=label,
             color=color,

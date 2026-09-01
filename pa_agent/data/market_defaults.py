@@ -3,9 +3,6 @@ from __future__ import annotations
 
 import re
 
-# MT5 broker spot gold (suffix varies by broker; m = common micro/mini suffix)
-GOLD_MT5_SYMBOL = "XAUUSDm"
-
 # TradingView spot gold — verified with tvdatafeed (anonymous):
 #   OANDA:XAUUSD, PEPPERSTONE:XAUUSD, FOREXCOM:XAUUSD  OK
 #   TVC:GOLD, CAPITALCOM:GOLD  OK
@@ -16,6 +13,16 @@ GOLD_TV_EXCHANGE = "OANDA"
 # AkShare A-share defaults (平安银行 / 日线与 1h 分析常用)
 A_SHARE_DEFAULT_SYMBOL = "000001"
 A_SHARE_DEFAULT_TIMEFRAME = "1h"
+
+# 国内 A 股数据源，自选股点选 A 股时按此优先级自动选择「已连通」的来源。
+# 优先快速、免 token 的 HTTP/TCP 来源，最后才是有 token 门槛的 Tushare。
+A_SHARE_SOURCE_KINDS: tuple[str, ...] = (
+    "tencent",
+    "tdx",
+    "eastmoney",
+    "akshare",
+    "tushare",
+)
 
 # Exchange → correct gold symbol on TradingView (do not use XAUUSD on TVC)
 TV_GOLD_SYMBOL_BY_EXCHANGE: dict[str, str] = {
@@ -97,11 +104,14 @@ def is_likely_crypto_symbol(symbol: str) -> bool:
 
 
 def normalize_gold_symbol_for_kind(kind: str, symbol: str) -> str:
-    """Map crypto / MT5-style names to gold defaults for *kind*."""
+    """Map crypto-style names to gold defaults for *kind*."""
     from pa_agent.data.ashare_common import normalize_ashare_symbol
 
+    # 已移除的 mt5/yfinance 兼容旧配置文件
+    if kind in ("mt5", "yfinance"):
+        kind = "tradingview"
     sym = (symbol or "").strip()
-    if kind in ("akshare", "eastmoney", "tushare"):
+    if kind in ("akshare", "eastmoney", "tushare", "tdx", "tencent"):
         code = normalize_ashare_symbol(sym)
         if not code or not _looks_like_ashare_code(code):
             return A_SHARE_DEFAULT_SYMBOL
@@ -114,7 +124,7 @@ def normalize_gold_symbol_for_kind(kind: str, symbol: str) -> str:
         if _is_hk_tv_code(hk):
             return hk
     if not sym or is_likely_crypto_symbol(sym):
-        return GOLD_TV_SYMBOL if kind == "tradingview" else GOLD_MT5_SYMBOL
+        return GOLD_TV_SYMBOL
     if kind == "tradingview" and sym.lower().endswith("m") and len(sym) > 2:
         return GOLD_TV_SYMBOL
     return sym
@@ -320,7 +330,6 @@ def resolve_tv_ashare_pair(
         return None
 
     ex_in = (exchange or "").strip().upper()
-    adjusted = False
     if ex_in in ("SH", "SSE", "SHSE", "SHANGHAI"):
         return "SSE", code, ex_in != "SSE"
     if ex_in in ("SZ", "SZSE", "XSHE", "SHENZHEN"):
@@ -474,7 +483,7 @@ def resolve_tv_gold_pair(
 
 def migrate_general_gold_defaults(general: dict) -> None:
     """In-place migration: gold symbol + valid TV exchange/symbol pair."""
-    kind = str(general.get("last_data_source", "mt5"))
+    kind = str(general.get("last_data_source", "tradingview"))
     sym = str(general.get("last_symbol", ""))
     general["last_symbol"] = normalize_gold_symbol_for_kind(kind, sym)
     if kind == "tradingview":

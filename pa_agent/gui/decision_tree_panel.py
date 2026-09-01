@@ -103,9 +103,9 @@ class DecisionTreePanel(QWidget):
         path_wrap = QWidget()
         path_layout = QVBoxLayout(path_wrap)
         path_layout.setContentsMargins(0, 0, 0, 0)
-        path_title = QLabel("路径回放")
-        path_title.setStyleSheet(f"font-weight: bold; color: {T.ACCENT_PRIMARY};")
-        path_layout.addWidget(path_title)
+        self._path_title = QLabel("路径回放")
+        self._path_title.setStyleSheet(f"font-weight: bold; color: {T.ACCENT_PRIMARY};")
+        path_layout.addWidget(self._path_title)
         path_sub = QLabel("阶段一闸门 → 阶段二策略（悬停节点可查看完整问题）")
         path_sub.setObjectName("mutedLabel")
         path_layout.addWidget(path_sub)
@@ -143,9 +143,9 @@ class DecisionTreePanel(QWidget):
         tree_wrap = QWidget()
         tree_layout = QVBoxLayout(tree_wrap)
         tree_layout.setContentsMargins(0, 0, 0, 0)
-        tree_title = QLabel("完整决策树（已走过 = 高亮）")
-        tree_title.setStyleSheet(f"font-weight: bold; color: {T.TEXT_SECONDARY};")
-        tree_layout.addWidget(tree_title)
+        self._tree_title = QLabel("完整决策树（已走过 = 高亮）")
+        self._tree_title.setStyleSheet(f"font-weight: bold; color: {T.TEXT_SECONDARY};")
+        tree_layout.addWidget(self._tree_title)
         self._tree = QTreeWidget()
         self._tree.setObjectName("decisionTreeView")
         _apply_dark_data_palette(self._tree)
@@ -392,3 +392,15 @@ class DecisionTreePanel(QWidget):
         )
         self._gate_hint.setText("")
         self._build_static_tree()
+
+    def refresh_theme(self) -> None:
+        """主题切换后，重建面板内硬编码的颜色（调色板 + 内联样式）。"""
+        _apply_dark_data_palette(self._path_table)
+        _apply_dark_data_palette(self._tree)
+        self._terminal_banner.setStyleSheet(
+            f"font-size: 14px; font-weight: bold; padding: 10px;"
+            f"color: {T.TEXT_SECONDARY}; background-color: {T.BG_ELEVATED};"
+            f"border-radius: {T.RADIUS}px;"
+        )
+        self._path_title.setStyleSheet(f"font-weight: bold; color: {T.ACCENT_PRIMARY};")
+        self._tree_title.setStyleSheet(f"font-weight: bold; color: {T.TEXT_SECONDARY};")

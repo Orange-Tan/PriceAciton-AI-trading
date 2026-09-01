@@ -23,7 +23,7 @@ _MESSAGE = (
     "解决方案：\n"
     "  · 把你的VPN工具设成全局，并开启TUN(虚拟网卡)模式，如果还不行：\n"
     "  · 使用云服务器部署本程序（推荐）—— 云服务器可正常连接 TradingView\n"
-    "  · 或切换回 MT5 数据源，仅使用 MT5 提供的品种数据"
+    "  · 或切换到腾讯财经数据源，仅使用腾讯提供的 A 股品种数据"
 )
 
 
@@ -32,7 +32,7 @@ def open_tv_cloud_server_wiki() -> None:
 
 
 def show_tv_connectivity_blocked_dialog(parent: QWidget | None = None) -> str:
-    """Show blocking dialog. Returns ``mt5``, ``cloud``, or ``cancel``."""
+    """Show blocking dialog. Returns ``tencent``, ``cloud``, or ``cancel``."""
     dlg = QDialog(parent)
     dlg.setWindowTitle("无法使用 TradingView")
     dlg.setMinimumWidth(440)
@@ -44,9 +44,9 @@ def show_tv_connectivity_blocked_dialog(parent: QWidget | None = None) -> str:
 
     buttons = QHBoxLayout()
     buttons.addStretch()
-    btn_mt5 = QPushButton("切换回 MT5")
+    btn_tencent = QPushButton("切换到腾讯财经")
     btn_cloud = QPushButton("使用云服务器")
-    buttons.addWidget(btn_mt5)
+    buttons.addWidget(btn_tencent)
     buttons.addWidget(btn_cloud)
     layout.addLayout(buttons)
 
@@ -56,7 +56,7 @@ def show_tv_connectivity_blocked_dialog(parent: QWidget | None = None) -> str:
         result[0] = choice
         dlg.accept()
 
-    btn_mt5.clicked.connect(lambda: _pick("mt5"))
+    btn_tencent.clicked.connect(lambda: _pick("tencent"))
     btn_cloud.clicked.connect(
         lambda: (open_tv_cloud_server_wiki(), _pick("cloud"))
     )

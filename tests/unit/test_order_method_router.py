@@ -30,6 +30,7 @@ def test_model_breakout_preserved_for_broad_channel() -> None:
         "entry_basis_extreme": "low",
         "stop_loss_price": 4228.399,
         "take_profit_price": 4183.278,
+        "take_profit_price_2": 4160.0,
     }
     trace = [{"node_id": "10.3", "answer": "是", "reason": "ok"}]
     stage1 = {"cycle_position": "broad_channel"}
@@ -51,4 +52,19 @@ def test_model_limit_order_preserved_for_breakout_cycle() -> None:
     stage1 = {"cycle_position": "normal_channel"}
     nodes = route_order_method(stage1, decision, trace)
     assert decision["order_type"] == "限价单"
+    assert nodes[-1].answer == "是"
+
+
+def test_spike_market_order_generates_section_11_nodes() -> None:
+    decision = {
+        "order_type": "市价单",
+        "entry_price": 101.0,
+        "stop_loss_price": 99.0,
+        "take_profit_price": 102.0,
+        "take_profit_price_2": 103.0,
+    }
+    trace = [{"node_id": "10.3", "answer": "是", "reason": "ok"}]
+    nodes = route_order_method({"cycle_position": "spike"}, decision, trace)
+    assert nodes
+    assert nodes[-1].node_id == "11.1"
     assert nodes[-1].answer == "是"

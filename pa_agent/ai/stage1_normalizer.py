@@ -527,8 +527,6 @@ def normalize_stage1(
                 out["incremental_delta"] = delta_top
             logger.debug("Unwrapped stage1_diagnosis nested wrapper")
 
-    lenient = normalization_mode == "lenient"
-
     # ── DecisionNodeEngine: fill §1.1/§2.3/§2.4 (before strategy_files routing) ──
     if kline_frame is not None:
         try:

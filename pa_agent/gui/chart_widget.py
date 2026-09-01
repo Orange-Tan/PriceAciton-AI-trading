@@ -14,6 +14,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QEvent, Qt, QTimer
 
+from pa_agent.gui.theme import tokens as T
 from pa_agent.gui.widgets.candle_item import CandleItem
 from pa_agent.gui.widgets.overlay_lines import OverlayLines
 from pa_agent.gui.widgets.seq_label_item import SeqLabelItem
@@ -48,7 +49,7 @@ class ChartWidget(pg.PlotWidget):
         super().__init__(parent=parent)
 
         # Configure plot appearance
-        self.setBackground("#0d1117")
+        self.setBackground(T.CHART_BG)
         self.showGrid(x=False, y=True, alpha=0.3)
         self.getPlotItem().setLabel("left", "Price")
 
@@ -88,6 +89,22 @@ class ChartWidget(pg.PlotWidget):
         if point_size == self._seq_label_font_pt:
             return
         self._seq_label_font_pt = point_size
+        if self._latest_frame is not None:
+            self._dirty = True
+
+    def refresh_theme(self) -> None:
+        """主题切换后刷新图表底色、坐标轴文字与网格颜色。
+
+        K 线/指标颜色跨主题保持一致；坐标轴与网格需随主题调整以保证浅色下可见。
+        """
+        self.setBackground(T.CHART_BG)
+        pi = self.getPlotItem()
+        axis_pen = pg.mkPen(T.FG_2)
+        for key in ("left", "bottom"):
+            axis = pi.getAxis(key)
+            axis.setTextPen(axis_pen)
+            axis.setPen(axis_pen)  # 网格线复用轴笔颜色
+        pi.showGrid(x=False, y=True, alpha=0.3)
         if self._latest_frame is not None:
             self._dirty = True
 

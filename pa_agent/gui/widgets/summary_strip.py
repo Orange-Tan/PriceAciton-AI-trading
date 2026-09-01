@@ -4,6 +4,8 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QGridLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
+from pa_agent.gui.theme import tokens as T
+
 _DEFAULT_METRICS = [
     ("当前趋势", "—"),
     ("当前市场周期", "—"),
@@ -31,11 +33,7 @@ class _MetricCard(QFrame):
         self.setMinimumHeight(50)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setStyleSheet(
-            "background-color: #1c2128; "
-            "border: 1px solid #30363d; "
-            "border-radius: 6px;"
-        )
+        self._primary = primary
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 10, 6)
@@ -43,7 +41,6 @@ class _MetricCard(QFrame):
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self._title = QLabel(title)
-        self._title.setStyleSheet("font-size: 11px; color: #8b949e;")
         self._title.setWordWrap(False)
         layout.addWidget(self._title)
 
@@ -51,15 +48,27 @@ class _MetricCard(QFrame):
         self._value.setWordWrap(True)
         self._value.setMinimumWidth(0)
         self._value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
-        if primary:
+        layout.addWidget(self._value)
+
+        self.refresh_theme()
+
+    def refresh_theme(self) -> None:
+        """按当前主题重绘卡片底色 / 标题 / 数值文字颜色。"""
+        self.setStyleSheet(
+            f"background-color: {T.SURFACE_2}; "
+            f"border: 1px solid {T.SURFACE_4}; "
+            "border-radius: 6px;"
+        )
+        self._title.setStyleSheet(f"font-size: 11px; color: {T.FG_2};")
+        if self._primary:
             self._value.setStyleSheet(
-                f"font-size: 14px; font-weight: bold; color: #86efac; font-family: {_FONT_MONO};"
+                f"font-size: 14px; font-weight: bold; color: {T.PILL_GREEN_TEXT}; "
+                f"font-family: {_FONT_MONO};"
             )
         else:
             self._value.setStyleSheet(
-                f"font-size: 13px; font-weight: bold; color: #e6edf3; font-family: {_FONT_MONO};"
+                f"font-size: 13px; font-weight: bold; color: {T.FG}; font-family: {_FONT_MONO};"
             )
-        layout.addWidget(self._value)
 
     def set_value(self, text: str) -> None:
         """Update the displayed value."""
@@ -79,9 +88,6 @@ class SummaryStrip(QWidget):
         super().__init__(parent)
         self.setObjectName("summaryStrip")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        self.setStyleSheet(
-            "background-color: #161b22; border-bottom: 1px solid #30363d;"
-        )
 
         self._layout = QGridLayout(self)
         self._layout.setContentsMargins(8, 6, 8, 6)
@@ -95,6 +101,15 @@ class SummaryStrip(QWidget):
             self._cards.append(card)
         self._columns = 0
         self._relayout()
+        self.refresh_theme()
+
+    def refresh_theme(self) -> None:
+        """按当前主题重绘整条背景与各指标卡片（主题切换后调用）。"""
+        self.setStyleSheet(
+            f"background-color: {T.SURFACE_1}; border-bottom: 1px solid {T.SURFACE_4};"
+        )
+        for card in self._cards:
+            card.refresh_theme()
 
     def set_metrics(self, metrics: dict[str, str]) -> None:
         """Update card values from a mapping.
@@ -120,7 +135,10 @@ class SummaryStrip(QWidget):
         self._relayout()
 
     def _target_columns(self) -> int:
-        return 5
+        # The strip is now embedded in the narrow decision sidebar. Use a
+        # compact two-column grid there, while retaining a five-column row if
+        # the widget is reused in a wide container.
+        return 5 if self.width() >= 900 else 2
 
     def _relayout(self) -> None:
         columns = self._target_columns()
@@ -135,5 +153,5 @@ class SummaryStrip(QWidget):
             row = idx // columns
             col = idx % columns
             self._layout.addWidget(card, row, col)
-        for col in range(5):
+        for col in range(columns):
             self._layout.setColumnStretch(col, 1 if col < columns else 0)

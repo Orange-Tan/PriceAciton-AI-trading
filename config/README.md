@@ -12,9 +12,9 @@
    copy config\settings.example.json config\settings.json
    ```
 
-2. 启动程序，在 **设置** 中填写你的 **API Key**（会加密写入 `api_key_encrypted`）。
+2. 启动程序，在 **设置** 中填写你的 **API Key**。程序会保存到 macOS 钥匙串或 Windows 凭据库，不会写入 `settings.json`。
 
-   也可直接编辑 `config/settings.json` 中的 `base_url`、`model` 等字段，Key 仍建议通过 GUI 保存以便自动加密。
+   也可直接编辑 `config/settings.json` 中的 `base_url`、`model` 等字段；API Key 请通过 GUI 保存，以便写入系统凭据库。
 
 3. `config/exception_state.json` 由程序在需要时自动创建，一般无需手动复制。结构可参考 `exception_state.example.json`。
 
@@ -26,7 +26,7 @@
 
 ## `settings.json` 字段说明
 
-配置分为四个顶层组：`provider`、`general`、`prompt`、`validation`。
+配置分为七个顶层组：`provider`、`general`、`prompt`、`validation`、`feishu`、`pushplus`、`tushare`。
 
 ### provider — AI 提供商
 
@@ -35,7 +35,7 @@
 | `provider.model` | string | `"deepseek-v4-flash"` | 模型名称（须与网关支持的名称一致） |
 | `provider.base_url` | string | `"https://api.deepseek.com"` | OpenAI 兼容 API 根地址。DeepSeek：`https://api.deepseek.com`；MiMo：`https://api.xiaomimimo.com/v1`（程序自动处理 `enable_thinking` 与 `reasoning_content` 回放） |
 | `provider.api_key` | string | `""` | API Key（明文，内存中临时使用；不持久化到文件） |
-| `provider.api_key_encrypted` | string | `""` | 加密后的 Key；留空表示未配置（通过 GUI 保存时自动加密写入） |
+| `provider.api_key_encrypted` | string | `""` | 旧版本兼容字段；新版本不会写入，凭据保存在系统钥匙串/凭据库 |
 | `provider.thinking` | bool | `true` | 是否启用思考/推理类扩展参数（依模型与网关而定）。关闭可 3–5 倍提速但分析质量下降 |
 | `provider.reasoning_effort` | string | `"high"` | 推理深度：`low` / `medium` / `high` / `max` |
 | `provider.context_window` | int | `2000000` | 用于上下文占用提示的窗口大小（tokens） |
@@ -44,9 +44,9 @@
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `general.last_data_source` | string | `"mt5"` | K 线数据来源：`mt5` / `tradingview`（GUI 下拉选项）；`akshare` / `yfinance`（仅代码支持） |
+| `general.last_data_source` | string | `"tradingview"` | K 线数据来源：`tradingview` / `akshare` / `eastmoney` / `tushare` / `tdx` / `tencent` |
 | `general.last_tradingview_exchange` | string | `""` | TradingView 交易所。空字符串 =（自动）依次探测预设列表。如 `OANDA`、`SSE`、`HKEX` 等 |
-| `general.last_symbol` | string | `"XAUUSDm"` | 默认品种。MT5 需含后缀（如 `m`），TradingView 用标准名（如 `XAUUSD`） |
+| `general.last_symbol` | string | `"XAUUSD"` | 默认品种。A 股数据源用 6 位代码（如 `000001`），TradingView 用标准名（如 `XAUUSD`） |
 | `general.last_timeframe` | string | `"15m"` | 默认周期，如 `1m`、`5m`、`15m`、`1h`、`4h`、`1d` |
 | `general.analysis_bar_count` | int | `100` | 提交分析时使用的 K 线数量（2–5000） |
 | `general.refresh_interval_ms` | int | `1000` | 图表自动刷新间隔（毫秒） |
@@ -62,13 +62,14 @@
 | `general.decision_flow_default_zoom_pct` | int | `600` | 决策树可视化默认缩放百分比（≥10） |
 | `general.stream_pane_font_pt` | int | `11` | 「实时」页等宽字体字号（pt，8–28） |
 | `general.chart_seq_label_font_pt` | int | `11` | K 线图上序号标签的字号（pt，6–24） |
+| `general.watchlist` | string[] | `[]` | 左侧「自选股」栏列表；A股用 6 位代码/指数（如 `600519`、`000300`），也可放 TradingView 品种名（如 `XAUUSD`） |
 
 ### prompt — Prompt 组装调优
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `prompt.stage2_load_full_strategy_library` | bool | `false` | 阶段二是否加载全部 22 个策略文件（通常仅路由匹配的策略文件） |
-| `prompt.experience_max_entries` | int | `3` | 经验库最大加载条目数（0–10） |
+| `prompt.experience_max_entries` | int | `0` | 经验库最大加载条目数（0–10） |
 | `prompt.experience_max_chars_per_entry` | int | `400` | 每条经验最大字符数（100–4000） |
 | `prompt.stage1_inject_pattern_briefs` | bool | `true` | 阶段一是否注入模式判定表和速查 brief（减少 missed tags） |
 

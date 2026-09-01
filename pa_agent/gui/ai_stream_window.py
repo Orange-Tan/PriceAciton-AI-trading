@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from pa_agent.gui.theme import tokens as T
+
 if TYPE_CHECKING:
     from pa_agent.config.settings import Settings
     from pa_agent.orchestrator.free_chat import FreeChatSession
@@ -97,9 +99,14 @@ class AIStreamPanel(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
-        self._phase_label = QLabel("等待分析…")
-        self._phase_label.setObjectName("stageHeader")
-        layout.addWidget(self._phase_label)
+        # Codex-style single-line runtime status. Keep the legacy alias for
+        # stage streaming code while rendering only one status widget.
+        self._status_label = QLabel("等待分析…")
+        self._status_label.setObjectName("stageHeader")
+        self._status_label.setWordWrap(False)
+        self._phase_label = self._status_label
+        layout.addWidget(self._status_label)
+        self.set_status("等待分析…")
 
         self._mode_label = QLabel("")
         self._mode_label.setObjectName("mutedLabel")
@@ -129,6 +136,20 @@ class AIStreamPanel(QWidget):
 
         self._apply_stream_font()
         self.set_input_enabled(False)
+
+    def set_status(self, text: str) -> None:
+        """Show one concise runtime status line with semantic text color."""
+        value = (text or "等待分析…").strip()
+        lowered = value.lower()
+        is_error = any(
+            marker in value
+            for marker in ("异常", "失败", "错误", "断开", "不足", "取消", "超时")
+        ) or "error" in lowered or "fail" in lowered
+        color = T.DANGER if is_error else T.SUCCESS
+        self._status_label.setText(value)
+        self._status_label.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {color};"
+        )
 
     @staticmethod
     def _mono_font(point_size: int) -> QFont:
@@ -164,14 +185,8 @@ class AIStreamPanel(QWidget):
         return row
 
     def _build_input_area(self) -> QWidget:
-        box = QWidget()
-        box.setStyleSheet(
-            "QWidget {"
-            " background: #161b22;"
-            " border-top: 1px solid #30363d;"
-            "}"
-        )
-        row = QHBoxLayout(box)
+        self._input_area_box = QWidget()
+        row = QHBoxLayout(self._input_area_box)
         row.setContentsMargins(12, 10, 12, 10)
         row.setSpacing(8)
 
@@ -179,20 +194,8 @@ class AIStreamPanel(QWidget):
         self._input_edit.setObjectName("chatInput")
         self._input_edit.setPlaceholderText("分析完成后可继续追问\u2026")
         self._input_edit.setFixedHeight(44)
-        self._input_edit.setStyleSheet(
-            "QLineEdit {"
-            " border: 1px solid #30363d;"
-            " border-radius: 6px;"
-            " background: #0a0e14;"
-            " color: #e6edf3;"
-            " padding: 0 14px;"
-            " font-size: 13px;"
-            "}"
-            "QLineEdit:focus {"
-            " border-color: #38bdf8;"
-            "}"
-        )
         self._input_edit.returnPressed.connect(self._on_send_or_stop)
+        self._apply_input_theme()
         row.addWidget(self._input_edit, stretch=1)
 
         button_col = QVBoxLayout()
@@ -223,7 +226,33 @@ class AIStreamPanel(QWidget):
         button_col.addWidget(self._clear_output_btn)
         button_col.addStretch()
         row.addLayout(button_col)
-        return box
+        return self._input_area_box
+
+    def _apply_input_theme(self) -> None:
+        """按当前主题重绘输入区底色与输入框样式（构建与主题切换时调用）。"""
+        self._input_area_box.setStyleSheet(
+            f"QWidget {{"
+            f" background: {T.SURFACE_1};"
+            f" border-top: 1px solid {T.SURFACE_4};"
+            f"}}"
+        )
+        self._input_edit.setStyleSheet(
+            f"QLineEdit {{"
+            f" border: 1px solid {T.SURFACE_4};"
+            " border-radius: 6px;"
+            f" background: {T.BG};"
+            f" color: {T.FG};"
+            " padding: 0 14px;"
+            " font-size: 13px;"
+            "}"
+            "QLineEdit:focus {"
+            f" border-color: {T.ACCENT_3};"
+            "}"
+        )
+
+    def refresh_theme(self) -> None:
+        """主题切换后刷新输入区样式（追问输入框）。"""
+        self._apply_input_theme()
 
     def bind_settings(self, settings: Optional["Settings"]) -> None:
         self._settings = settings
@@ -411,7 +440,7 @@ class AIStreamPanel(QWidget):
         self._content_chars = 0
         self._stage_attempts.pop(stage, None)  # fresh start, no retries yet
         self._ensure_stage_header(stage)
-        self._phase_label.setText(f"▶ {title} — {self._stream_phase_suffix()}")
+        self.set_status(f"▶ {title} — {self._stream_phase_suffix()}")
         self._update_stats()
 
     def _end_stage(self, title: str, *, stage: str | None = None) -> None:
@@ -428,7 +457,7 @@ class AIStreamPanel(QWidget):
             detail = f"回答 {content_n:,} 字"
         else:
             detail = "无流式文本"
-        self._phase_label.setText(f"✓ {title} — 完成 ({elapsed:.1f}s) · {detail}")
+        self.set_status(f"✓ {title} — 完成 ({elapsed:.1f}s) · {detail}")
 
     def clear(self) -> None:
         self._reasoning_edit.clear()
@@ -440,7 +469,7 @@ class AIStreamPanel(QWidget):
         self._stage_attempts.clear()
         self._stage_headers_written.clear()
         self._content_headers_written.clear()
-        self._phase_label.setText("等待分析…")
+        self.set_status("等待分析…")
         self._update_stats()
         self._progress_bar.setValue(0)
         self._progress_bar.setFormat("0%")
@@ -460,9 +489,9 @@ class AIStreamPanel(QWidget):
         self._finalized_stages.clear()
         if self._stage:
             title = self._stage_title(self._stage) if self._stage in ("stage1", "stage2") else "追问"
-            self._phase_label.setText(f"▶ {title} — {self._stream_phase_suffix()}")
+            self.set_status(f"▶ {title} — {self._stream_phase_suffix()}")
         else:
-            self._phase_label.setText("等待分析…")
+            self.set_status("等待分析…")
         self._update_stats()
 
     def on_analysis_started(self) -> None:
@@ -534,6 +563,7 @@ class AIStreamPanel(QWidget):
 
     def on_analysis_progress(self, text: str) -> None:
         """Sync phase header with orchestrator progress events."""
+        self.set_status(text)
         if text == "阶段二分析中…":
             self._begin_stage("stage2", self._stage_title("stage2"))
         elif text in ("阶段一完成", "阶段一失败"):
@@ -588,7 +618,7 @@ class AIStreamPanel(QWidget):
 
         self._begin_stage("chat", "追问")
         self._append_user_message(text)
-        self._phase_label.setText("▶ 追问 — 生成中…")
+        self.set_status("▶ 追问 — 生成中…")
 
         self._sending = True
         self._send_btn.setText("停止")

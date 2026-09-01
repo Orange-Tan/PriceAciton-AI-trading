@@ -7,7 +7,6 @@ from datetime import timedelta
 from typing import Any
 
 from pa_agent.data.ashare_common import (
-    PRESET_SYMBOLS as _PRESET_SYMBOLS,
     ashare_head_bar_live as _ashare_head_bar_live,
     ashare_session_open as _ashare_session_open,
     ashare_trading_day as _ashare_trading_day,
@@ -15,7 +14,6 @@ from pa_agent.data.ashare_common import (
     ensure_today_forming_daily_bar,
     index_symbol_for_api as _index_symbol_for_api,
     is_index_symbol,
-    merge_ohlcv as _merge_ohlcv,
     normalize_ashare_symbol,
     resample_rows_to_4h as _resample_rows_to_4h,
     row_time_to_ts_ms as _row_time_to_ts_ms,

@@ -10,9 +10,22 @@ from pa_agent.config.settings import Settings
 from pa_agent.data.base import DataSourceTransientError
 from pa_agent.data.tushare_source import (
     TushareSource,
+    _bar_is_closed,
     display_tushare_symbol,
     normalize_tushare_symbol,
 )
+
+
+def test_current_tushare_minute_bar_is_marked_forming() -> None:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2024, 1, 3, 10, 31, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
+    ts_open = now.replace(second=0, microsecond=0).timestamp() * 1000
+    assert _bar_is_closed(ts_open, "1m", now=now) is False
+    assert _bar_is_closed(
+        ts_open, "1m", now=now.replace(second=0, microsecond=0, minute=32)
+    ) is True
 
 
 def test_normalize_tushare_symbol() -> None:

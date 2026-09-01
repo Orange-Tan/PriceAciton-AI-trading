@@ -3,15 +3,21 @@
   适用环境：macOS 12+ (Monterey 及以上) + Python 3.11+ 已安装
 ================================================================
 
+【重要：数据源变更（MT5 已移除）】
+当前版本已移除 MT5（MetaTrader 5）数据源，默认数据源为 TradingView，
+另支持 AkShare / 东方财富 / Tushare / 通达信 / 腾讯财经 等 A 股数据源。
+Mac 上**无需安装 MetaTrader 5**——本程序不再依赖 MT5。
+本文档中保留的 MT5 相关章节为历史遗留内容，均已标注【已废弃】，可忽略。
+
 【说明】
 本文档供自动化 Agent 按步骤执行部署。每一步都有明确的命令和验收条件。
 遇到问题时按"故障排查"章节处理。最后必须通过验收环节才能交付给用户。
 
 【重要：Mac 与 Windows 的核心差异】
-1. MT5（MetaTrader 5）没有 macOS 原生版本，Mac 版使用 TradingView 作为默认数据源
-2. pywin32 / MetaTrader5 包不支持 macOS，无需安装
+1. MT5（MetaTrader 5）数据源已移除，Mac 版默认数据源为 TradingView
+2. pywin32 包不支持 macOS，无需安装
 3. 不需要 bat 文件，Mac 用 .command 文件（双击即可运行）
-4. pyproject.toml 中 MetaTrader5 和 pywin32 标记了 sys_platform == 'win32'，macOS 下 pip 会自动跳过
+4. pyproject.toml 中 pywin32 标记了 sys_platform == 'win32'，macOS 下 pip 会自动跳过
 5. 项目代码已做了平台兼容：数据源通过 factory.py 工厂创建，Mac 下默认使用 TradingView
 
 【重要：项目路径】
@@ -22,10 +28,9 @@
 
 确定方法：找到项目中存在 pa_agent/main.py 和 pyproject.toml 的那个目录，就是 PROJECT_ROOT。
 
-【重要：不使用虚拟环境】
-本方案直接将依赖安装到系统 Python，不创建虚拟环境。
-原因：用户双击 .command 文件运行程序，虚拟环境会增加不必要的复杂度和闪退风险。
-只要系统 Python 是专门给本程序用的，就不会有冲突问题。
+【重要：建议使用虚拟环境】
+推荐在项目目录创建 `.venv`，避免污染系统 Python；双击脚本会优先寻找已安装 PyQt6 的 Python。
+如使用系统 Python，也可以直接执行安装命令，但不要混用多个 Python 的 pip。
 
 【重要：Shell 说明】
 本文档所有命令均使用 bash/zsh 语法（macOS 默认终端）。
@@ -66,6 +71,12 @@
 若 python3 存在但 python 不存在，创建软链接：
   sudo ln -sf $(which python3) /usr/local/bin/python
 
+（推荐）创建并启用项目虚拟环境：
+  cd PROJECT_ROOT
+  python3 -m venv .venv
+  source .venv/bin/activate
+  python -m pip install --upgrade pip
+
 ================================================================
   第二步：升级 pip
 ================================================================
@@ -87,15 +98,16 @@
 ================================================================
 
   cd PROJECT_ROOT
-  pip3 install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+  python3 -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 
 说明：
 - -e . 表示以开发模式安装，代码改动即时生效
 - -i 指定清华源，避免默认源网络问题
 - macOS 下 pip 会自动跳过 pyproject.toml 中标记 sys_platform == 'win32' 的包：
-  MetaTrader5、pywin32（这两个包不支持 macOS，不需要安装）
+  pywin32（不支持 macOS，不需要安装；MetaTrader5 已移除，不再需要）
 - 实际安装的依赖：PyQt6, pyqtgraph, numpy, pandas, openai, tiktoken,
-  jsonschema, pydantic, tvDatafeed, cryptography, akshare, baostock, curl_cffi
+  jsonschema, pydantic, tvDatafeed, cryptography, keyring, akshare, baostock,
+  curl_cffi, tushare, pytdx, cursor-sdk
 
   注意：tvDatafeed 是 TradingView 数据源的核心依赖，
   从 GitHub 安装（git+https），网络环境需能访问 GitHub。
@@ -115,24 +127,26 @@
   python3 -c "import akshare; print('akshare OK')"
   python3 -c "import baostock; print('baostock OK')"
   python3 -c "import curl_cffi; print('curl_cffi OK')"
+  python3 -c "import tushare; print('tushare OK')"
+  python3 -c "import pytdx; print('pytdx OK')"
 
 预期输出：每行均显示 "xxx OK"
 
-注意：Mac 上不需要检查 MetaTrader5 和 win32crypt。
+注意：Mac 上不需要检查 pywin32（不支持 macOS）；MetaTrader5 已移除。
 
 【故障排查】
 
 问题 1：pip install 网络超时 / ConnectionError
 解决：
   方案 A - 换清华源（已在上面命令中使用）：
-    pip3 install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+  python3 -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 
   方案 B - 换阿里云源：
-    pip3 install -e . -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+    python3 -m pip install -e . -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
 
   方案 C - 逐个安装（某个包卡住时单独装）：
-    pip3 install PyQt6 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
-    pip3 install pyqtgraph -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+    python3 -m pip install PyQt6 -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+    python3 -m pip install pyqtgraph -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
     ... 依次安装每个包
 
 问题 2：PyQt6 安装后报 "DLL load failed" 或 import 失败
@@ -212,75 +226,13 @@
     系统偏好设置 → 安全性与隐私 → 允许从以下位置下载的 App → 允许 Python
 
 ================================================================
-  第四步：修改项目代码适配 macOS
+  第四步：确认项目代码无需手工修改
 ================================================================
 
-Mac 版需要修改以下文件，使程序默认使用 TradingView 数据源而非 MT5。
+当前版本已内置 macOS 兼容和多数据源配置。不要手工修改 `settings.py`、`factory.py`
+或 GUI 默认值；如需调整数据源、交易所、模型或 API Key，请在程序「设置」中操作。
 
-4.1 修改 pyproject.toml — 无需修改
-  pyproject.toml 中 MetaTrader5 和 pywin32 已标记 sys_platform == 'win32'，
-  macOS 下 pip install -e . 会自动跳过这两个包。无需手动修改。
-
-4.2 修改 pa_agent/config/settings.py — 无需修改
-  settings.py 中 last_data_source 的默认值 "mt5" 在 Mac 上会导致启动时报错，
-  但程序已在 app_context.py 中做了 try-except 处理：
-  MT5 连接失败时会打印警告但不会崩溃。
-  不过为了更好的体验，需要修改默认配置，见 4.3。
-
-4.3 修改 pa_agent/data/factory.py — 关键修改
-  将 normalize_data_source_kind() 的默认返回值从 "mt5" 改为 "tradingview"，
-  以及 DATA_SOURCE_CHOICES 的顺序调整为 TradingView 在前。
-
-  编辑 PROJECT_ROOT/pa_agent/data/factory.py：
-
-  找到：
-    DATA_SOURCE_CHOICES: tuple[tuple[DataSourceKind, str], ...] = (
-        ("mt5", "MT5"),
-        ("tradingview", "TradingView"),
-    )
-
-  改为：
-    DATA_SOURCE_CHOICES: tuple[tuple[DataSourceKind, str], ...] = (
-        ("tradingview", "TradingView"),
-        ("mt5", "MT5"),
-    )
-
-  找到 normalize_data_source_kind 函数中的：
-    return "mt5"
-
-  改为：
-    return "tradingview"
-
-4.4 修改 pa_agent/config/settings.py — 关键修改
-  将 GeneralSettings 中 last_data_source 的默认值从 "mt5" 改为 "tradingview"。
-
-  编辑 PROJECT_ROOT/pa_agent/config/settings.py：
-
-  找到：
-    last_data_source: DataSourceKind = "mt5"
-
-  改为：
-    last_data_source: DataSourceKind = "tradingview"
-
-  同时将默认品种从 MT5 品种改为 TradingView 品种：
-
-  找到：
-    last_symbol: str = "XAUUSDm"
-
-  改为：
-    last_symbol: str = "XAUUSD"
-
-  （注意：MT5 品种名通常带 "m" 后缀如 XAUUSDm，TradingView 用标准名 XAUUSD）
-
-4.5 修改 pa_agent/gui/main_window.py — UI 提示文本
-  编辑 PROJECT_ROOT/pa_agent/gui/main_window.py：
-
-  找到所有 "MT5" 相关的提示文本并适当修改（可选，不影响功能）：
-  - "输入 MT5 品种名，如 XAUUSDm…" → "输入品种名，如 XAUUSD…"
-  - "K 线数据来源：MT5（需终端登录）、TradingView（tvDatafeed）" →
-    "K 线数据来源：TradingView（tvDatafeed）、MT5（仅 Windows）"
-
-4.6 确认项目目录结构完整性
+4.1 确认项目目录结构完整性
 
   cd PROJECT_ROOT
   test -f pa_agent/main.py && echo "main.py OK" || echo "main.py MISSING"
@@ -292,31 +244,18 @@ Mac 版需要修改以下文件，使程序默认使用 TradingView 数据源而
 config/settings.json 若不存在，程序首次启动会自动创建，可忽略。
 
 ================================================================
-  第五步：生成运行智能体.command 到项目根目录
+  第五步：准备运行智能体.command
 ================================================================
 
-在 PROJECT_ROOT 目录下生成"运行智能体.command"文件。
-.command 文件是 macOS 双击即可运行的脚本文件，必须放在项目根目录（与 run.py 同级）。
+仓库已自带 `运行智能体.command`，它会自动选择含 PyQt6 的 Python，并探测本机代理端口。
+直接执行以下命令确保脚本可执行：
 
-执行以下命令生成：
-
-  cat > "PROJECT_ROOT/运行智能体.command" << 'EOF'
-#!/bin/bash
-cd "$(dirname "$0")"
-python3 run.py
-if [ $? -ne 0 ]; then
-    echo ""
-    echo "[错误] 程序异常退出，请查看上方错误信息。"
-    echo "按回车键关闭窗口..."
-    read
-fi
-EOF
   chmod +x "PROJECT_ROOT/运行智能体.command"
 
 说明：
 - cd "$(dirname "$0")" 会自动切换到 .command 文件自身所在的目录
 - 无论用户把项目放在哪个路径，只要 .command 在项目根目录就能正确运行
-- 不需要激活虚拟环境，因为依赖直接装在系统 Python 中
+- 若使用虚拟环境，请先在终端激活该环境，再运行脚本；脚本也会自动寻找可用 Python
 - chmod +x 使 .command 文件可执行
 - macOS 首次双击 .command 文件可能会提示"无法验证开发者"：
   右键 → 打开 → 仍要打开（或者：系统偏好设置 → 安全性与隐私 → 允许）
@@ -325,7 +264,7 @@ EOF
 
   test -f "PROJECT_ROOT/运行智能体.command" && echo "File exists" || echo "File missing"
   test -x "PROJECT_ROOT/运行智能体.command" && echo "Executable" || echo "Not executable"
-  cat "PROJECT_ROOT/运行智能体.command"
+  sed -n '1,120p' "PROJECT_ROOT/运行智能体.command"
 
 预期输出：
 - File exists
@@ -375,7 +314,7 @@ EOF
 6.4 最终验收清单
 
   [ ] python3 --version 输出 3.11+
-  [ ] 所有核心包导入测试通过（13 个 OK，不含 MetaTrader5 和 pywin32）
+  [ ] 所有核心包导入测试通过（15 个 OK，不含 pywin32；MetaTrader5 已移除）
   [ ] TradingView 连通性测试通过：
       python3 -c "from tvDatafeed import TvDatafeed, Interval; df = TvDatafeed().get_hist('XAUUSD', 'OANDA', Interval.in_daily, n_bars=2); print('TV OK:', len(df), 'bars')"
       预期输出：TV OK: 2 bars（若失败，见第三步故障排查 问题 3.5 / 3.6）
@@ -398,7 +337,8 @@ EOF
 - 模型默认已为 deepseek-v4-flash（可按需改为 deepseek-v4-pro 等）
 - 点击保存
 
-API Key 会被存储在 config/settings.json 中。
+API Key 会保存到 macOS 钥匙串，不会写入 config/settings.json。
+QClaw、WorkBuddy、Cursor 等路由凭据使用独立的钥匙串项目，切换路由不会覆盖普通 API Key。
 
 ================================================================
   附：TradingView 数据源使用说明
@@ -413,9 +353,8 @@ API Key 会被存储在 config/settings.json 中。
 2. "获取数据"按钮
    TradingView 数据源不会在启动时自动拉取数据。
    需手动点击工具栏中的"获取数据"按钮，之后会进入持续刷新模式。
-   切换品种或周期后，RefreshLoop 会在下一个 tick 自动使用新的品种/周期拉取，
-   无需再次点击"获取数据"按钮——切换会立即中断当前挂起的请求，
-   而不是等上一个请求的超时周期结束。
+   切换品种或周期后，当前刷新会立即停止并中断挂起的请求；确认输入完整后，
+   需要再次点击"获取数据"按钮开始新品种/周期的刷新。
 
 3. 交易所选择
    下拉框中的交易所已按类别标注（如 SSE（A股）、HKEX（港股）、BINANCE 等），
@@ -426,16 +365,16 @@ API Key 会被存储在 config/settings.json 中。
    未配置 TradingView 账号时使用匿名（nologin）模式，TradingView 会对匿名 IP
    施加请求限制，尤其是小周期（1m、5m）拉取更容易触发。
    若频繁出现超时，最有效的解决方案是在设置界面填入 TradingView 账号：
-   设置 → TradingView → 用户名 / 密码（凭证加密存储，不会明文保存）。
+   设置 → TradingView → 用户名 / 密码（凭证不会明文写入项目文件）。
 
 ================================================================
   附：Mac 特有问题
 ================================================================
 
 Q: macOS 上没有 MT5，怎么办？
-A: Mac 版不使用 MT5，默认使用 TradingView 作为数据源。TradingView 支持外汇、
-   期货、加密货币、股票等多种品种，覆盖了大部分 MT5 的品种。
-   如果必须使用 MT5，可以通过虚拟机（Parallels Desktop / VMware Fusion）运行 Windows。
+A: 无需安装 MT5。当前版本已移除 MT5 数据源，默认使用 TradingView 作为数据源，
+   另支持 AkShare / 东方财富 / Tushare / 通达信 / 腾讯财经 等 A 股数据源。
+   （历史说明：早期版本若必须使用 MT5，只能通过虚拟机 Parallels Desktop / VMware Fusion 运行 Windows。）
 
 Q: macOS 上 PyQt6 窗口字体模糊
 A: 如果使用 Retina 显示器，PyQt6 通常会自动适配。若仍然模糊：
@@ -452,7 +391,7 @@ A: 终端执行：
 Q: macOS 上 Python 路径问题（python vs python3）
 A: macOS 自带 Python 2（python 命令），安装 Python 3 后命令为 python3。
    run.py 中使用的是 sys.executable，会自动使用正确的 Python。
-   .command 文件中写的是 python3 run.py，确保调用 Python 3。
+   .command 文件会自动选择已安装 PyQt6 的 Python 3；终端手动运行时可用 `python3 run.py`。
 
 Q: TradingView 数据拉取超时
 A: 常见原因和处理顺序：
@@ -475,7 +414,7 @@ Q: 如何更新程序
 A:
    cd PROJECT_ROOT
    git pull
-   pip3 install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+   python3 -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 
 Q: 双击 .command 文件闪退
 A: 终端中手动运行观察输出：

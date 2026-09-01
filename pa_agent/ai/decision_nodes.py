@@ -1990,8 +1990,6 @@ def route_order_method(
 
                 candidate = "突破单"
 
-        return []
-
 
 
     # Breakout order: check for valid entry_basis; fall back to limit when unavailable.

@@ -15,7 +15,7 @@ def test_tvc_xauusd_combo_error():
     assert "TVC" in msg and "GOLD" in msg
 
 
-def test_mt5_style_symbol_hint():
+def test_m_suffix_symbol_hint():
     msg = format_tradingview_fetch_error("BTCUSDm", "BINANCE", empty_data=True)
     assert "m 后缀" in msg or "…m" in msg
 
