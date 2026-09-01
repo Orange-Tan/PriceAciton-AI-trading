@@ -91,12 +91,15 @@ class WatchlistPanel(QWidget):
         group_col_layout = QVBoxLayout(self._group_column)
         group_col_layout.setContentsMargins(0, 0, 0, 0)
         group_col_layout.setSpacing(2)
+        group_header_row = QHBoxLayout()
+        group_header_row.setContentsMargins(0, 0, 0, 0)
+        group_header_row.setSpacing(0)
         self._group_header = QLabel("板块")
         self._group_header.setStyleSheet(
             f"color: {T.FG_2}; font-size: 11px; font-weight: 600; padding: 0 4px;"
         )
-        group_col_layout.addWidget(self._group_header)
-        group_col_layout.addWidget(self._group_list)
+        group_header_row.addWidget(self._group_header)
+        group_header_row.addStretch(1)
         self._add_group_btn = QPushButton("+")
         self._add_group_btn.setFixedSize(28, 28)
         self._add_group_btn.setStyleSheet(
@@ -104,8 +107,9 @@ class WatchlistPanel(QWidget):
             "font-size: 17px; } QPushButton:hover { background: rgba(127, 127, 127, 0.12); }"
         )
         self._add_group_btn.setToolTip("新增板块")
-        group_col_layout.addWidget(self._add_group_btn)
-        group_col_layout.addStretch(1)
+        group_header_row.addWidget(self._add_group_btn)
+        group_col_layout.addLayout(group_header_row)
+        group_col_layout.addWidget(self._group_list, stretch=1)
         self._group_splitter.addWidget(self._group_column)
 
         self._stock_column = QWidget()
@@ -115,11 +119,15 @@ class WatchlistPanel(QWidget):
         right_layout = QVBoxLayout(self._stock_column)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(2)
+        stock_header_row = QHBoxLayout()
+        stock_header_row.setContentsMargins(0, 0, 0, 0)
+        stock_header_row.setSpacing(0)
         self._stock_header = QLabel("自选股")
         self._stock_header.setStyleSheet(
             f"color: {T.FG_2}; font-size: 11px; font-weight: 600; padding: 0 2px;"
         )
-        right_layout.addWidget(self._stock_header)
+        stock_header_row.addWidget(self._stock_header)
+        stock_header_row.addStretch(1)
         self._table = QTableWidget(0, len(self._HEADERS))
         self._table.setHorizontalHeaderLabels(self._HEADERS)
         self._table.setObjectName("watchlistTable")
@@ -127,6 +135,8 @@ class WatchlistPanel(QWidget):
         self._table.setShowGrid(False)
         self._table.setStyleSheet(
             "QTableWidget#watchlistTable { border: none; background: transparent; }"
+            " QTableWidget#watchlistTable::item { padding: 2px 4px; }"
+            " QHeaderView::section { padding: 3px 4px; }"
         )
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -134,9 +144,8 @@ class WatchlistPanel(QWidget):
         self._table.setAlternatingRowColors(True)
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(True)
-        for column, width in enumerate((72, 90, 72, 78)):
+        for column, width in enumerate((62, 76, 62, 68)):
             self._table.setColumnWidth(column, width)
-        right_layout.addWidget(self._table)
         self._add_symbol_btn = QPushButton("+")
         self._add_symbol_btn.setFixedSize(28, 28)
         self._add_symbol_btn.setStyleSheet(
@@ -144,8 +153,9 @@ class WatchlistPanel(QWidget):
             "font-size: 17px; } QPushButton:hover { background: rgba(127, 127, 127, 0.12); }"
         )
         self._add_symbol_btn.setToolTip("添加自选股")
-        right_layout.addWidget(self._add_symbol_btn)
-        right_layout.addStretch(1)
+        stock_header_row.addWidget(self._add_symbol_btn)
+        right_layout.addLayout(stock_header_row)
+        right_layout.addWidget(self._table, stretch=1)
         self._group_splitter.addWidget(self._stock_column)
         self._group_splitter.setStretchFactor(0, 0)
         self._group_splitter.setStretchFactor(1, 1)
@@ -315,7 +325,8 @@ class WatchlistPanel(QWidget):
         if row_height <= 0:
             row_height = 32
         content_height = max(1, self._group_list.count()) * row_height + 10
-        self._group_list.setFixedHeight(min(max(content_height, 36), 280))
+        self._group_list.setMinimumHeight(min(max(content_height, 36), 280))
+        self._group_list.setMaximumHeight(280)
 
     def _group_column_width_for(self, names: list[str]) -> int:
         """Return a compact initial width that fits the longest group name."""
@@ -336,7 +347,7 @@ class WatchlistPanel(QWidget):
         header_height = self._table.horizontalHeader().sizeHint().height()
         row_height = sum(self._table.rowHeight(row) for row in range(self._table.rowCount()))
         content_height = header_height + row_height + 4
-        self._table.setFixedHeight(min(max(content_height, 36), 360))
+        self._table.setMinimumHeight(min(max(content_height, 36), 360))
 
     def _refresh_table(self) -> None:
         symbols = self.symbols()

@@ -183,6 +183,20 @@ def test_add_actions_remain_visible_and_fixed_in_narrow_columns(qtbot) -> None:
     assert panel._add_symbol_btn.isVisible()
     assert panel._add_group_btn.width() == 28
     assert panel._add_symbol_btn.width() == 28
+    assert panel._add_group_btn.y() <= panel._group_header.height()
+    assert panel._add_symbol_btn.y() <= panel._stock_header.height()
+
+
+def test_watchlist_table_stretches_to_bottom_for_scrollbar(qtbot) -> None:
+    from pa_agent.gui.watchlist_panel import WatchlistPanel
+
+    panel = WatchlistPanel({"港股": ["0700", "9988", "1810"]})
+    qtbot.addWidget(panel)
+    panel.resize(320, 360)
+    panel.show()
+    qtbot.waitExposed(panel)
+
+    assert panel._table.geometry().bottom() >= panel._stock_column.height() - 36
 
 
 def test_watchlist_panel_add_dedup_and_symbols(qtbot) -> None:
@@ -275,7 +289,7 @@ def test_watchlist_panel_keeps_group_column_compact_and_hides_row_numbers(qtbot)
     assert "border: none" in panel._group_list.styleSheet()
     assert "border: none" in panel._table.styleSheet()
     assert panel._group_list.height() < 300
-    assert panel._table.height() < 300
+    assert panel._table.geometry().bottom() >= panel._stock_column.height() - 36
     assert panel._add_group_btn.parentWidget() is panel._group_column
     assert panel._add_symbol_btn.parentWidget() is panel._stock_column
 
