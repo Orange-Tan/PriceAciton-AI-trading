@@ -304,8 +304,9 @@ class MainWindow(QMainWindow):
         self._future_trend_panel = self._ai_sidebar.future_trend
         self._decision_tree_panel = self._ai_sidebar.decision_tree
         self._decision_flow_viz_panel = self._ai_sidebar.decision_flow_viz
-        # Summary metrics are rendered inside the decision tab.
-        self._summary_strip = self._decision_panel.summary_strip
+        # Summary metrics are rendered directly in the decision diagnosis grid.
+        # Keep this alias for existing reset/theme hooks during the transition.
+        self._summary_strip = self._decision_panel
 
         # Auto demo: when flow playback ends, return to stream tab.
         try:
@@ -4372,7 +4373,6 @@ class MainWindow(QMainWindow):
             "_decision_tree_panel",
             "_decision_flow_viz_panel",
             "_flow_bar",
-            "_summary_strip",
             "_stream_panel",
             "_decision_panel",
             "_future_trend_panel",

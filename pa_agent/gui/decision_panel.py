@@ -16,15 +16,16 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QGridLayout,
     QProgressBar,
     QSizePolicy,
+    QToolButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from pa_agent.gui.theme import tokens as T
-from pa_agent.gui.widgets.summary_strip import SummaryStrip
 
 _NO_ORDER = "不下单"
 
@@ -162,38 +163,62 @@ class DecisionPanel(QWidget):
         disclaimer.setWordWrap(True)
         layout.addWidget(disclaimer)
 
-        # Keep the key market metrics with the decision they inform instead
-        # of consuming a separate full-width strip above the workbench.
-        self.summary_strip = SummaryStrip(parent=self)
-        layout.addWidget(self.summary_strip)
+        # 结论置顶，避免在“交易决策”区再次重复显示同一结论。
+        self._conclusion_bar = QFrame()
+        self._conclusion_bar.setObjectName("conclusionBar")
+        conclusion_layout = QHBoxLayout(self._conclusion_bar)
+        conclusion_layout.setContentsMargins(14, 10, 14, 10)
+        conclusion_layout.setSpacing(10)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(sep)
+        self._conclusion_label = QLabel("等待分析")
+        self._conclusion_label.setStyleSheet(
+            f"font-size: 18px; font-weight: bold; color: {T.FG_2};"
+        )
+        self._direction_inline_label = QLabel()
+        self._direction_inline_label.setStyleSheet(
+            f"font-size: 13px; font-weight: bold; color: {T.FG_2};"
+        )
+        self._trade_conf_inline_label = QLabel()
+        self._trade_conf_inline_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        conclusion_layout.addWidget(self._conclusion_label)
+        conclusion_layout.addWidget(self._direction_inline_label)
+        conclusion_layout.addStretch(1)
+        conclusion_layout.addWidget(self._trade_conf_inline_label)
+        layout.addWidget(self._conclusion_bar)
 
-        # ── 市场诊断 ──────────────────────────────────────────────────────
+        # 市场诊断统一承载趋势、周期、阶段、支撑和阻力，替代独立摘要条。
         diag_title = QLabel("市场诊断")
         diag_title.setStyleSheet("font-weight: bold; color: #58a6ff;")
         layout.addWidget(diag_title)
 
-        diag_row = QWidget()
-        diag_row_layout = QHBoxLayout(diag_row)
-        diag_row_layout.setContentsMargins(0, 0, 0, 0)
-        diag_row_layout.setSpacing(8)
+        diag_grid = QWidget()
+        diag_layout = QGridLayout(diag_grid)
+        diag_layout.setContentsMargins(0, 0, 0, 0)
+        diag_layout.setHorizontalSpacing(6)
+        diag_layout.setVerticalSpacing(6)
 
         self._trend_label = QLabel("趋势：—")
         self._cycle_label = QLabel("周期：—")
+        self._next_cycle_label = QLabel("下一周期：—")
         self._phase_label = QLabel("阶段：—")
-        for lbl in (self._trend_label, self._cycle_label, self._phase_label):
+        self._support_label = QLabel("支撑区：—")
+        self._resistance_label = QLabel("阻力区：—")
+        diag_labels = (
+            self._trend_label,
+            self._cycle_label,
+            self._next_cycle_label,
+            self._phase_label,
+            self._support_label,
+            self._resistance_label,
+        )
+        for idx, lbl in enumerate(diag_labels):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setWordWrap(True)
-            lbl.setSizePolicy(
-                QSizePolicy.Policy.Expanding,
-                QSizePolicy.Policy.Preferred,
-            )
-            diag_row_layout.addWidget(lbl, stretch=1)
-        layout.addWidget(diag_row)
+            lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            diag_layout.addWidget(lbl, idx // 3, idx % 3)
+        layout.addWidget(diag_grid)
 
         # ── 市场判断置信度（来自 Stage 2 diagnosis_confidence）───────────
         self._diag_conf_title = QLabel("市场判断置信度")
@@ -220,62 +245,13 @@ class DecisionPanel(QWidget):
         sep2.setFrameShadow(QFrame.Shadow.Sunken)
         layout.addWidget(sep2)
 
-        # ── 交易决策 ──────────────────────────────────────────────────────
-        trade_title = QLabel("交易决策")
+        # 交易参数只保留价格与统计，结论和交易置信度已在顶部展示。
+        trade_title = QLabel("交易参数")
         trade_title.setStyleSheet("font-weight: bold;")
         layout.addWidget(trade_title)
 
-        self._conclusion_bar = QFrame()
-        self._conclusion_bar.setObjectName("conclusionBar")
-        bar_layout = QHBoxLayout(self._conclusion_bar)
-        bar_layout.setContentsMargins(14, 12, 14, 12)
-        bar_layout.setSpacing(8)
-
         self._rr_inline_label = QLabel("—")
-        self._rr_inline_label.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        )
-        self._rr_inline_label.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: #58a6ff;"
-        )
-
         self._win_rate_inline_label = QLabel("—")
-        self._win_rate_inline_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        self._win_rate_inline_label.setStyleSheet(
-            "font-size: 13px; font-weight: bold; color: #a371f7;"
-        )
-
-        bar_layout.addWidget(self._rr_inline_label, stretch=1)
-        bar_layout.addWidget(self._win_rate_inline_label, stretch=1)
-        layout.addWidget(self._conclusion_bar)
-
-        self._trade_summary_row = QWidget()
-        trade_summary_layout = QHBoxLayout(self._trade_summary_row)
-        trade_summary_layout.setContentsMargins(0, 4, 0, 0)
-        trade_summary_layout.setSpacing(12)
-
-        self._conclusion_label = QLabel("—")
-        self._conclusion_label.setStyleSheet(
-            f"font-size: 18px; font-weight: bold; color: {T.FG_2};"
-        )
-
-        self._direction_inline_label = QLabel()
-        self._direction_inline_label.setStyleSheet(
-            f"font-size: 14px; font-weight: bold; color: {T.FG_2};"
-        )
-
-        self._trade_conf_inline_label = QLabel()
-        self._trade_conf_inline_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-
-        trade_summary_layout.addWidget(self._conclusion_label)
-        trade_summary_layout.addWidget(self._direction_inline_label)
-        trade_summary_layout.addStretch(1)
-        trade_summary_layout.addWidget(self._trade_conf_inline_label)
-        layout.addWidget(self._trade_summary_row)
 
         self._trade_prices_row = QWidget()
         prices_layout = QHBoxLayout(self._trade_prices_row)
@@ -291,6 +267,15 @@ class DecisionPanel(QWidget):
             prices_layout.addWidget(lbl, stretch=1)
 
         layout.addWidget(self._trade_prices_row)
+
+        trade_stats_row = QWidget()
+        trade_stats_layout = QHBoxLayout(trade_stats_row)
+        trade_stats_layout.setContentsMargins(0, 2, 0, 0)
+        trade_stats_layout.setSpacing(16)
+        for lbl in (self._rr_inline_label, self._win_rate_inline_label):
+            lbl.setStyleSheet(f"font-size: 13px; color: {T.FG_2};")
+            trade_stats_layout.addWidget(lbl, stretch=1)
+        layout.addWidget(trade_stats_row)
 
         self._trade_conf_title = QLabel("交易决策置信度")
         self._trade_conf_title.setStyleSheet("font-weight: bold; margin-top: 4px;")
@@ -309,29 +294,89 @@ class DecisionPanel(QWidget):
         self._trade_reasoning_label = QLabel()
         self._trade_reasoning_label.setWordWrap(True)
         self._trade_reasoning_label.setStyleSheet(_reason_font_css())
-        layout.addWidget(self._trade_reasoning_label)
 
-        reasoning_title = QLabel("分析理由")
-        reasoning_title.setStyleSheet("font-weight: bold; color: #a371f7; margin-top: 6px;")
-        layout.addWidget(reasoning_title)
-
-        self._reasoning_edit = QTextEdit()
-        self._reasoning_edit.setReadOnly(True)
-        self._reasoning_edit.setObjectName("answerPane")
-        self._reasoning_edit.setStyleSheet(_reason_edit_css())
-        self._reasoning_edit.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        self._reasoning_edit.setMinimumHeight(120)
-        layout.addWidget(self._reasoning_edit, stretch=1)
+        # 说明按需展开，避免长文本把交易参数推到视口之外。
+        self._reasoning_edit = self._make_detail(layout, "分析理由", open=True)
+        self._confidence_reasoning_edit = self._make_detail(layout, "置信度理由")
+        self._risk_reasoning_edit = self._make_detail(layout, "风险评估与失效条件")
 
         self.clear()
+
+    def _make_detail(self, layout: QVBoxLayout, title: str, *, open: bool = False) -> QTextEdit:
+        toggle = QToolButton()
+        toggle.setText(title)
+        toggle.setCheckable(True)
+        toggle.setChecked(open)
+        toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        toggle.setArrowType(
+            Qt.ArrowType.DownArrow if open else Qt.ArrowType.RightArrow
+        )
+        toggle.setStyleSheet("font-weight: bold; padding: 6px 0; text-align: left;")
+
+        edit = QTextEdit()
+        edit.setReadOnly(True)
+        edit.setObjectName("answerPane")
+        edit.setStyleSheet(_reason_edit_css())
+        edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        edit.setMinimumHeight(64)
+        edit.setVisible(open)
+
+        def _toggle_details(checked: bool, *, button: QToolButton = toggle, pane: QTextEdit = edit) -> None:
+            pane.setVisible(checked)
+            button.setArrowType(Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow)
+
+        toggle.toggled.connect(_toggle_details)
+        layout.addWidget(toggle)
+        layout.addWidget(edit)
+        return edit
 
     def _apply_diag_chip_style(self, label: QLabel, *, color: str) -> None:
         label.setStyleSheet(
             f"font-size: 14px; font-weight: bold; padding: 8px 10px;"
             f"color: {color}; background-color: {T.SURFACE_3}; border-radius: 8px;"
         )
+
+    def set_summary_metrics(self, metrics: dict[str, str]) -> None:
+        """Update the consolidated diagnosis metrics shown in the panel."""
+        mapping = {
+            "当前趋势": self._trend_label,
+            "当前市场周期": self._cycle_label,
+            "下一个市场周期": self._next_cycle_label,
+            "市场阶段": self._phase_label,
+            "支撑区": self._support_label,
+            "阻力区": self._resistance_label,
+        }
+        prefixes = {
+            "当前趋势": "趋势：",
+            "当前市场周期": "周期：",
+            "下一个市场周期": "下一周期：",
+            "市场阶段": "阶段：",
+            "支撑区": "支撑区：",
+            "阻力区": "阻力区：",
+        }
+        for key, label in mapping.items():
+            if key in metrics:
+                label.setText(f"{prefixes[key]}{metrics[key] or '—'}")
+
+    def set_metrics(self, metrics: dict[str, str]) -> None:
+        """Backward-compatible alias for callers that previously updated SummaryStrip."""
+        self.set_summary_metrics(metrics)
+
+    def reset_summary_metrics(self) -> None:
+        self.set_summary_metrics(
+            {
+                "当前趋势": "—",
+                "当前市场周期": "—",
+                "下一个市场周期": "—",
+                "市场阶段": "—",
+                "支撑区": "—",
+                "阻力区": "—",
+            }
+        )
+
+    def reset(self) -> None:
+        """Backward-compatible SummaryStrip reset hook."""
+        self.reset_summary_metrics()
 
     # ── Data binding helpers ──────────────────────────────────────────────
 
@@ -502,7 +547,7 @@ class DecisionPanel(QWidget):
             self._direction_inline_label.setText("")
             self._direction_inline_label.setVisible(False)
             self._trade_prices_row.setVisible(False)
-            self._conclusion_bar.setVisible(False)
+            self._conclusion_bar.setVisible(True)
             self._set_conclusion_bar_style()
             self._apply_trade_confidence_inline(
                 trade_conf, trade_conf_reasoning,
@@ -587,16 +632,30 @@ class DecisionPanel(QWidget):
             )
 
         self._reasoning_edit.setPlainText(str(reasoning) if reasoning else "")
+        confidence_reason = str(trade_conf_reasoning or "").strip()
+        self._confidence_reasoning_edit.setPlainText(confidence_reason)
+        risk = str(decision.get("risk_assessment") or "").strip()
+        invalidation = str(decision.get("invalidation_condition") or "").strip()
+        risk_text = risk
+        if invalidation:
+            risk_text = f"{risk}\n\n失效条件：{invalidation}" if risk else f"失效条件：{invalidation}"
+        self._risk_reasoning_edit.setPlainText(risk_text)
 
     def clear(self) -> None:
-        self.summary_strip.reset()
+        self.reset_summary_metrics()
         self._trend_label.setText("趋势：—")
         self._apply_diag_chip_style(self._trend_label, color=T.FG_3)
         self._cycle_label.setText("周期：—")
         self._apply_diag_chip_style(self._cycle_label, color=T.FG_3)
+        self._next_cycle_label.setText("下一周期：—")
+        self._apply_diag_chip_style(self._next_cycle_label, color=T.FG_3)
         self._phase_label.setText("阶段：—")
         self._apply_diag_chip_style(self._phase_label, color=T.FG_3)
         self._phase_label.setVisible(True)
+        self._support_label.setText("支撑区：—")
+        self._apply_diag_chip_style(self._support_label, color=T.FG_3)
+        self._resistance_label.setText("阻力区：—")
+        self._apply_diag_chip_style(self._resistance_label, color=T.FG_3)
 
         self._diag_conf_bar.setValue(0)
         self._diag_conf_title.setVisible(False)
@@ -605,7 +664,7 @@ class DecisionPanel(QWidget):
         self._diag_reasoning_label.setVisible(False)
 
         self._reset_conclusion_bar_side_labels()
-        self._conclusion_bar.setVisible(False)
+        self._conclusion_bar.setVisible(True)
         self._conclusion_label.setText("等待分析")
         self._conclusion_label.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {T.FG_3};"
@@ -617,6 +676,8 @@ class DecisionPanel(QWidget):
         self._trade_reasoning_label.setVisible(False)
 
         self._reasoning_edit.clear()
+        self._confidence_reasoning_edit.clear()
+        self._risk_reasoning_edit.clear()
 
     def refresh_theme(self) -> None:
         """主题切换后重绘本面板：静态文字颜色跟随主题，再按缓存数据重渲。"""

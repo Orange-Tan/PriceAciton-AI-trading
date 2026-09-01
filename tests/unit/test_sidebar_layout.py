@@ -39,12 +39,24 @@ def test_realtime_panel_exposes_single_line_status_with_error_color():
     assert T.DANGER in panel._status_label.styleSheet()
 
 
-def test_decision_panel_contains_integrated_summary_strip():
+def test_decision_panel_consolidates_summary_metrics_into_diagnosis():
     _qapp()
     panel = DecisionPanel()
-    assert panel.summary_strip.parent() is panel
-    panel.summary_strip.set_metrics({"当前趋势": "震荡"})
-    assert panel.summary_strip._cards[0]._value.text() == "震荡"
+    assert not hasattr(panel, "summary_strip")
+    panel.set_summary_metrics(
+        {
+            "当前趋势": "震荡",
+            "当前市场周期": "交易区间",
+            "下一个市场周期": "下跌趋势",
+            "支撑区": "27.73",
+            "阻力区": "31.20",
+        }
+    )
+    assert panel._trend_label.text() == "趋势：震荡"
+    assert panel._cycle_label.text() == "周期：交易区间"
+    assert panel._next_cycle_label.text() == "下一周期：下跌趋势"
+    assert panel._support_label.text() == "支撑区：27.73"
+    assert panel._resistance_label.text() == "阻力区：31.20"
 
 
 def test_analysis_settings_tab_precedes_realtime_tab():
@@ -56,6 +68,18 @@ def test_analysis_settings_tab_precedes_realtime_tab():
     assert sidebar._tabs.tabText(1) == "实时"
     assert sidebar._tabs.currentIndex() == sidebar.TAB_STREAM
     assert sidebar.analysis_settings is sidebar._tabs.widget(0)
+
+
+def test_decision_tab_follows_realtime_before_decision_tree():
+    from pa_agent.gui.ai_sidebar import AISidebar
+
+    _qapp()
+    sidebar = AISidebar()
+    assert [sidebar._tabs.tabText(i) for i in range(4)] == [
+        "分析设置", "实时", "决策", "决策树"
+    ]
+    assert sidebar.TAB_DECISION == 2
+    assert sidebar.TAB_DECISION_TREE == 3
 
 
 def test_analysis_settings_accepts_main_window_controls():
