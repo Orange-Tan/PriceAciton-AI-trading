@@ -70,9 +70,9 @@ class WatchlistPanel(QWidget):
         title.setStyleSheet(f"color: {T.FG_2}; font-size: 13px; font-weight: 600; padding-left: 2px;")
         layout.addWidget(title)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        splitter.setHandleWidth(1)
+        self._group_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._group_splitter.setChildrenCollapsible(False)
+        self._group_splitter.setHandleWidth(1)
         self._group_list = QListWidget()
         self._group_list.setObjectName("watchlistGroups")
         self._group_list.setMinimumWidth(0)
@@ -86,7 +86,7 @@ class WatchlistPanel(QWidget):
         self._group_column = QWidget()
         self._group_column.setMaximumWidth(180)
         self._group_column.setSizePolicy(
-            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
         )
         group_col_layout = QVBoxLayout(self._group_column)
         group_col_layout.setContentsMargins(0, 0, 0, 0)
@@ -97,7 +97,7 @@ class WatchlistPanel(QWidget):
         self._add_group_btn.setToolTip("新增板块")
         group_col_layout.addWidget(self._add_group_btn)
         group_col_layout.addStretch(1)
-        splitter.addWidget(self._group_column)
+        self._group_splitter.addWidget(self._group_column)
 
         self._stock_column = QWidget()
         self._stock_column.setSizePolicy(
@@ -128,10 +128,10 @@ class WatchlistPanel(QWidget):
         self._add_symbol_btn.setToolTip("添加自选股")
         right_layout.addWidget(self._add_symbol_btn)
         right_layout.addStretch(1)
-        splitter.addWidget(self._stock_column)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, stretch=1)
+        self._group_splitter.addWidget(self._stock_column)
+        self._group_splitter.setStretchFactor(0, 0)
+        self._group_splitter.setStretchFactor(1, 1)
+        layout.addWidget(self._group_splitter, stretch=1)
 
         # Compatibility list for callers of the former panel API.
         self._list = QListWidget(self)
@@ -160,6 +160,7 @@ class WatchlistPanel(QWidget):
         self._group_list.setCurrentRow(names.index(self._current_group))
         self._group_list.blockSignals(False)
         self._resize_group_list()
+        self._resize_group_column()
         self._refresh_table()
 
     def current_group(self) -> str:
@@ -297,6 +298,20 @@ class WatchlistPanel(QWidget):
             row_height = 32
         content_height = max(1, self._group_list.count()) * row_height + 10
         self._group_list.setFixedHeight(min(max(content_height, 36), 280))
+
+    def _group_column_width_for(self, names: list[str]) -> int:
+        """Return a compact initial width that fits the longest group name."""
+        widest = max(
+            (self.fontMetrics().horizontalAdvance(name) for name in names),
+            default=0,
+        )
+        return min(max(widest + 22, 56), 180)
+
+    def _resize_group_column(self) -> None:
+        """Set the initial group-column width without disabling user resizing."""
+        width = self._group_column_width_for(list(self._groups))
+        total = max(self._group_splitter.width(), width + 160)
+        self._group_splitter.setSizes([width, max(total - width, 160)])
 
     def _resize_table(self) -> None:
         """Keep the add-symbol action below rows while retaining a scroll cap."""

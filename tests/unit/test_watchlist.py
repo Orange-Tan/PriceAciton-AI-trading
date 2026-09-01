@@ -126,6 +126,18 @@ def test_watchlist_settings_migrates_groups_and_legacy_watchlist() -> None:
 # ── WatchlistPanel widget ─────────────────────────────────────────────────────
 
 
+def test_group_column_width_fits_longest_group_name(qtbot) -> None:
+    from pa_agent.gui.watchlist_panel import WatchlistPanel
+
+    names = ["港股", "科技成长", "高股息红利"]
+    panel = WatchlistPanel({name: [] for name in names})
+    qtbot.addWidget(panel)
+
+    expected = panel._group_column_width_for(names)
+    assert panel._group_splitter.sizes()[0] == expected
+    assert panel._group_column.maximumWidth() > expected
+
+
 def test_watchlist_panel_add_dedup_and_symbols(qtbot) -> None:
     from pa_agent.gui.watchlist_panel import WatchlistPanel
 
