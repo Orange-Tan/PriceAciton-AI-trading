@@ -51,13 +51,14 @@ from pa_agent.config.model_providers import (
     find_provider,
     guess_provider,
 )
-from pa_agent.config.settings import Settings, save_settings
+from pa_agent.config.settings import AIProviderSettings, Settings, save_settings
 from pa_agent.config.paths import SETTINGS_JSON_PATH
 from pa_agent.data.factory import normalize_data_source_kind
 from pa_agent.gui.feishu_settings_dialog import FeishuSettingsPanel
 from pa_agent.gui.general_settings_dialog import GeneralSettingsPanel
 from pa_agent.gui.theme import tokens as T
 from pa_agent.gui.theme.apply import apply_theme, apply_theme_from_settings
+from pa_agent.util.mask_secret import mask_secret
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +207,36 @@ class _DataSourceProbeWorker(QThread):
         self.finished_all.emit()
 
 
+class _ModelProbeWorker(QThread):
+    """Run a minimal chat request against the provider configured in the form."""
+
+    probed = pyqtSignal(bool, str)
+
+    def __init__(self, settings: AIProviderSettings, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._settings = settings
+
+    def run(self) -> None:  # noqa: D102
+        if self.isInterruptionRequested():
+            return
+        try:
+            from pa_agent.ai.deepseek_client import DeepSeekClient
+
+            DeepSeekClient(self._settings).chat(
+                [{"role": "user", "content": "只回复 OK"}],
+                thinking=False,
+                reasoning_effort="low",
+                timeout_s=20.0,
+            )
+        except Exception as exc:  # noqa: BLE001
+            detail = str(exc)
+            if self._settings.api_key:
+                detail = detail.replace(self._settings.api_key, mask_secret(self._settings.api_key))
+            self.probed.emit(False, f"模型连通失败：{detail[:240]}")
+            return
+        self.probed.emit(True, "模型连通正常")
+
+
 class AppSettingsDialog(QDialog):
     """统一设置对话框：数据源 + 模型 API + 飞书通知 + 通用设置四组。"""
 
@@ -228,6 +259,7 @@ class AppSettingsDialog(QDialog):
         # 本次打开设置内的数据源连通检测结果：{kind: (ok, detail)}
         self._ds_probe_status: dict[str, tuple[bool, str]] = {}
         self._ds_probe_worker: _DataSourceProbeWorker | None = None
+        self._model_probe_worker: _ModelProbeWorker | None = None
         self._setup_ui()
         self._load_values()
 
@@ -393,6 +425,16 @@ class AppSettingsDialog(QDialog):
         self._hint_label.setWordWrap(True)
         self._hint_label.setStyleSheet(f"color: {T.FG_2}; font-size: 11px;")
         form.addRow("", self._hint_label)
+
+        model_probe_row = QHBoxLayout()
+        self._model_probe_btn = QPushButton("测试模型连接")
+        self._model_probe_btn.clicked.connect(self._probe_model)
+        model_probe_row.addWidget(self._model_probe_btn)
+        self._model_probe_label = QLabel("")
+        self._model_probe_label.setWordWrap(True)
+        self._model_probe_label.setStyleSheet(f"color: {T.FG_2}; font-size: 12px;")
+        model_probe_row.addWidget(self._model_probe_label, stretch=1)
+        form.addRow("连通性:", model_probe_row)
 
         layout.addWidget(group)
         layout.addStretch()
@@ -568,6 +610,21 @@ class AppSettingsDialog(QDialog):
             worker.finished.connect(worker.deleteLater)
             self._ds_probe_worker = None
 
+        model_worker = getattr(self, "_model_probe_worker", None)
+        if model_worker is not None and model_worker.isRunning():
+            model_worker.requestInterruption()
+            try:
+                model_worker.probed.disconnect(self._on_model_probed)
+            except (TypeError, RuntimeError):
+                pass
+            try:
+                model_worker.finished.disconnect(self._on_model_probe_finished)
+            except (TypeError, RuntimeError):
+                pass
+            model_worker.setParent(None)
+            model_worker.finished.connect(model_worker.deleteLater)
+            self._model_probe_worker = None
+
     def closeEvent(self, event) -> None:  # noqa: N802
         self._shutdown_probe_worker()
         super().closeEvent(event)
@@ -601,6 +658,50 @@ class AppSettingsDialog(QDialog):
         else:
             self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Normal)
             self._show_key_btn.setText("隐藏")
+
+    def _probe_model(self) -> None:
+        """Test unsaved model form values with a short background request."""
+        if self._model_probe_worker is not None and self._model_probe_worker.isRunning():
+            return
+        model = str(self._model_combo.currentData() or self._model_combo.currentText()).strip()
+        base_url = self._base_url_edit.text().strip()
+        api_key = self._api_key_edit.text().strip()
+        if not model or not base_url or not api_key:
+            self._model_probe_label.setStyleSheet(f"color: {T.WARNING}; font-size: 12px;")
+            self._model_probe_label.setText("请先填写 Base URL、模型和 API Key")
+            return
+        if not base_url.startswith(("http://", "https://")):
+            self._model_probe_label.setStyleSheet(f"color: {T.WARNING}; font-size: 12px;")
+            self._model_probe_label.setText("Base URL 需为 http(s) 地址")
+            return
+        settings = AIProviderSettings(
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            thinking=self._thinking_check.isChecked(),
+            reasoning_effort=self._reasoning_effort_combo.currentText(),
+            context_window=self._settings.provider.context_window,
+        )
+        self._model_probe_btn.setEnabled(False)
+        self._model_probe_label.setStyleSheet(f"color: {T.FG_2}; font-size: 12px;")
+        self._model_probe_label.setText("检测中…")
+        worker = _ModelProbeWorker(settings, self)
+        worker.probed.connect(self._on_model_probed)
+        worker.finished.connect(self._on_model_probe_finished)
+        self._model_probe_worker = worker
+        worker.start()
+
+    def _on_model_probed(self, ok: bool, detail: str) -> None:
+        color = T.SUCCESS if ok else T.DANGER
+        self._model_probe_label.setStyleSheet(f"color: {color}; font-size: 12px;")
+        self._model_probe_label.setText(detail)
+
+    def _on_model_probe_finished(self) -> None:
+        self._model_probe_btn.setEnabled(True)
+        worker = self._model_probe_worker
+        if worker is not None:
+            worker.deleteLater()
+        self._model_probe_worker = None
 
     # ── 保存 ───────────────────────────────────────────────────────────────────
 
