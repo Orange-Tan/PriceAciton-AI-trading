@@ -128,3 +128,46 @@ def test_workbench_uses_zero_outer_spacing():
 def test_light_theme_is_the_default_for_new_settings():
     assert Settings().general.theme == "light"
     assert theme_apply._DEFAULT_KIND == "light"
+
+
+def test_menu_bar_toggle_hides_and_restores_ai_sidebar():
+    from pa_agent.gui.main_window import MainWindow
+
+    app = _qapp()
+    ctx = AppContext(
+        settings=Settings(),
+        event_bus=EventBus(),
+        data_source=SimpleNamespace(_connected=False),
+    )
+    window = MainWindow(ctx)
+    window.resize(1400, 900)
+    window.show()
+    app.processEvents()
+
+    assert window._right_sidebar_toggle_button.toolTip() == "隐藏右侧栏"
+    window._toggle_ai_sidebar()
+    assert window._ai_sidebar.isHidden()
+    assert window._right_sidebar_toggle_button.toolTip() == "显示右侧栏"
+    window._toggle_ai_sidebar()
+    app.processEvents()
+    assert window._ai_sidebar.isVisible()
+    window.close()
+
+
+def test_workbench_initializes_ai_sidebar_to_one_third_width():
+    from pa_agent.gui.main_window import MainWindow
+
+    app = _qapp()
+    ctx = AppContext(
+        settings=Settings(),
+        event_bus=EventBus(),
+        data_source=SimpleNamespace(_connected=False),
+    )
+    window = MainWindow(ctx)
+    window.resize(1500, 900)
+    window.show()
+    app.processEvents()
+    sizes = window._workbench.sizes()
+
+    assert abs(sizes[2] - sum(sizes) / 3) <= 3
+    window.close()

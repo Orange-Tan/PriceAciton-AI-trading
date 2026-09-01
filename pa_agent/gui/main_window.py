@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QStatusBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -357,6 +358,20 @@ class MainWindow(QMainWindow):
         self._demo_exit_action.setEnabled(False)
         demo_menu.addAction(self._demo_exit_action)
 
+        self._right_sidebar_toggle_action = QAction("隐藏右侧栏", self)
+        self._right_sidebar_toggle_action.setCheckable(True)
+        self._right_sidebar_toggle_action.triggered.connect(self._toggle_ai_sidebar)
+        self._right_sidebar_toggle_button = QToolButton(menu_bar)
+        self._right_sidebar_toggle_button.setDefaultAction(self._right_sidebar_toggle_action)
+        self._right_sidebar_toggle_button.setText(">")
+        self._right_sidebar_toggle_button.setToolTip("隐藏右侧栏")
+        self._right_sidebar_toggle_button.setAccessibleName("隐藏右侧栏")
+        self._right_sidebar_toggle_button.setAutoRaise(True)
+        menu_bar.setCornerWidget(
+            self._right_sidebar_toggle_button,
+            Qt.Corner.TopRightCorner,
+        )
+
     def _build_workbench(self) -> QWidget:
         """Build chart + AI sidebar workbench."""
         from pa_agent.gui.chart_widget import ChartWidget
@@ -638,6 +653,9 @@ class MainWindow(QMainWindow):
         analysis_controls_layout.addLayout(status_row)
 
         workbench = QSplitter(Qt.Orientation.Horizontal)
+        self._workbench = workbench
+        self._workbench_sizes_initialized = False
+        self._right_sidebar_width: int | None = None
 
         # ── 左侧自选股栏 ─────────────────────────────────────────────────────
         from pa_agent.gui.watchlist_panel import WatchlistPanel
@@ -699,6 +717,52 @@ class MainWindow(QMainWindow):
         )
 
         return tab
+
+    def _initialize_workbench_sizes(self) -> None:
+        """Apply the startup splitter sizes once the workbench has a width."""
+        if self._workbench_sizes_initialized:
+            return
+        total = self._workbench.width()
+        if total <= 0:
+            return
+        sidebar = max(self._ai_sidebar.minimumWidth(), total // 3)
+        watchlist = min(max(self._watchlist_panel.minimumWidth(), total // 6), 460)
+        chart = max(total - watchlist - sidebar, 1)
+        self._workbench.setSizes([watchlist, chart, sidebar])
+        self._workbench_sizes_initialized = True
+
+    def _toggle_ai_sidebar(self) -> None:
+        """Hide or restore the AI sidebar without losing its splitter width."""
+        if self._ai_sidebar.isVisible():
+            sizes = self._workbench.sizes()
+            self._right_sidebar_width = sizes[2] if len(sizes) >= 3 else None
+            self._ai_sidebar.hide()
+            hidden = True
+        else:
+            self._ai_sidebar.show()
+            QTimer.singleShot(0, self._restore_ai_sidebar_width)
+            hidden = False
+        label = "显示右侧栏" if hidden else "隐藏右侧栏"
+        self._right_sidebar_toggle_action.setText(label)
+        self._right_sidebar_toggle_action.setChecked(hidden)
+        self._right_sidebar_toggle_button.setText("<" if hidden else ">")
+        self._right_sidebar_toggle_button.setToolTip(label)
+        self._right_sidebar_toggle_button.setAccessibleName(label)
+
+    def _restore_ai_sidebar_width(self) -> None:
+        """Restore the right pane after QSplitter has relaid out a shown sidebar."""
+        if self._ai_sidebar.isHidden():
+            return
+        total = self._workbench.width()
+        if total <= 0:
+            return
+        sizes = self._workbench.sizes()
+        watchlist = sizes[0] if sizes else self._watchlist_panel.minimumWidth()
+        sidebar = max(
+            self._ai_sidebar.minimumWidth(),
+            self._right_sidebar_width or self._ai_sidebar.minimumWidth(),
+        )
+        self._workbench.setSizes([watchlist, max(total - watchlist - sidebar, 1), sidebar])
 
     def _connect_event_bus(self) -> None:
         """Wire EventBus signals to status bar and tab slots (if bus is ready)."""
@@ -4258,6 +4322,8 @@ class MainWindow(QMainWindow):
     def showEvent(self, event: QShowEvent | None) -> None:
         """On first show, silently refresh API Key UI state (no popup)."""
         super().showEvent(event)
+        if not self._workbench_sizes_initialized:
+            QTimer.singleShot(0, self._initialize_workbench_sizes)
         if self._startup_api_key_check_done:
             return
         self._startup_api_key_check_done = True
