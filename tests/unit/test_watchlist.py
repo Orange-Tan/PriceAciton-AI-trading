@@ -199,6 +199,19 @@ def test_watchlist_table_stretches_to_bottom_for_scrollbar(qtbot) -> None:
     assert panel._table.geometry().bottom() >= panel._stock_column.height() - 36
 
 
+def test_group_column_content_is_pinned_to_top(qtbot) -> None:
+    from pa_agent.gui.watchlist_panel import WatchlistPanel
+
+    panel = WatchlistPanel({"全部": [], "持仓": [], "美股": [], "港股": []})
+    qtbot.addWidget(panel)
+    panel.resize(320, 520)
+    panel.show()
+    qtbot.waitExposed(panel)
+
+    assert panel._group_header.y() <= 4
+    assert panel._group_list.y() <= panel._group_header.height() + 4
+
+
 def test_watchlist_panel_add_dedup_and_symbols(qtbot) -> None:
     from pa_agent.gui.watchlist_panel import WatchlistPanel
 

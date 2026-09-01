@@ -109,7 +109,8 @@ class WatchlistPanel(QWidget):
         self._add_group_btn.setToolTip("新增板块")
         group_header_row.addWidget(self._add_group_btn)
         group_col_layout.addLayout(group_header_row)
-        group_col_layout.addWidget(self._group_list, stretch=1)
+        group_col_layout.addWidget(self._group_list)
+        group_col_layout.addStretch(1)
         self._group_splitter.addWidget(self._group_column)
 
         self._stock_column = QWidget()
