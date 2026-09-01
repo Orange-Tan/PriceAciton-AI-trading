@@ -76,7 +76,7 @@ def test_watchlist_settings_default_and_round_trip() -> None:
     from pa_agent.config.settings import GeneralSettings
 
     s = GeneralSettings()
-    assert s.watchlist == []
+    assert s.watchlist == ["sh000001", "sz399001", "sz399006"]
 
     s.watchlist = ["600519", "000001", "XAUUSD"]
     data = s.model_dump()
@@ -123,6 +123,26 @@ def test_watchlist_settings_migrates_groups_and_legacy_watchlist() -> None:
     assert explicit.watchlist_groups == {"全部": [], "观察": ["000001"]}
 
 
+def test_default_watchlist_groups_include_market_sections_and_indices() -> None:
+    from pa_agent.config.settings import GeneralSettings
+
+    settings = GeneralSettings()
+    assert list(settings.watchlist_groups) == ["全部", "持仓", "美股", "港股"]
+    assert settings.watchlist_groups["全部"] == ["sh000001", "sz399001", "sz399006"]
+    assert settings.watchlist == ["sh000001", "sz399001", "sz399006"]
+
+
+def test_empty_legacy_group_is_seeded_with_default_sections() -> None:
+    from pa_agent.config.watchlist_store import migrate_watchlist
+
+    assert migrate_watchlist({"全部": []}, []) == {
+        "全部": ["sh000001", "sz399001", "sz399006"],
+        "持仓": [],
+        "美股": [],
+        "港股": [],
+    }
+
+
 # ── WatchlistPanel widget ─────────────────────────────────────────────────────
 
 
@@ -148,6 +168,21 @@ def test_watchlist_uses_compact_group_and_stock_headers(qtbot) -> None:
     assert panel._stock_header.text() == "自选股"
     assert panel._add_group_btn.text() == "+"
     assert panel._add_symbol_btn.text() == "+"
+
+
+def test_add_actions_remain_visible_and_fixed_in_narrow_columns(qtbot) -> None:
+    from pa_agent.gui.watchlist_panel import WatchlistPanel
+
+    panel = WatchlistPanel({"港股": []})
+    qtbot.addWidget(panel)
+    panel.resize(220, 260)
+    panel.show()
+    qtbot.waitExposed(panel)
+
+    assert panel._add_group_btn.isVisible()
+    assert panel._add_symbol_btn.isVisible()
+    assert panel._add_group_btn.width() == 28
+    assert panel._add_symbol_btn.width() == 28
 
 
 def test_watchlist_panel_add_dedup_and_symbols(qtbot) -> None:

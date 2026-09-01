@@ -33,7 +33,9 @@ def normalize_ashare_symbol(symbol: str) -> str:
     m = _INDEX_PREFIX_RE.match(raw)
     if m:
         prefix, digits = m.group(1).lower(), m.group(2)
-        if _is_index_digits(digits):
+        # 000001 is both the Ping An Bank stock code and the Shanghai
+        # Composite index; an explicit ``sh`` prefix disambiguates the index.
+        if _is_index_digits(digits) or (prefix == "sh" and digits == "000001"):
             return f"{prefix}{digits}"
         return digits
     digits = re.sub(r"\D", "", raw)

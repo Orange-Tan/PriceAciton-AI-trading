@@ -4,6 +4,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 DEFAULT_GROUP = "全部"
+DEFAULT_WATCHLIST_GROUPS: dict[str, list[str]] = {
+    DEFAULT_GROUP: ["sh000001", "sz399001", "sz399006"],
+    "持仓": [],
+    "美股": [],
+    "港股": [],
+}
 
 
 def _symbols(value: object) -> list[str]:
@@ -37,13 +43,25 @@ def normalize_watchlist_groups(value: object) -> dict[str, list[str]]:
     return result
 
 
+def default_watchlist_groups() -> dict[str, list[str]]:
+    """Return a fresh copy of the first-run watchlist sections and indices."""
+    return {name: list(symbols) for name, symbols in DEFAULT_WATCHLIST_GROUPS.items()}
+
+
 def migrate_watchlist(groups: object, legacy_symbols: object) -> dict[str, list[str]]:
+    legacy = _symbols(legacy_symbols)
+    if not isinstance(groups, Mapping) and not legacy:
+        return default_watchlist_groups()
+    if isinstance(groups, Mapping) and not legacy:
+        named = {str(name or "").strip() for name in groups if str(name or "").strip()}
+        if named in ({DEFAULT_GROUP}, set()) and not _symbols(groups.get(DEFAULT_GROUP)):
+            return default_watchlist_groups()
     normalized = normalize_watchlist_groups(groups)
     has_explicit = isinstance(groups, Mapping) and any(
         str(name or "").strip() for name in groups
     )
     if not has_explicit:
-        normalized[DEFAULT_GROUP] = _symbols(legacy_symbols)
+        normalized[DEFAULT_GROUP] = legacy
     return normalized
 
 

@@ -175,9 +175,18 @@ class GeneralSettings(BaseModel):
     #: 同一结构位 entry 相差≤3跳时，禁止反向新方案的冷却 K 线根数（已收盘）
     structure_flip_cooldown_bars: int = Field(default=3, ge=1, le=50)
     #: 左侧「自选股」栏列表（6位A股代码 / 指数，或 TradingView 品种名）
-    watchlist: list[str] = Field(default_factory=list)
+    watchlist: list[str] = Field(
+        default_factory=lambda: ["sh000001", "sz399001", "sz399006"]
+    )
     #: 左侧「自选股」板块及其品种归属
-    watchlist_groups: dict[str, list[str]] = Field(default_factory=lambda: {"全部": []})
+    watchlist_groups: dict[str, list[str]] = Field(
+        default_factory=lambda: {
+            "全部": ["sh000001", "sz399001", "sz399006"],
+            "持仓": [],
+            "美股": [],
+            "港股": [],
+        }
+    )
 
     @model_validator(mode="before")
     @classmethod
