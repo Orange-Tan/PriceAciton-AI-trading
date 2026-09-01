@@ -138,6 +138,18 @@ def test_group_column_width_fits_longest_group_name(qtbot) -> None:
     assert panel._group_column.maximumWidth() > expected
 
 
+def test_watchlist_uses_compact_group_and_stock_headers(qtbot) -> None:
+    from pa_agent.gui.watchlist_panel import WatchlistPanel
+
+    panel = WatchlistPanel({"港股": []})
+    qtbot.addWidget(panel)
+
+    assert panel._group_header.text() == "板块"
+    assert panel._stock_header.text() == "自选股"
+    assert panel._add_group_btn.text() == "+"
+    assert panel._add_symbol_btn.text() == "+"
+
+
 def test_watchlist_panel_add_dedup_and_symbols(qtbot) -> None:
     from pa_agent.gui.watchlist_panel import WatchlistPanel
 

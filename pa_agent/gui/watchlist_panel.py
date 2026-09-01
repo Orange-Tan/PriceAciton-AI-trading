@@ -66,9 +66,6 @@ class WatchlistPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 8, 6, 8)
         layout.setSpacing(6)
-        title = QLabel("自选股")
-        title.setStyleSheet(f"color: {T.FG_2}; font-size: 13px; font-weight: 600; padding-left: 2px;")
-        layout.addWidget(title)
 
         self._group_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._group_splitter.setChildrenCollapsible(False)
@@ -91,9 +88,18 @@ class WatchlistPanel(QWidget):
         group_col_layout = QVBoxLayout(self._group_column)
         group_col_layout.setContentsMargins(0, 0, 0, 0)
         group_col_layout.setSpacing(2)
+        self._group_header = QLabel("板块")
+        self._group_header.setStyleSheet(
+            f"color: {T.FG_2}; font-size: 11px; font-weight: 600; padding: 0 4px;"
+        )
+        group_col_layout.addWidget(self._group_header)
         group_col_layout.addWidget(self._group_list)
-        self._add_group_btn = QPushButton("＋")
-        self._add_group_btn.setFixedHeight(28)
+        self._add_group_btn = QPushButton("+")
+        self._add_group_btn.setFixedSize(28, 28)
+        self._add_group_btn.setStyleSheet(
+            f"QPushButton {{ border: none; background: transparent; color: {T.FG_2}; "
+            "font-size: 17px; } QPushButton:hover { background: rgba(127, 127, 127, 0.12); }"
+        )
         self._add_group_btn.setToolTip("新增板块")
         group_col_layout.addWidget(self._add_group_btn)
         group_col_layout.addStretch(1)
@@ -106,6 +112,11 @@ class WatchlistPanel(QWidget):
         right_layout = QVBoxLayout(self._stock_column)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(2)
+        self._stock_header = QLabel("自选股")
+        self._stock_header.setStyleSheet(
+            f"color: {T.FG_2}; font-size: 11px; font-weight: 600; padding: 0 2px;"
+        )
+        right_layout.addWidget(self._stock_header)
         self._table = QTableWidget(0, len(self._HEADERS))
         self._table.setHorizontalHeaderLabels(self._HEADERS)
         self._table.setObjectName("watchlistTable")
@@ -123,8 +134,12 @@ class WatchlistPanel(QWidget):
         for column, width in enumerate((72, 90, 72, 78)):
             self._table.setColumnWidth(column, width)
         right_layout.addWidget(self._table)
-        self._add_symbol_btn = QPushButton("＋")
-        self._add_symbol_btn.setFixedHeight(28)
+        self._add_symbol_btn = QPushButton("+")
+        self._add_symbol_btn.setFixedSize(28, 28)
+        self._add_symbol_btn.setStyleSheet(
+            f"QPushButton {{ border: none; background: transparent; color: {T.FG_2}; "
+            "font-size: 17px; } QPushButton:hover { background: rgba(127, 127, 127, 0.12); }"
+        )
         self._add_symbol_btn.setToolTip("添加自选股")
         right_layout.addWidget(self._add_symbol_btn)
         right_layout.addStretch(1)
