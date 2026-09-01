@@ -1,4 +1,4 @@
-/* PA Agent — 深灰主题（默认） */
+/* PA Agent — 深灰主题 */
 
 QMainWindow, QWidget {
     background-color: #0a0e14;
