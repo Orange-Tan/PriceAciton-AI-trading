@@ -1,76 +1,92 @@
-# PA Agent — AI K线分析辅助工具（桌面端）
+# PA Agent
 
-**交流 QQ 群：871156180**
+PA Agent 是一个桌面端价格行为（Price Action）分析工具：从行情数据源读取 K 线，经过两阶段 AI 流程（市场诊断 → 交易决策）生成结构化分析结果。它不连接券商、不执行下单，所有结果仅供研究参考。
 
----
+## 功能
 
-面向主观交易者的 **价格行为（Price Action）** AI 辅助决策工具。从 **TradingView / AkShare / 东方财富 / Tushare / 通达信 / 腾讯财经** 读取 K 线，将结构化 K 线数据与预计算特征送入大模型做**两阶段分析**（市场诊断 → 交易决策），**不是**截图识图，**不连接券商、不执行下单**。
-
----
-
-## 主要功能
-
-- 📈 **多数据源**：TradingView（全球）、AkShare / 东方财富 / Tushare / 通达信 / 腾讯财经（A 股）
-- 🧠 **两阶段 AI 分析**：市场诊断 → 策略路由 → 交易决策（限价/突破/市价或不下单）
-- 🔄 **增量分析与持续跟踪**：新增 K 线时复用上次结论；开启 `keep_analysis` 后新 K 线收盘自动触发新一轮分析
-- 🌳 **决策树可视化**：赛博科幻风格可交互流程图，自动播放闸门→策略路径动画
-- 🔮 **未来走势预期**：AI 预测下一根 K 线方向和下一个市场周期位置
-- 💬 **分析后自由追问**：完整对话会话管理器，实时推理流 + Token 进度条，对话历史持久化
-- 📚 **经验库**：按周期位置检索历史案例供分析参考
-- 📝 **完整落盘**：Prompt、原始响应、诊断/决策 JSON、Token 用量、追问记录
-- 🛡️ **可配置校验体系**：JSON 校验、一致性检查、语义校验、截断修复、失败自动重试
-- 🔒 **API Key** 使用 macOS 钥匙串 / Windows 凭据库存储，不写入配置文件
-
----
+- TradingView、AkShare、东方财富、Tushare、通达信、腾讯财经多数据源
+- TradingView Charting Library 图表与 pyqtgraph 后备图表
+- 两阶段分析、增量分析、持续跟踪和下一根 K 线预期
+- 决策树可视化、分析原始响应、Token 用量和完整记录落盘
+- 分析后自由追问与历史经验库
+- JSON 校验、语义检查、截断修复和失败重试
+- API Key 与第三方凭据使用系统凭据库，不写入配置文件
 
 ## 环境要求
 
-| 项目     | 要求                                                                    |
-| -------- | ----------------------------------------------------------------------- |
-| 操作系统 | Windows 10 / 11、macOS 12+                                                 |
-| Python   | 3.11+                                                                    |
-| 数据源   | TradingView / AkShare / 东方财富 / Tushare / 通达信 / 腾讯财经 **至少配置一种** |
-| 网络     | 可访问所配置的 AI API（如 DeepSeek、PackyAPI 等）                        |
+- macOS 12+ 或 Windows 10/11
+- Python 3.11+
+- 可访问所选 AI API 的网络
+- 至少一个可用行情数据源
 
----
+## 安装与启动
 
-## 快速开始
-
-直接在系统中安装（推荐部署在本机）：
-
-```cmd
-pip install -e .
+```bash
+git clone https://github.com/rosemarycox5334-debug/PA_Agent.git
+cd PA_Agent
+python3 -m venv .venv
+source .venv/bin/activate       # Windows: .venv\\Scripts\\activate
+python -m pip install --upgrade pip
+python -m pip install -e .
 python -m pa_agent.main
 ```
 
-首次启动后在**设置**中填写 **Base URL**、**模型名** 与 **API Key**。
+开发依赖：
 
-> 如需隔离环境也可创建虚拟环境：`python -m venv .venv` 后激活再 `pip install -e .`。
+```bash
+python -m pip install -e ".[dev]"
+```
 
-**安装内容**：PyQt6（GUI 框架）+ pyqtgraph（K 线图表绘图）+ numpy/pandas（数据处理）+ openai（AI API 客户端）+ **akshare/baostock（A 股数据源）** + json 校验、模型定义等全套依赖。
+首次启动后打开“设置 → 模型 API”，填写 Base URL、模型名和 API Key。不要把 API Key 直接写入 `config/settings.json`。
 
-> 若需运行测试（pytest）或代码格式化（ruff/black），额外安装：`pip install -e ".[dev]"`。
+## 凭据隔离
 
----
+不同客户端的凭据使用独立的系统凭据槽位，避免切换客户端时相互覆盖：
 
-## 详细说明
+| 路由 | 模型别名 | 凭据来源 |
+| --- | --- | --- |
+| QClaw | `openclaw` / `openclaw/*` | QClaw 本地 Gateway 配置，写入 `provider_api_key:qclaw` |
+| WorkBuddy | `openclaw_wb` / `openclaw_wb/*` | WorkBuddy 会话或环境变量，写入 `provider_api_key:workbuddy` |
+| Cursor | `openclaw_cs` / `openclaw_cs/*` | Cursor SDK 登录凭据，写入 `provider_api_key:cursor` |
 
-完整操作界面说明见 [`PA_Agent使用文档.md`](PA_Agent使用文档.md)，配置字段说明见 [`config/README.md`](config/README.md)。
+API Key、Feishu `app_secret`/`secret`、Tushare Token 等敏感值只在运行时使用。配置文件和 GitHub 示例必须保持为空值；如果密钥曾经提交过，请立即作废并轮换。
 
----
+## 配置文件
 
-**免责声明**：本工具仅供学习与研究，不构成投资建议。交易有风险，决策后果自负。
+```bash
+cp config/settings.example.json config/settings.json
+```
 
-本项目采用 [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE) 发布。
+运行时配置、分析记录、日志和个人经验库默认被 `.gitignore` 忽略。字段说明见 [`config/README.md`](config/README.md)。
 
----
+## 数据源说明
 
-## 打赏与支持
+- TradingView：全球外汇、贵金属、股票、指数、期货和加密货币；依赖 `tvDatafeed`。
+- AkShare / 东方财富 / Tushare / 通达信 / 腾讯财经：主要用于 A 股和指数；部分来源需要 Token 或本地网络条件。
+- 可在“设置 → 数据源”中逐个检测连通性。
 
-如果你觉得这个程序对你有帮助的话，可以打赏激励作者继续优化程序，感谢你的支持和鼓励！
+TradingView 嵌入图表资源位于 `tradingview/`，源码运行时必须保留该目录。
 
-（作者会优先解决打赏人的问题，因为人太多了！回复不过来！）
+## 测试与检查
 
-<p align="center">
-  <img src="赞助码.jpeg" alt="打赏二维码" width="420" />
-</p>
+```bash
+QT_QPA_PLATFORM=offscreen python -m pytest -q tests/unit
+python -m compileall -q pa_agent tests
+python -m ruff check pa_agent --select F,E9
+```
+
+部分旧测试仍依赖历史 UI/API 契约；看到失败时请先确认测试是否对应当前产品设计。
+
+## 文档
+
+- [完整使用文档](PA_Agent使用文档.md)
+- [macOS 部署](MAC版本智能体部署方法.txt)
+- [Windows 部署](windows智能体部署方法--喂给智能体帮你安装.txt)
+- [配置与凭据说明](config/README.md)
+- [安全策略](SECURITY.md)
+
+## 免责声明与许可证
+
+本工具仅供学习和研究，不构成投资建议。交易有风险，使用者自行承担决策后果。
+
+项目代码采用 [AGPL-3.0](LICENSE) 发布；`tradingview/` 下的第三方资源请同时遵守其附带许可证和 TradingView 使用条款。

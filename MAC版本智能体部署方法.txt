@@ -13,6 +13,12 @@ Mac 上**无需安装 MetaTrader 5**——本程序不再依赖 MT5。
 本文档供自动化 Agent 按步骤执行部署。每一步都有明确的命令和验收条件。
 遇到问题时按"故障排查"章节处理。最后必须通过验收环节才能交付给用户。
 
+【凭据安全】
+API Key、Feishu app_secret/secret、Tushare Token 不要写入 config/settings.json。
+首次启动后请在“设置 → 模型 API”中填写，程序会保存到 macOS 钥匙串。
+QClaw、WorkBuddy、Cursor 使用独立凭据槽位，切换路由不会覆盖彼此的凭据。
+提交 GitHub 前只允许上传 settings.example.json 等空值模板，不要上传个人配置、日志或分析记录。
+
 【重要：Mac 与 Windows 的核心差异】
 1. MT5（MetaTrader 5）数据源已移除，Mac 版默认数据源为 TradingView
 2. pywin32 包不支持 macOS，无需安装

@@ -49,7 +49,7 @@ pa-agent
 
 1. 程序启动后自动创建 `config/settings.json`（默认配置）
 2. 默认数据源为 TradingView（默认品种 `XAUUSD`），无需安装或登录任何行情终端
-3. 首次使用需在 **菜单 → 设置** 中填写 API Key
+3. 首次使用需在 **菜单 → 设置 → 模型 API** 中填写 API Key
 4. API Key 保存到 macOS 钥匙串或 Windows 凭据库，不会写入 `settings.json`
 
 ### 环境要求
@@ -75,7 +75,7 @@ pa-agent
 ├─────────┬───────────────────────────┬────────────────────────────────┤
 │ 自选股   │                           │  ┌──────────────────────────┐  │
 │ ─────── │                           │  │ 实时│决策树│可视化│决策│…│  │
-│ 600519  │      K线图表（pyqtgraph）  │  ├──────────────────────────┤  │
+│ 600519  │      K线图表（TradingView）│  ├──────────────────────────┤  │
 │ 000001  │      - 蜡烛图 + EMA20     │  │                          │  │
 │ 000300  │      - 入场/止损/止盈线   │  │   AI 侧边栏内容          │  │
 │ 000300  │      - 序号标签           │  │    （按标签页切换）       │  │
@@ -116,7 +116,7 @@ pa-agent
 
 ### 图表特性
 
-- **蜡烛图渲染**：使用 pyqtgraph，30Hz 刷新率
+- **蜡烛图渲染**：优先使用嵌入式 TradingView Charting Library；未安装 QtWebEngine 时回退到 pyqtgraph
 - **EMA20 叠加线**：自动计算并绘制 20 周期指数移动平均线
 - **K线序号标签**：已收盘棒显示 #1、#3…（K1 = 最新已收盘）；实时更新时最右侧 **未收盘** 棒为 **浅色空心 K 线**，不参与 AI 分析
 - **分析后少一根？** 提交分析后图表冻结为「仅已收盘」快照，未收盘棒会消失，与发给 AI 的 K1 对齐 — 详见 `[docs/图表K线与分析快照说明.md](docs/图表K线与分析快照说明.md)`
@@ -467,8 +467,8 @@ PA Agent 内置一套**二元决策树**（基于 `prompt_engineering/二元决�
 
 | 设置项              | 说明               | 默认值                           |
 | ---------------- | ---------------- | ----------------------------- |
-| 模型 (model)       | AI 模型名称          | `claude-sonnet-4-6`           |
-| Base URL         | API 接口地址         | `https://www.packyapi.com/v1` |
+| 模型 (model)       | AI 模型名称          | `deepseek-v4-flash`           |
+| Base URL         | API 接口地址         | `https://api.deepseek.com`    |
 | API Key          | API 密钥（加密存储）     | 空                             |
 | Thinking         | 是否启用扩展思考         | 开启                            |
 | Reasoning Effort | 思考深度             | `max`                         |
@@ -670,9 +670,13 @@ experience/
 - 旧版本的 `api_key_encrypted` 仅作为兼容字段，新版本不会再写入
 - 不同路由（普通 API、QClaw、WorkBuddy、Cursor）的凭据使用独立存储项
 
+路由别名：`openclaw` = QClaw，`openclaw_wb` = WorkBuddy，`openclaw_cs` = Cursor。
+切换路由不会覆盖其他客户端的系统凭据。
+
 ### 日志脱敏
 
-- 所有日志输出中 API Key 自动替换为 `*`*** 掩码
+- 所有日志输出中 API Key 自动替换为 `***` 掩码
+- Feishu `app_secret`/`secret` 和 Tushare Token 不写入配置文件
 - 调试面板中 API Key 同样脱敏显示
 
 ### Git 安全

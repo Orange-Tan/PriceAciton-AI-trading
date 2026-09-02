@@ -12,9 +12,9 @@
    copy config\settings.example.json config\settings.json
    ```
 
-2. 启动程序，在 **设置** 中填写你的 **API Key**。程序会保存到 macOS 钥匙串或 Windows 凭据库，不会写入 `settings.json`。
+2. 启动程序，在 **设置 → 模型 API** 中填写你的 **API Key**。程序会保存到 macOS 钥匙串或 Windows 凭据库，不会写入 `settings.json`。
 
-   也可直接编辑 `config/settings.json` 中的 `base_url`、`model` 等字段；API Key 请通过 GUI 保存，以便写入系统凭据库。
+   可以直接编辑 `config/settings.json` 中的 `base_url`、`model` 等非敏感字段；API Key、Feishu `app_secret`/`secret` 和 Tushare Token 不要写入配置文件。
 
 3. `config/exception_state.json` 由程序在需要时自动创建，一般无需手动复制。结构可参考 `exception_state.example.json`。
 
@@ -93,3 +93,13 @@
 - **不要**将 `config/settings.json`、`config/exception_state.json`、`config/tv_symbol_aliases.json` 提交到 Git。
 - 若曾误提交 API Key，请立即在服务商处**作废并轮换**密钥。
 - 建议在仓库根目录执行：`powershell -ExecutionPolicy Bypass -File tools\setup_git_secrets.ps1`
+
+### QClaw、WorkBuddy、Cursor 凭据隔离
+
+程序为三个本地客户端使用独立的系统凭据槽位，切换模型路由时不会覆盖其他客户端的凭据：
+
+- QClaw：`openclaw` 或 `openclaw/*`，槽位为 `provider_api_key:qclaw`，凭据来自 QClaw Gateway。
+- WorkBuddy：`openclaw_wb` 或 `openclaw_wb/*`，槽位为 `provider_api_key:workbuddy`，凭据来自 WorkBuddy 会话或环境变量。
+- Cursor：`openclaw_cs` 或 `openclaw_cs/*`，槽位为 `provider_api_key:cursor`，凭据由 Cursor SDK 使用。
+
+`save_settings()` 会将这些路由的 API Key 以及 Feishu 签名密钥写成空值；运行时只从内存和系统凭据库读取。若密钥曾经进入 Git 历史，请立即在服务商处作废并轮换。
