@@ -209,7 +209,7 @@ def test_missing_api_key_leaves_api_key_blank(tmp_path, monkeypatch):
 
 
 def test_feishu_round_trip(tmp_path):
-    """save → load preserves feishu settings."""
+    """save/load preserves public fields but never persists Feishu secrets."""
     p = tmp_path / "settings.json"
     original = Settings()
     original.feishu.webhook_url = "https://example.com/hook"
@@ -218,7 +218,7 @@ def test_feishu_round_trip(tmp_path):
     save_settings(original, p)
     loaded = load_settings(p)
     assert loaded.feishu.webhook_url == "https://example.com/hook"
-    assert loaded.feishu.secret == "sec"
+    assert loaded.feishu.secret == ""
     assert loaded.feishu.app_id == "cli_test"
 
 
