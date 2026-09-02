@@ -5,7 +5,7 @@ import sys
 from types import SimpleNamespace
 
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLabel, QToolButton
 from PyQt6.QtWidgets import QSplitter
 
 from pa_agent.app_context import AppContext
@@ -57,6 +57,20 @@ def test_decision_panel_consolidates_summary_metrics_into_diagnosis():
     assert panel._next_cycle_label.text() == "下一周期：下跌趋势"
     assert panel._support_label.text() == "支撑区：27.73"
     assert panel._resistance_label.text() == "阻力区：31.20"
+
+
+def test_decision_title_row_contains_disclaimer_and_details_start_expanded():
+    _qapp()
+    panel = DecisionPanel()
+    assert panel._title_label.parentWidget() is panel._disclaimer_label.parentWidget()
+    assert panel._disclaimer_label.text() == "分析仅供参考，不构成投资建议"
+    toggles = panel.findChildren(QToolButton)
+    assert [toggle.text() for toggle in toggles[-3:]] == [
+        "分析理由",
+        "置信度理由",
+        "风险评估与失效条件",
+    ]
+    assert all(toggle.isChecked() for toggle in toggles[-3:])
 
 
 def test_analysis_settings_tab_precedes_realtime_tab():

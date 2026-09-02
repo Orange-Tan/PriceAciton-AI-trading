@@ -154,14 +154,28 @@ class DecisionPanel(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        title = QLabel("AI 交易决策")
-        title.setObjectName("toolbarTitle")
-        layout.addWidget(title)
+        title_row = QWidget()
+        title_row_layout = QHBoxLayout(title_row)
+        title_row_layout.setContentsMargins(0, 0, 0, 0)
+        title_row_layout.setSpacing(10)
 
-        disclaimer = QLabel("分析仅供参考，不构成投资建议")
-        disclaimer.setObjectName("mutedLabel")
-        disclaimer.setWordWrap(True)
-        layout.addWidget(disclaimer)
+        self._title_label = QLabel("AI 交易决策")
+        self._title_label.setObjectName("toolbarTitle")
+        title_row_layout.addWidget(self._title_label)
+
+        title_row_layout.addStretch(1)
+        self._disclaimer_label = QLabel("分析仅供参考，不构成投资建议")
+        self._disclaimer_label.setObjectName("mutedLabel")
+        self._disclaimer_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._disclaimer_label.setWordWrap(False)
+        self._disclaimer_label.setMinimumWidth(0)
+        self._disclaimer_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        title_row_layout.addWidget(self._disclaimer_label)
+        layout.addWidget(title_row)
 
         # 结论置顶，避免在“交易决策”区再次重复显示同一结论。
         self._conclusion_bar = QFrame()
@@ -295,10 +309,12 @@ class DecisionPanel(QWidget):
         self._trade_reasoning_label.setWordWrap(True)
         self._trade_reasoning_label.setStyleSheet(_reason_font_css())
 
-        # 说明按需展开，避免长文本把交易参数推到视口之外。
+        # 说明支持展开/收起，默认全部展开，便于直接阅读完整决策依据。
         self._reasoning_edit = self._make_detail(layout, "分析理由", open=True)
-        self._confidence_reasoning_edit = self._make_detail(layout, "置信度理由")
-        self._risk_reasoning_edit = self._make_detail(layout, "风险评估与失效条件")
+        self._confidence_reasoning_edit = self._make_detail(layout, "置信度理由", open=True)
+        self._risk_reasoning_edit = self._make_detail(
+            layout, "风险评估与失效条件", open=True
+        )
 
         self.clear()
 
