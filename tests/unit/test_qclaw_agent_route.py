@@ -1,16 +1,41 @@
 """Tests for QClaw public-gateway Agent routing (no relay on 19004)."""
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
+
+import pytest
 
 from pa_agent.ai.qclaw_connector import (
     _PUBLIC_GATEWAY_MODEL,
+    _get_qclaw_gateway_info,
     _resolve_qclaw_endpoint,
     apply_qclaw_provider_to_settings,
+    detect_qclaw,
     is_openclaw_model,
     qclaw_provider_settings,
     should_use_qclaw_provider,
 )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"gateway": None},
+        {"gateway": {"http": []}},
+        {"gateway": {"http": {"endpoints": {"chatCompletions": []}}}},
+        {"gateway": {"auth": []}},
+        {"gateway": {"auth": {"token": "x"}, "port": "bad"}},
+        {"gateway": {"auth": {"token": "x"}, "port": 70000}},
+    ],
+)
+def test_malformed_qclaw_config_is_ignored(tmp_path, monkeypatch, payload):
+    config = tmp_path / "openclaw.json"
+    config.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr("pa_agent.ai.qclaw_connector._QCLAW_CONFIG_PATH", config)
+    monkeypatch.setattr("pa_agent.ai.qclaw_connector._QCLAW_CONFIG_PATH_ALT", config)
+    assert detect_qclaw() is False
+    assert _get_qclaw_gateway_info() is None
 
 
 def test_is_openclaw_model_accepts_gateway_aliases() -> None:

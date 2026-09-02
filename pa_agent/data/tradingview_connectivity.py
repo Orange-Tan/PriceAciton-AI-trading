@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import threading
 import time
 
 logger = logging.getLogger(__name__)
@@ -10,10 +11,14 @@ logger = logging.getLogger(__name__)
 _DEFAULT_PROBE_TIMEOUT_S = 20.0
 _DEFAULT_PROBE_ATTEMPTS = 3
 _DEFAULT_RETRY_DELAY_S = 3.0
+_PROBE_SLOT = threading.BoundedSemaphore(1)
 
 
 def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
     """Single probe. Returns (ok, failure_detail, retryable)."""
+
+    if not _PROBE_SLOT.acquire(blocking=False):
+        return False, "已有 TradingView 探测正在后台运行", False
 
     def _probe() -> None:
         from tvDatafeed import Interval, TvDatafeed  # type: ignore[import]
@@ -49,6 +54,7 @@ def _probe_once(*, timeout_s: float) -> tuple[bool, str | None, bool]:
     finally:
         # Do not wait for a blocked third-party socket after the public timeout.
         pool.shutdown(wait=False, cancel_futures=True)
+        _PROBE_SLOT.release()
 
 
 def check_tradingview_connectivity(

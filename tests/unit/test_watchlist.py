@@ -218,6 +218,22 @@ def test_watchlist_panel_add_dedup_and_symbols(qtbot) -> None:
     panel = WatchlistPanel()
     qtbot.addWidget(panel)
     assert panel.add_symbol("600519") is True
+
+
+def test_name_lookup_failure_is_backed_off(qtbot, monkeypatch) -> None:
+    from pa_agent.gui.watchlist_panel import WatchlistPanel
+
+    panel = WatchlistPanel(["600519"])
+    qtbot.addWidget(panel)
+    starts = []
+    monkeypatch.setattr(panel._name_lookup_pool, "start", lambda task: starts.append(task))
+    panel._name_lookup_failures.clear()
+    monkeypatch.setattr("pa_agent.gui.watchlist_panel.time.monotonic", lambda: 100.0)
+    panel._request_name_lookup("600519")
+    panel._name_lookup_pending.clear()
+    panel._on_name_resolved("600519", "")
+    panel._request_name_lookup("600519")
+    assert len(starts) == 1
     assert panel.add_symbol("600519") is False  # dup rejected
     assert panel.add_symbol("000001") is True
     assert panel.symbols() == ["600519", "000001"]
@@ -314,6 +330,14 @@ def test_watchlist_panel_resolves_common_a_share_names_from_code(qtbot) -> None:
     qtbot.addWidget(panel)
     assert panel._table.item(0, 1).text() == "黑牡丹"
     assert panel._table.item(1, 1).text() == "文一科技"
+
+
+def test_watchlist_panel_resolves_301526_name_from_code(qtbot) -> None:
+    from pa_agent.gui.watchlist_panel import WatchlistPanel
+
+    panel = WatchlistPanel({"全部": ["301526"]})
+    qtbot.addWidget(panel)
+    assert panel._table.item(0, 1).text() == "国际复材"
 
 
 def test_watchlist_panel_decision_colors_by_local_day(qtbot) -> None:

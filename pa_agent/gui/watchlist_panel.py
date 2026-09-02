@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from datetime import date
+import time
 from typing import Any
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, Qt, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -44,7 +45,39 @@ _NAME_MAP = {
     "601318": "中国平安",
     "601398": "工商银行",
     "601988": "中国银行",
+    "301526": "国际复材",
 }
+
+
+class _NameLookupSignals(QObject):
+    resolved = pyqtSignal(str, str)
+
+
+class _NameLookupTask(QRunnable):
+    """Resolve one A-share name without blocking the watchlist UI thread."""
+
+    def __init__(self, symbol: str, signals: _NameLookupSignals) -> None:
+        super().__init__()
+        self._symbol = symbol
+        self._signals = signals
+
+    def run(self) -> None:  # noqa: D401
+        def _emit(name: str) -> None:
+            try:
+                self._signals.resolved.emit(self._symbol, name)
+            except RuntimeError:
+                # Receiver QObject may have been deleted while worker was running.
+                return
+
+        try:
+            from pa_agent.data.eastmoney_client import fetch_stock_quote
+
+            quote = fetch_stock_quote(self._symbol)
+            name = str((quote or {}).get("name") or "").strip()
+            _emit(name if name != self._symbol else "")
+        except Exception:
+            _emit("")
+            return
 
 
 class WatchlistPanel(QWidget):
@@ -62,6 +95,12 @@ class WatchlistPanel(QWidget):
         self._groups = normalize_watchlist_groups({DEFAULT_GROUP: symbols} if isinstance(symbols, list) else symbols)
         self._current_group = DEFAULT_GROUP
         self._quotes: dict[str, dict[str, Any]] = {}
+        self._name_lookup_pending: set[str] = set()
+        self._name_lookup_failures: dict[str, float] = {}
+        self._name_lookup_backoff_s = 30.0
+        self._name_lookup_pool = QThreadPool.globalInstance()
+        self._name_lookup_signals = _NameLookupSignals(self)
+        self._name_lookup_signals.resolved.connect(self._on_name_resolved)
         self._build_ui()
         self.set_groups(self._groups)
 
@@ -289,6 +328,24 @@ class WatchlistPanel(QWidget):
     def _name_for_symbol(symbol: str) -> str:
         return _NAME_MAP.get(symbol, symbol)
 
+    def _request_name_lookup(self, symbol: str) -> None:
+        if symbol in self._name_lookup_pending or not symbol.isdigit() or len(symbol) != 6:
+            return
+        failed_at = self._name_lookup_failures.get(symbol)
+        if failed_at is not None and time.monotonic() - failed_at < self._name_lookup_backoff_s:
+            return
+        self._name_lookup_pending.add(symbol)
+        self._name_lookup_pool.start(_NameLookupTask(symbol, self._name_lookup_signals))
+
+    def _on_name_resolved(self, symbol: str, name: str) -> None:
+        self._name_lookup_pending.discard(symbol)
+        if name:
+            self._name_lookup_failures.pop(symbol, None)
+            self._quotes.setdefault(symbol, {})["name"] = name
+            self._refresh_table()
+        else:
+            self._name_lookup_failures[symbol] = time.monotonic()
+
     @staticmethod
     def _format_price(value: object) -> str:
         if value in (None, ""):
@@ -362,7 +419,10 @@ class WatchlistPanel(QWidget):
         today = date.today().isoformat()
         for row, symbol in enumerate(symbols):
             data = self._quotes.get(symbol, {})
-            values = [symbol, data.get("name") or self._name_for_symbol(symbol), data.get("price", ""), data.get("change", ""), data.get("decision", "")]
+            name = data.get("name") or self._name_for_symbol(symbol)
+            if not data.get("name") and name == symbol:
+                self._request_name_lookup(symbol)
+            values = [symbol, name, data.get("price", ""), data.get("change", ""), data.get("decision", "")]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(str(value or ""))
                 item.setData(Qt.ItemDataRole.UserRole, symbol)

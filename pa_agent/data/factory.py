@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Literal
 
@@ -19,6 +20,7 @@ _PROBE_BARS = 3
 _PROBE_TIMEOUT_S = 25.0
 #: 自选股点选 A 股时后台探测国内来源的单个来源超时（秒）。
 _WATCHLIST_PROBE_TIMEOUT_S = 8.0
+_PROBE_SLOT = threading.BoundedSemaphore(4)
 
 DataSourceKind = Literal[
     "tradingview",
@@ -121,6 +123,8 @@ def probe_data_source(
     ``(False, 说明)``。探测在独立线程中执行并受 *timeout_s* 超时约束；
     超时返回后，卡住的探测线程仍会在其自身返回时自行退出。
     """
+    if not _PROBE_SLOT.acquire(blocking=False):
+        return False, "已有数据源探测正在后台运行，请稍后重试"
     normalized = normalize_data_source_kind(kind)
     symbol = default_symbol_for_kind(normalized)
 
@@ -145,6 +149,7 @@ def probe_data_source(
         return False, detail
     finally:
         executor.shutdown(wait=False, cancel_futures=True)  # 后台线程完成探测后自行退出
+        _PROBE_SLOT.release()
     if count > 0:
         return True, f"连通正常：{symbol} {_PROBE_TIMEFRAME} 已返回 {count} 根K线"
     return False, "连接成功但未返回K线数据"

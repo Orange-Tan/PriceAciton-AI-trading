@@ -79,6 +79,23 @@ def test_api_key_is_stored_in_keyring_not_on_disk(tmp_path, monkeypatch):
     assert loaded.provider.api_key == "sk-super-secret-key"
 
 
+def test_feishu_secrets_are_not_written_to_disk(tmp_path, monkeypatch):
+    """Feishu app credentials stay in memory and are redacted from JSON."""
+    monkeypatch.setitem(
+        sys.modules,
+        "keyring",
+        types.SimpleNamespace(set_password=lambda *_args: None, get_password=lambda *_args: None),
+    )
+    p = tmp_path / "settings.json"
+    s = Settings()
+    s.feishu.app_secret = "feishu-secret"
+    s.feishu.secret = "signing-secret"
+    save_settings(s, p)
+    data = json.loads(p.read_text(encoding="utf-8"))
+    assert data["feishu"]["app_secret"] == ""
+    assert data["feishu"]["secret"] == ""
+
+
 def test_repeated_settings_saves_do_not_rewrite_same_key(tmp_path, monkeypatch):
     calls: list[str] = []
     fake_keyring = types.SimpleNamespace(

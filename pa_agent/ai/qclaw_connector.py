@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 import json
 import logging
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -147,10 +148,25 @@ def _find_qclaw_config() -> Path | None:
 def _read_qclaw_config(config_path: Path) -> dict | None:
     """Parse the OpenClaw JSON config file; returns None on error."""
     try:
-        return json.loads(config_path.read_text(encoding="utf-8"))
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
     except (json.JSONDecodeError, OSError) as exc:
         logger.debug("Failed to read QClaw config %s: %s", config_path, exc)
         return None
+
+
+def _gateway_config(data: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]] | None:
+    """Validate nested gateway sections before accessing them."""
+    gateway = data.get("gateway")
+    if not isinstance(gateway, Mapping):
+        return None
+    http = gateway.get("http", {})
+    endpoints = http.get("endpoints", {}) if isinstance(http, Mapping) else None
+    chat = endpoints.get("chatCompletions", {}) if isinstance(endpoints, Mapping) else None
+    auth = gateway.get("auth", {})
+    if not all(isinstance(value, Mapping) for value in (http, endpoints, chat, auth)):
+        return None
+    return gateway, chat, auth, endpoints
 
 
 def detect_qclaw() -> bool:
@@ -161,15 +177,15 @@ def detect_qclaw() -> bool:
     data = _read_qclaw_config(config_path)
     if data is None:
         return False
-    gw = data.get("gateway", {})
-    http = gw.get("http", {})
-    eps = http.get("endpoints", {})
-    chat = eps.get("chatCompletions", {})
-    if not chat.get("enabled", False):
+    sections = _gateway_config(data)
+    if sections is None:
+        return False
+    gw, chat, auth, _eps = sections
+    if chat.get("enabled") is not True:
         logger.debug("QClaw chatCompletions endpoint not enabled")
         return False
-    token = gw.get("auth", {}).get("token", "")
-    if not token:
+    token = auth.get("token")
+    if not isinstance(token, str) or not token.strip():
         logger.debug("QClaw gateway token is empty")
         return False
     return True
@@ -183,16 +199,29 @@ def _get_qclaw_gateway_info() -> tuple[str, int, str] | None:
     data = _read_qclaw_config(config_path)
     if data is None:
         return None
-    gw = data.get("gateway", {})
-    token = gw.get("auth", {}).get("token", "")
-    if not token:
+    sections = _gateway_config(data)
+    if sections is None:
         return None
-    port = int(gw.get("port", 51187))
+    gw, _chat, auth, _eps = sections
+    token = auth.get("token")
+    if not isinstance(token, str) or not token.strip():
+        return None
+    raw_port = gw.get("port", 51187)
+    if isinstance(raw_port, bool):
+        return None
+    try:
+        port = int(raw_port)
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= port <= 65535:
+        return None
     host = "127.0.0.1"
     bind = gw.get("bind", "127.0.0.1")
+    if not isinstance(bind, str):
+        return None
     if bind and bind not in ("0.0.0.0", "loopback"):
         host = bind
-    return host, port, token
+    return host, port, token.strip()
 
 
 def _fetch_public_gateway_models(base_url: str, token: str, *, timeout: float = 2.0) -> list[str]:

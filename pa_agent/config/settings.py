@@ -474,6 +474,11 @@ def save_settings(settings: "Settings", path: Path | None = None) -> None:
     data = settings.model_dump()
     data.setdefault("provider", {})["api_key"] = ""
     data["provider"].pop("api_key_encrypted", None)
+    # Feishu app credentials are runtime-only; never persist them in plaintext.
+    feishu_data = data.get("feishu")
+    if isinstance(feishu_data, dict):
+        feishu_data["app_secret"] = ""
+        feishu_data["secret"] = ""
 
     payload = json.dumps(data, ensure_ascii=False, indent=2)
     temp_name: str | None = None
