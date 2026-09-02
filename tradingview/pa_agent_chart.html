@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PA Agent Chart</title>
+  <style>
+    html, body, #tv_chart_container { width: 100%; height: 100%; margin: 0; }
+    body { overflow: hidden; background: #ffffff; }
+  </style>
+  <script src="charting_library-master/charting_library/charting_library.min.js"></script>
+  <script src="charting_library-master/datafeeds/udf/dist/polyfills.js"></script>
+  <script src="charting_library-master/datafeeds/udf/dist/bundle.js"></script>
+</head>
+<body>
+  <div id="tv_chart_container"></div>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var feed = params.get('feed') || '';
+      var symbol = params.get('symbol') || 'PA';
+      var interval = params.get('interval') || '1D';
+      var levels = [];
+      var lines = [];
+
+      function init() {
+        var datafeed = new Datafeeds.UDFCompatibleDatafeed(feed, 1000);
+        window.tvWidget = new TradingView.widget({
+          fullscreen: true,
+          symbol: symbol,
+          interval: interval,
+          container_id: 'tv_chart_container',
+          datafeed: datafeed,
+          library_path: 'charting_library-master/charting_library/',
+          locale: 'zh',
+          theme: 'Light',
+          disabled_features: ['use_localstorage_for_settings', 'volume_force_overlay'],
+          enabled_features: ['study_templates'],
+          overrides: {
+            'mainSeriesProperties.style': 1,
+            'paneProperties.background': '#ffffff',
+            'paneProperties.vertGridProperties.color': '#eef1f5',
+            'paneProperties.horzGridProperties.color': '#eef1f5',
+            'scalesProperties.textColor': '#5b6472'
+          },
+          studies_overrides: { 'volume.volume.transparency': 70 }
+        });
+        window.tvWidget.onChartReady(function () { window.PAChart._ready = true; });
+      }
+
+      window.PAChart = {
+        _ready: false,
+        setFrame: function (frame) {
+          if (!frame || !window.tvWidget || !this._ready) return;
+          var resolution = frame.timeframe === '1d' ? '1D' : (frame.timeframe || '1D');
+          window.tvWidget.setSymbol(frame.symbol, resolution, function () {});
+        },
+        fit: function () {
+          if (window.tvWidget && this._ready) window.tvWidget.activeChart().fitContent();
+        },
+        setLevels: function (items) { levels = items || []; },
+        setDecision: function (_decision) {},
+      };
+      window.addEventListener('DOMContentLoaded', init);
+    }());
+  </script>
+</body>
+</html>
