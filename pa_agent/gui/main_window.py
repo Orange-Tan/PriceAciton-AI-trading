@@ -679,7 +679,20 @@ class MainWindow(QMainWindow):
         self._watchlist_panel.scan_requested.connect(self._on_watchlist_scan_requested)
         workbench.addWidget(self._watchlist_panel)
 
-        self._chart_widget = ChartWidget()
+        # KLineChart is hosted in Qt WebEngine when the optional dependency is
+        # installed. Keep the existing pyqtgraph widget as a graceful fallback
+        # for deployments that have not installed WebEngine yet.
+        from pa_agent.gui.tradingview_chart_widget import (
+            TradingViewChartWidget,
+            klinechart_available,
+        )
+
+        if klinechart_available():
+            self._chart_widget = TradingViewChartWidget(parent=workbench)
+            logger.info("Using embedded KLineChart")
+        else:
+            self._chart_widget = ChartWidget(parent=workbench)
+            logger.info("QtWebEngine unavailable; using pyqtgraph chart fallback")
         self._chart_widget.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )

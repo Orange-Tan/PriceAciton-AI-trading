@@ -2,11 +2,13 @@
 
 本目录包含 PA Agent 嵌入式图表所需的本地资源：
 
-- `pa_agent_chart.html`：Qt WebEngine 加载的图表页面。
-- `charting_library-master/charting_library/`：TradingView Charting Library 静态文件。
-- `charting_library-master/datafeeds/udf/dist/`：UDF 数据源适配器构建产物。
+- `pa_agent_chart.html`：Qt WebEngine 加载的 KLineChart 页面。
+- `klinechart/klinecharts.min.js`：KLineChart 10.0.3 本地 UMD 构建产物。
+- `charting_library-master/`：旧版 TradingView 资源，暂保留用于兼容和回滚。
 
-运行时，`pa_agent/gui/tradingview_chart_widget.py` 会启动本地 UDF 服务，将 PA Agent 的 `KlineFrame` 提供给图表页面。目录缺失时，嵌入式 TradingView 图表无法加载。
+运行时，`pa_agent/gui/tradingview_chart_widget.py` 通过 Qt WebEngine 将 `KlineFrame` 转为 JSON 推送给 KLineChart。首次更新使用全量数据，后续更新只发送最后一根 K 线；目录缺失时将回退到 pyqtgraph 图表。
+
+KLineChart 资源由 npm 包构建得到，开发环境需要 Node.js/npm，用户运行时不需要 Node.js。重新构建时固定使用 `klinecharts@10.0.3`，并同步保留本目录的 `LICENSE`、`NOTICE` 和 `LICENSE-lightweight-charts`。
 
 ## 许可证
 

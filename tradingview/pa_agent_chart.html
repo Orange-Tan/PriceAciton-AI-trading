@@ -5,63 +5,203 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>PA Agent Chart</title>
   <style>
-    html, body, #tv_chart_container { width: 100%; height: 100%; margin: 0; }
-    body { overflow: hidden; background: #ffffff; }
+    html, body, #chart { width: 100%; height: 100%; margin: 0; }
+    body { overflow: hidden; background: #111827; }
+    #tools { position: fixed; z-index: 5; top: 8px; left: 8px; display: flex; gap: 6px; }
+    #tools button { border: 1px solid #475569; border-radius: 4px; padding: 4px 8px; color: #e2e8f0; background: #1e293b; cursor: pointer; }
+    #tools button:hover { background: #334155; }
   </style>
-  <script src="charting_library-master/charting_library/charting_library.min.js"></script>
-  <script src="charting_library-master/datafeeds/udf/dist/polyfills.js"></script>
-  <script src="charting_library-master/datafeeds/udf/dist/bundle.js"></script>
+  <script src="klinechart/klinecharts.min.js"></script>
 </head>
 <body>
-  <div id="tv_chart_container"></div>
+  <div id="chart"></div>
+  <div id="tools">
+    <button type="button" data-overlay="horizontalStraightLine">水平线</button>
+    <button type="button" data-overlay="straightLine">趋势线</button>
+    <button type="button" data-overlay="paRect">矩形</button>
+    <button type="button" id="clear-user">清除用户线</button>
+  </div>
   <script>
     (function () {
-      var params = new URLSearchParams(location.search);
-      var feed = params.get('feed') || '';
-      var symbol = params.get('symbol') || 'PA';
-      var interval = params.get('interval') || '1D';
-      var levels = [];
-      var lines = [];
+      var chart = null;
+      var programOverlayIds = [];
+      var interactionMode = null;
+      var pendingData = null;
+      var latestBars = [];
+      var realtimeCallback = null;
 
-      function init() {
-        var datafeed = new Datafeeds.UDFCompatibleDatafeed(feed, 1000);
-        window.tvWidget = new TradingView.widget({
-          fullscreen: true,
-          symbol: symbol,
-          interval: interval,
-          container_id: 'tv_chart_container',
-          datafeed: datafeed,
-          library_path: 'charting_library-master/charting_library/',
-          locale: 'zh',
-          theme: 'Light',
-          disabled_features: ['use_localstorage_for_settings', 'volume_force_overlay'],
-          enabled_features: ['study_templates'],
-          overrides: {
-            'mainSeriesProperties.style': 1,
-            'paneProperties.background': '#ffffff',
-            'paneProperties.vertGridProperties.color': '#eef1f5',
-            'paneProperties.horzGridProperties.color': '#eef1f5',
-            'scalesProperties.textColor': '#5b6472'
-          },
-          studies_overrides: { 'volume.volume.transparency': 70 }
+      function ensureChart() {
+        if (!chart && window.klinecharts && document.getElementById('chart')) {
+          chart = window.klinecharts.init('chart', {
+            locale: 'zh-CN',
+            timezone: 'Asia/Shanghai',
+            styles: {
+              candle: {
+                type: 'candle_solid',
+                bar: {
+                  upColor: '#22c55e', downColor: '#ef4444',
+                  upBorderColor: '#22c55e', downBorderColor: '#ef4444',
+                  upWickColor: '#22c55e', downWickColor: '#ef4444'
+                }
+              },
+              grid: {
+                horizontal: { color: '#263244' },
+                vertical: { color: '#263244' }
+              },
+              yAxis: { position: 'right', inside: false },
+              crosshair: { show: true }
+            }
+          });
+          chart.setDataLoader({
+            getBars: function (params) {
+              params.callback(latestBars, { backward: false, forward: false });
+            },
+            subscribeBar: function (params) {
+              realtimeCallback = params.callback;
+            },
+            unsubscribeBar: function () {
+              realtimeCallback = null;
+            }
+          });
+          chart.setSymbol({ ticker: 'PA', pricePrecision: 6, volumePrecision: 2 });
+          chart.setPeriod({ type: 'minute', span: 1 });
+          if (pendingData) {
+            chart.resetData();
+            pendingData = null;
+          }
+        }
+        return chart;
+      }
+
+      if (window.klinecharts) {
+        window.klinecharts.registerOverlay({
+          name: 'paRect',
+          totalStep: 3,
+          needDefaultPointFigure: true,
+          createPointFigures: function (params) {
+            var points = params.coordinates || [];
+            if (points.length < 2) return [];
+            var left = Math.min(points[0].x, points[1].x);
+            var top = Math.min(points[0].y, points[1].y);
+            return [{
+              key: 'paRect',
+              type: 'rect',
+              attrs: {
+                x: left,
+                y: top,
+                width: Math.abs(points[1].x - points[0].x),
+                height: Math.abs(points[1].y - points[0].y)
+              },
+              styles: { style: 'stroke_fill', color: '#60a5fa', borderSize: 1 }
+            }];
+          }
         });
-        window.tvWidget.onChartReady(function () { window.PAChart._ready = true; });
+      }
+
+      function clearProgramOverlays() {
+        var c = ensureChart();
+        if (!c) return;
+        programOverlayIds.forEach(function (id) {
+          c.removeOverlay({ id: id });
+        });
+        programOverlayIds = [];
+      }
+
+      function periodFromTimeframe(timeframe) {
+        var value = String(timeframe || '1m');
+        var match = value.match(/^(\d+)([mhdwMy])$/);
+        if (!match) return { type: 'minute', span: 1 };
+        var units = { m: 'minute', h: 'hour', d: 'day', w: 'week', M: 'month', y: 'year' };
+        return { type: units[match[2]] || 'minute', span: Number(match[1]) || 1 };
+      }
+
+      function createHorizontal(c, item) {
+        var id = c.createOverlay({
+          name: 'horizontalStraightLine',
+          id: item.id,
+          groupId: 'program',
+          lock: true,
+          points: [
+            { timestamp: item.startTime, value: item.price },
+            { timestamp: item.endTime, value: item.price }
+          ],
+          styles: { line: { color: item.color, size: item.width || 1, style: item.style || 'dashed' } }
+        });
+        if (id) programOverlayIds.push(id);
+      }
+
+      function createMarker(c, item) {
+        var id = c.createOverlay({
+          name: 'simpleAnnotation',
+          id: item.id,
+          groupId: 'program',
+          lock: true,
+          points: [{ timestamp: item.time, value: item.price }],
+          extendData: { text: item.text || '', color: item.color || '#3b82f6' },
+          styles: { text: { color: item.color || '#3b82f6' } }
+        });
+        if (id) programOverlayIds.push(id);
       }
 
       window.PAChart = {
-        _ready: false,
+        ready: false,
+        setData: function (bars) {
+          latestBars = bars || [];
+          var c = ensureChart();
+          if (!c) { pendingData = latestBars; return; }
+          c.resetData();
+        },
         setFrame: function (frame) {
-          if (!frame || !window.tvWidget || !this._ready) return;
-          var resolution = frame.timeframe === '1d' ? '1D' : (frame.timeframe || '1D');
-          window.tvWidget.setSymbol(frame.symbol, resolution, function () {});
+          var c = ensureChart();
+          if (!c || !frame) return;
+          c.setSymbol({ ticker: frame.symbol || 'PA', pricePrecision: 6, volumePrecision: 2 });
+          c.setPeriod(periodFromTimeframe(frame.timeframe));
+          c.resetData();
+        },
+        updateData: function (bar) {
+          if (!bar) return;
+          var index = latestBars.findIndex(function (item) { return item.timestamp === bar.timestamp; });
+          if (index >= 0) latestBars[index] = bar;
+          else latestBars.push(bar);
+          if (realtimeCallback) realtimeCallback(bar);
+          else if (chart) chart.resetData();
+        },
+        setProgramOverlays: function (items) {
+          var c = ensureChart();
+          if (!c) return;
+          clearProgramOverlays();
+          (items || []).forEach(function (item) {
+            if (!item || item.price == null) return;
+            if (item.type === 'marker') createMarker(c, item);
+            else createHorizontal(c, item);
+          });
+        },
+        clearProgramOverlays: clearProgramOverlays,
+        setInteractionMode: function (mode) {
+          interactionMode = mode || null;
+          if (!chart) return;
+          if (interactionMode) {
+            chart.createOverlay({ name: interactionMode, groupId: 'user', lock: false });
+          }
         },
         fit: function () {
-          if (window.tvWidget && this._ready) window.tvWidget.activeChart().fitContent();
-        },
-        setLevels: function (items) { levels = items || []; },
-        setDecision: function (_decision) {},
+          var c = ensureChart();
+          if (c) c.scrollToRealTime();
+        }
       };
-      window.addEventListener('DOMContentLoaded', init);
+
+      window.addEventListener('DOMContentLoaded', function () {
+        ensureChart();
+        window.PAChart.ready = !!chart;
+        document.querySelectorAll('#tools [data-overlay]').forEach(function (button) {
+          button.addEventListener('click', function () {
+            window.PAChart.setInteractionMode(button.dataset.overlay);
+          });
+        });
+        document.getElementById('clear-user').addEventListener('click', function () {
+          if (chart) chart.removeOverlay({ groupId: 'user' });
+        });
+      });
     }());
   </script>
 </body>
