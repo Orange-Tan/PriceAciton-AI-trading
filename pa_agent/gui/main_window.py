@@ -3781,7 +3781,6 @@ class MainWindow(QMainWindow):
                 "raw_response": {},
                 "validation_info": message,
             })
-        self._prompt_debug_report_for_bug_fix("分析过程发生程序异常", message)
 
     def _on_retry_occurred(self, stage: str) -> None:
         """Handle retry event: if cancel_keep_analysis_on_retry is enabled, disable keep_analysis."""
@@ -3883,43 +3882,27 @@ class MainWindow(QMainWindow):
                 "validation_info": s2_validation,
             })
 
-        # If the analysis failed due to truncation/context issues, prompt actionable help.
         if exc_info:
-            self._maybe_show_truncation_help_dialog(exc_info)
-
-            if exc_info:
-                _add_debug_turn({
-                    "label": "⚠ 异常",
-                    "system_prompt": "",
-                    "user_prompt": "",
-                    "raw_response": {},
-                    "validation_info": exc_json,
-                })
-                self._last_analysis_had_error = True
-                err_type = exc_info.get("type", "error")
-                category = exc_info.get("category", "")
-                msg = exc_info.get("message", "")
-                if err_type == "provider_error" or category == "e":
-                    headline = "API 积分不足"
-                    detail = msg or "OpenClaw 积分不足，请充值或更换 API"
-                    self._status_bar.showMessage(detail)
-                elif err_type == "auth_error":
-                    headline = "API Key 无效"
-                    detail = (
-                        f"{msg}\n\n请打开「设置 → 模型 API」，重新填写有效的 API Key 后再提交分析。"
-                    )
-                    self._status_bar.showMessage("API Key 无效，请到设置中重新填写")
-                else:
-                    detail = f"{category}: {msg}" if category else (msg or err_type)
-                    headline = f"分析未通过（{err_type}）"
-                self._prompt_debug_report_for_bug_fix(
-                    headline,
-                    detail,
-                    exc_info=exc_info,
-                    record=record,
-                )
+            _add_debug_turn({
+                "label": "⚠ 异常",
+                "system_prompt": "",
+                "user_prompt": "",
+                "raw_response": {},
+                "validation_info": exc_json,
+            })
+            self._last_analysis_had_error = True
+            err_type = exc_info.get("type", "error")
+            category = exc_info.get("category", "")
+            msg = exc_info.get("message", "")
+            if err_type == "provider_error" or category == "e":
+                detail = msg or "OpenClaw 积分不足，请充值或更换 API"
+                self._status_bar.showMessage(detail)
+            elif err_type == "auth_error":
+                self._status_bar.showMessage("API Key 无效，请到设置中重新填写")
             else:
-                self._last_analysis_had_error = False
+                pass
+        else:
+            self._last_analysis_had_error = False
 
         pf = getattr(self, "_prompt_files_panel", None)
         if pf is not None:
