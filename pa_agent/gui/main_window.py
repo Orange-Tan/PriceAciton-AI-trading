@@ -3772,15 +3772,31 @@ class MainWindow(QMainWindow):
         if not self._ui_is_alive():
             return
         self._last_analysis_had_error = True
+        try:
+            sidebar = getattr(self, "_ai_sidebar", None)
+        except RuntimeError:
+            sidebar = None
+        if sidebar is not None:
+            try:
+                sidebar.focus_raw()
+            except (AttributeError, RuntimeError):
+                pass
         debug = getattr(self, "_debug_widget", None)
         if debug is not None:
-            debug.add_turn({
-                "label": "⚠ 程序异常",
-                "system_prompt": "",
-                "user_prompt": "",
-                "raw_response": {},
-                "validation_info": message,
-            })
+            try:
+                debug.focus_exception_turn()
+            except (AttributeError, RuntimeError):
+                pass
+            try:
+                debug.add_turn({
+                    "label": "⚠ 程序异常",
+                    "system_prompt": "",
+                    "user_prompt": "",
+                    "raw_response": {},
+                    "validation_info": message,
+                })
+            except (AttributeError, RuntimeError):
+                pass
 
     def _on_retry_occurred(self, stage: str) -> None:
         """Handle retry event: if cancel_keep_analysis_on_retry is enabled, disable keep_analysis."""
@@ -3883,6 +3899,21 @@ class MainWindow(QMainWindow):
             })
 
         if exc_info:
+            # Preserve the original debug-location side effects without opening dialogs.
+            try:
+                sidebar = getattr(self, "_ai_sidebar", None)
+            except RuntimeError:
+                sidebar = None
+            if sidebar is not None:
+                try:
+                    sidebar.focus_raw()
+                except (AttributeError, RuntimeError):
+                    pass
+            if debug is not None:
+                try:
+                    debug.focus_exception_turn()
+                except (AttributeError, RuntimeError):
+                    pass
             _add_debug_turn({
                 "label": "⚠ 异常",
                 "system_prompt": "",
@@ -3900,7 +3931,8 @@ class MainWindow(QMainWindow):
             elif err_type == "auth_error":
                 self._status_bar.showMessage("API Key 无效，请到设置中重新填写")
             else:
-                pass
+                detail = f"{category}: {msg}" if category else (msg or err_type)
+                self._status_bar.showMessage(detail)
         else:
             self._last_analysis_had_error = False
 

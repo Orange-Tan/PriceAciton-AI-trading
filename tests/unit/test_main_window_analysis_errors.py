@@ -42,11 +42,74 @@ def _window(debug_widget) -> tuple[object, list[str], list[tuple]]:
     window._keep_analysis_checkbox = None
     window._chart_refresh_paused = False
     window._prompt_debug_report_for_bug_fix = lambda *args, **kwargs: debug_reports.append((args, kwargs))
+    truncation_calls: list[dict] = []
+    window._maybe_show_truncation_help_dialog = lambda exc: truncation_calls.append(exc)
+    window._truncation_calls = truncation_calls
     return window, status_messages, debug_reports
 
 
 def test_provider_error_record_completion_does_not_prompt_dialogs() -> None:
     window, status_messages, debug_reports = _window(None)
+
+    window._on_record_ready(_record_with_provider_error())
+
+    assert window._last_analysis_had_error is True
+    assert status_messages == ["provider unavailable"]
+    assert debug_reports == []
+    assert window._truncation_calls == []
+
+
+def test_exception_focuses_raw_debug_without_prompt_helpers() -> None:
+    class _Sidebar:
+        def __init__(self) -> None:
+            self.raw_focuses = 0
+
+        def focus_raw(self) -> None:
+            self.raw_focuses += 1
+
+    class _DebugWidget:
+        def __init__(self) -> None:
+            self.exception_focuses = 0
+
+        def add_turn(self, _turn) -> None:
+            pass
+
+        def focus_exception_turn(self) -> None:
+            self.exception_focuses += 1
+
+    window, status_messages, debug_reports = _window(_DebugWidget())
+    window._ai_sidebar = _Sidebar()
+    window._on_record_ready(_record_with_provider_error())
+
+    assert window._ai_sidebar.raw_focuses == 1
+    assert window._debug_widget.exception_focuses == 1
+    assert debug_reports == []
+    assert window._truncation_calls == []
+
+
+def test_ordinary_record_error_keeps_status_summary() -> None:
+    window, status_messages, debug_reports = _window(None)
+    record = _record_with_provider_error()
+    record.exception = {
+        "stage": "stage2",
+        "type": "validation_error",
+        "category": "validation",
+        "message": "invalid decision",
+    }
+
+    window._on_record_ready(record)
+
+    assert status_messages == ["validation: invalid decision"]
+    assert debug_reports == []
+    assert window._truncation_calls == []
+
+
+def test_destroyed_debug_widget_does_not_abort_record_handling() -> None:
+    class _DestroyedDebugWidget:
+        def add_turn(self, _turn) -> None:
+            raise RuntimeError("wrapped C/C++ object has been deleted")
+
+    window, status_messages, debug_reports = _window(_DestroyedDebugWidget())
 
     window._on_record_ready(_record_with_provider_error())
 
@@ -80,6 +143,7 @@ def test_unhandled_analysis_error_does_not_prompt_dialogs() -> None:
     ]
     assert status_messages == []
     assert debug_reports == []
+    assert window._truncation_calls == []
 
 
 def test_worker_done_still_writes_completion_status_without_prompting() -> None:
