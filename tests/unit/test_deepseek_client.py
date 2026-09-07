@@ -145,6 +145,18 @@ def test_chat_sends_max_tokens_when_thinking():
     assert kwargs["max_tokens"] == 393_216
 
 
+def test_flatkey_deepseek_does_not_send_unsupported_adaptive_thinking():
+    settings = _make_settings()
+    settings.base_url = "https://router.flatkey.ai/v1"
+    settings.model = "deepseek-v4-flash"
+    settings.thinking = True
+
+    from pa_agent.ai.deepseek_client import _resolve_thinking_params
+
+    extra, _ = _resolve_thinking_params(settings, thinking=True, reasoning_effort="high")
+    assert extra["thinking"] == {"type": "enabled"}
+
+
 def test_chat_kkai_sends_thinking_object_not_reasoning_effort():
     """KKAI Claude: thinking budget in extra_body; reasoning_effort rejected upstream."""
     settings = _make_settings()

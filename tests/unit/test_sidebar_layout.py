@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QScrollArea
 from PyQt6.QtWidgets import QLabel, QToolButton
 from PyQt6.QtWidgets import QSplitter
 
@@ -64,13 +64,10 @@ def test_decision_title_row_contains_disclaimer_and_details_start_expanded():
     panel = DecisionPanel()
     assert panel._title_label.parentWidget() is panel._disclaimer_label.parentWidget()
     assert panel._disclaimer_label.text() == "分析仅供参考，不构成投资建议"
-    toggles = panel.findChildren(QToolButton)
-    assert [toggle.text() for toggle in toggles[-3:]] == [
-        "分析理由",
-        "置信度理由",
-        "风险评估与失效条件",
-    ]
-    assert all(toggle.isChecked() for toggle in toggles[-3:])
+    assert not panel.findChildren(QToolButton)
+    assert not panel._reasoning_edit.isHidden()
+    assert not panel._confidence_reasoning_edit.isHidden()
+    assert not panel._risk_reasoning_edit.isHidden()
 
 
 def test_analysis_settings_tab_precedes_realtime_tab():
@@ -94,6 +91,18 @@ def test_decision_tab_follows_realtime_before_decision_tree():
     ]
     assert sidebar.TAB_DECISION == 2
     assert sidebar.TAB_DECISION_TREE == 3
+
+
+def test_decision_tab_is_wrapped_by_single_vertical_scroll_area():
+    _qapp()
+    from pa_agent.gui.ai_sidebar import AISidebar
+
+    sidebar = AISidebar()
+    assert sidebar._tabs.tabText(sidebar.TAB_DECISION) == "决策"
+    scroll = sidebar._tabs.widget(sidebar.TAB_DECISION)
+    assert isinstance(scroll, QScrollArea)
+    assert scroll.widget() is sidebar.decision
+    assert scroll.widgetResizable()
 
 
 def test_analysis_settings_accepts_main_window_controls():
@@ -160,6 +169,61 @@ def test_workbench_uses_zero_outer_spacing():
     margins = layout.contentsMargins()
     assert (margins.left(), margins.top(), margins.right(), margins.bottom()) == (0, 0, 0, 0)
     assert layout.spacing() == 0
+    window.close()
+
+
+def test_analysis_settings_layout_v3_uses_three_parameter_rows_and_chart_toolbar():
+    from pa_agent.gui.main_window import MainWindow
+
+    _qapp()
+    ctx = AppContext(
+        settings=Settings(),
+        event_bus=EventBus(),
+        data_source=SimpleNamespace(_connected=False),
+    )
+    window = MainWindow(ctx)
+    window.resize(1400, 900)
+    window.show()
+    window._ai_sidebar._tabs.setCurrentIndex(window._ai_sidebar.TAB_ANALYSIS_SETTINGS)
+    _qapp().processEvents()
+
+    labels = [label.text() for label in window.findChildren(QLabel)]
+    assert "分析品种:" in labels
+    assert "分析周期:" in labels
+    y_positions = {
+        window._data_source_combo.geometry().y(),
+        window._symbol_combo.geometry().y(),
+        window._tf_combo.geometry().y(),
+    }
+    assert len(y_positions) == 3
+    assert window._resume_chart_btn.parentWidget() is window._chart_toolbar
+    assert window._fit_chart_btn.parentWidget() is window._chart_toolbar
+    assert window._keep_analysis_checkbox.geometry().y() < window._submit_btn.geometry().y()
+    assert window._resume_chart_btn.parentWidget() is not window._analysis_settings_content
+    window.close()
+
+
+def test_analysis_settings_has_top_status_strip_matching_prototype_hierarchy():
+    from pa_agent.gui.main_window import MainWindow
+
+    _qapp()
+    ctx = AppContext(
+        settings=Settings(),
+        event_bus=EventBus(),
+        data_source=SimpleNamespace(_connected=False),
+    )
+    window = MainWindow(ctx)
+    assert window._status_strip.parentWidget() is window._analysis_settings_content
+    assert window._decision_badge.parentWidget() is window._status_strip
+    assert window._ai_mode_label.parentWidget() is window._status_strip
+    assert "font-size: 16px" in window._decision_badge.styleSheet()
+    assert "font-size: 14px" in window._ai_mode_label.styleSheet()
+    window._analysis_in_progress = True
+    window._on_status_update("阶段一分析中…")
+    assert window._decision_badge.text() == "● 分析中…"
+    assert window._ai_mode_label.text() == (
+        f"深度求索 DeepSeek · {window._ctx.settings.provider.model}"
+    )
     window.close()
 
 

@@ -3,14 +3,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
-from PyQt6.QtWidgets import QLabel, QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QLabel, QScrollArea, QTabWidget, QVBoxLayout, QWidget
 
 from pa_agent.gui.ai_stream_window import AIStreamPanel
 from pa_agent.gui.debug_widget import DebugWidget
 from pa_agent.gui.decision_panel import DecisionPanel
 from pa_agent.gui.decision_flow_viz import DecisionFlowVizPanel
 from pa_agent.gui.decision_tree_panel import DecisionTreePanel
-from pa_agent.gui.future_trend_panel import FutureTrendPanel
 from pa_agent.gui.prompt_files_panel import PromptFilesPanel
 
 if TYPE_CHECKING:
@@ -45,14 +44,16 @@ class AISidebar(QWidget):
         self.decision = DecisionPanel()
         self.decision_tree = DecisionTreePanel()
         self.decision_flow_viz = DecisionFlowVizPanel()
-        self.future_trend = FutureTrendPanel()
+        self.future_trend = self.decision._future_trend_panel
 
         self._tabs.addTab(self.analysis_settings, "分析设置")
         self._tabs.addTab(self.stream, "实时")
+        self._decision_scroll = QScrollArea()
+        self._decision_scroll.setWidgetResizable(True)
+        self._decision_scroll.setWidget(self.decision)
+        self._tabs.addTab(self._decision_scroll, "决策")
         self._tabs.addTab(self.decision_tree, "决策树")
         self._tabs.addTab(self.decision_flow_viz, "决策树可视化")
-        self._tabs.addTab(self.decision, "决策")
-        self._tabs.addTab(self.future_trend, "未来走势预期")
         self._tabs.addTab(self.debug, "原始")
         self._tabs.addTab(self.prompt_files, "调试")
         # Keep the existing startup view on 实时; 分析设置 is an adjacent utility tab.
@@ -69,12 +70,11 @@ class AISidebar(QWidget):
 
     TAB_ANALYSIS_SETTINGS = 0
     TAB_STREAM = 1
-    TAB_DECISION_TREE = 2
-    TAB_DECISION_FLOW = 3
-    TAB_DECISION = 4
-    TAB_FUTURE_TREND = 5
-    TAB_RAW = 6
-    TAB_DEBUG = 7
+    TAB_DECISION = 2
+    TAB_DECISION_TREE = 3
+    TAB_DECISION_FLOW = 4
+    TAB_RAW = 5
+    TAB_DEBUG = 6
 
     def set_analysis_settings_content(self, content: QWidget) -> None:
         """Mount the main-window analysis controls in the first sidebar tab."""
@@ -108,8 +108,8 @@ class AISidebar(QWidget):
         self._tabs.setCurrentIndex(self.TAB_DECISION)
 
     def focus_future_trend(self) -> None:
-        """Switch to the future trend tab (未来走势预期)."""
-        self._tabs.setCurrentIndex(self.TAB_FUTURE_TREND)
+        """Switch to the bottom future-trend section in the decision tab."""
+        self._tabs.setCurrentIndex(self.TAB_DECISION)
 
     def focus_raw(self) -> None:
         """Switch to the raw I/O tab (原始)."""

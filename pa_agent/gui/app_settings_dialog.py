@@ -411,11 +411,6 @@ class AppSettingsDialog(QDialog):
         self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._api_key_edit.setPlaceholderText("输入 API Key")
         api_key_row.addWidget(self._api_key_edit)
-        self._show_key_btn = QPushButton("隐藏")
-        self._show_key_btn.setCheckable(True)
-        self._show_key_btn.setFixedWidth(52)
-        self._show_key_btn.toggled.connect(self._toggle_api_key_visibility)
-        api_key_row.addWidget(self._show_key_btn)
         form.addRow("API Key:", api_key_row)
 
         self._thinking_check = QCheckBox("启用 Thinking（部分模型不支持，需关闭）")
@@ -478,7 +473,7 @@ class AppSettingsDialog(QDialog):
             self._model_combo.setCurrentIndex(self._model_combo.findData(model))
 
         self._api_key_edit.clear()
-        self._api_key_edit.setPlaceholderText("已输入" if p.api_key else "输入 API Key")
+        self._api_key_edit.setPlaceholderText("已填写" if p.api_key else "输入 API Key")
         self._active_provider_id = pid
         if p.api_key:
             self._provider_key_cache[pid] = p.api_key
@@ -649,33 +644,31 @@ class AppSettingsDialog(QDialog):
         self._active_provider_id = str(pid or _CUSTOM_ID)
         self._apply_provider_preset(pid)
         key = self._provider_key_cache.get(self._active_provider_id, "")
-        self._api_key_edit.setText(key)
-        self._api_key_edit.setPlaceholderText("已输入" if key else "输入 API Key")
+        self._api_key_edit.clear()
+        self._api_key_edit.setPlaceholderText("已填写" if key else "输入 API Key")
         self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
 
     def _apply_provider_preset(self, pid: str | None) -> None:
         preset = find_provider(pid)
         if preset is None:
-            # 自定义：保留当前字段，仅更新提示
+            # 自定义模型不带预设值，避免沿用上一个厂商的 URL/型号。
+            self._base_url_edit.clear()
+            self._model_combo.blockSignals(True)
+            self._model_combo.clear()
+            self._model_combo.setEditText("")
+            self._model_combo.blockSignals(False)
             self._hint_label.setText("自定义提供商：请自行填写 Base URL、模型与 API Key。")
             return
         self._base_url_edit.setText(preset.base_url)
         self._model_combo.blockSignals(True)
         self._model_combo.clear()
-        for model_id, desc in preset.models:
-            self._model_combo.addItem(f"{model_id}  ·  {desc}", model_id)
+        for model_id, _ in preset.models:
+            # Keep the selector unambiguous: show the provider's model ID only.
+            self._model_combo.addItem(model_id, model_id)
         self._model_combo.setCurrentIndex(0)
         self._model_combo.blockSignals(False)
         self._thinking_check.setChecked(preset.thinking_default)
         self._hint_label.setText(f"{preset.name}：获取 API Key → {preset.api_key_url}")
-
-    def _toggle_api_key_visibility(self, checked: bool) -> None:
-        if checked:
-            self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-            self._show_key_btn.setText("显示")
-        else:
-            self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Normal)
-            self._show_key_btn.setText("隐藏")
 
     def _effective_api_key(self) -> str:
         """Return a newly entered key, or the saved key when the field is untouched."""

@@ -4,7 +4,8 @@ cd "$(dirname "$0")"
 # 自动选择已安装项目依赖的 Python 解释器
 # （系统自带 /usr/bin/python3 未安装 PyQt6 等依赖，必须显式指定）
 PA_PY=""
-for cand in "$HOME"/.workbuddy/binaries/python/versions/*/bin/python3 \
+for cand in "$(pwd)/.venv/bin/python" \
+            "$HOME"/.workbuddy/binaries/python/versions/*/bin/python3 \
             /opt/homebrew/bin/python3 \
             /usr/local/bin/python3 \
             "$(command -v python3 2>/dev/null)"; do

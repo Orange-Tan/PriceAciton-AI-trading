@@ -19,12 +19,12 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QProgressBar,
     QSizePolicy,
-    QToolButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+from pa_agent.gui.future_trend_panel import FutureTrendPanel
 from pa_agent.gui.theme import tokens as T
 
 _NO_ORDER = "不下单"
@@ -316,18 +316,23 @@ class DecisionPanel(QWidget):
             layout, "风险评估与失效条件", open=True
         )
 
+        future_title = QLabel("未来走势预期")
+        future_title.setStyleSheet("font-weight: bold; color: #58a6ff; margin-top: 8px;")
+        self._future_title_label = future_title
+        layout.addWidget(future_title)
+        self._future_trend_panel = FutureTrendPanel()
+        self._future_trend_panel.set_embedded_mode(True)
+        layout.addWidget(self._future_trend_panel)
+        self._prediction_group = self._future_trend_panel._bar_group
+        self._prediction_direction_label = self._future_trend_panel._bar_direction_label
+        self._prediction_reasoning_edit = self._future_trend_panel._bar_reasoning_edit
+
         self.clear()
 
     def _make_detail(self, layout: QVBoxLayout, title: str, *, open: bool = False) -> QTextEdit:
-        toggle = QToolButton()
-        toggle.setText(title)
-        toggle.setCheckable(True)
-        toggle.setChecked(open)
-        toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        toggle.setArrowType(
-            Qt.ArrowType.DownArrow if open else Qt.ArrowType.RightArrow
-        )
-        toggle.setStyleSheet("font-weight: bold; padding: 6px 0; text-align: left;")
+        heading = QLabel(title)
+        heading.setStyleSheet("font-weight: bold; padding: 6px 0;")
+        layout.addWidget(heading)
 
         edit = QTextEdit()
         edit.setReadOnly(True)
@@ -335,14 +340,7 @@ class DecisionPanel(QWidget):
         edit.setStyleSheet(_reason_edit_css())
         edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         edit.setMinimumHeight(64)
-        edit.setVisible(open)
-
-        def _toggle_details(checked: bool, *, button: QToolButton = toggle, pane: QTextEdit = edit) -> None:
-            pane.setVisible(checked)
-            button.setArrowType(Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow)
-
-        toggle.toggled.connect(_toggle_details)
-        layout.addWidget(toggle)
+        edit.setVisible(True)
         layout.addWidget(edit)
         return edit
 
@@ -657,6 +655,18 @@ class DecisionPanel(QWidget):
             risk_text = f"{risk}\n\n失效条件：{invalidation}" if risk else f"失效条件：{invalidation}"
         self._risk_reasoning_edit.setPlainText(risk_text)
 
+        self.set_prediction(decision)
+
+    def set_prediction(self, decision: dict) -> None:
+        """Render future trend predictions in the bottom decision section."""
+        self._future_trend_panel.set_prediction(decision)
+        visible = (
+            not self._future_trend_panel._bar_group.isHidden()
+            or not self._future_trend_panel._cycle_group.isHidden()
+        )
+        self._future_title_label.setVisible(visible)
+        self._future_trend_panel.setVisible(visible)
+
     def clear(self) -> None:
         self.reset_summary_metrics()
         self._trend_label.setText("趋势：—")
@@ -694,6 +704,9 @@ class DecisionPanel(QWidget):
         self._reasoning_edit.clear()
         self._confidence_reasoning_edit.clear()
         self._risk_reasoning_edit.clear()
+        self._future_trend_panel.clear()
+        self._future_title_label.setVisible(False)
+        self._future_trend_panel.setVisible(False)
 
     def refresh_theme(self) -> None:
         """主题切换后重绘本面板：静态文字颜色跟随主题，再按缓存数据重渲。"""

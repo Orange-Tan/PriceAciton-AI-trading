@@ -69,16 +69,19 @@ class FutureTrendPanel(QWidget):
 
         title = QLabel("未来走势预期")
         title.setObjectName("toolbarTitle")
+        self._title_label = title
         layout.addWidget(title)
 
         disclaimer = QLabel("预测仅供参考，不构成投资建议")
         disclaimer.setObjectName("mutedLabel")
         disclaimer.setWordWrap(True)
+        self._disclaimer_label = disclaimer
         layout.addWidget(disclaimer)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setFrameShadow(QFrame.Shadow.Sunken)
+        self._top_separator = sep
         layout.addWidget(sep)
 
         # ── Module 1: 下一根K线预期 ───────────────────────────────────────────
@@ -117,6 +120,7 @@ class FutureTrendPanel(QWidget):
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.HLine)
         sep2.setFrameShadow(QFrame.Shadow.Sunken)
+        self._middle_separator = sep2
         layout.addWidget(sep2)
 
         # ── Module 2: 下一个市场周期预期 ─────────────────────────────────────
@@ -176,6 +180,17 @@ class FutureTrendPanel(QWidget):
 
         self._cycle_group.setVisible(False)
         layout.addWidget(self._cycle_group, stretch=2)
+
+    def set_embedded_mode(self, embedded: bool = True) -> None:
+        """Render as a section inside DecisionPanel instead of a standalone tab."""
+        visible = not embedded
+        for widget in (
+            self._title_label,
+            self._disclaimer_label,
+            self._top_separator,
+            self._middle_separator,
+        ):
+            widget.setVisible(visible)
 
     # ── Module 1: next_bar_prediction ────────────────────────────────────────
 

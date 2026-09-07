@@ -79,14 +79,9 @@ class SettingsDialog(QDialog):
 
         api_key_row = QHBoxLayout()
         self._api_key_edit = QLineEdit()
-        self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Normal)
+        self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._api_key_edit.setPlaceholderText("输入 API Key")
         api_key_row.addWidget(self._api_key_edit)
-        self._show_key_btn = QPushButton("隐藏")
-        self._show_key_btn.setCheckable(True)
-        self._show_key_btn.setFixedWidth(52)
-        self._show_key_btn.toggled.connect(self._toggle_api_key_visibility)
-        api_key_row.addWidget(self._show_key_btn)
         provider_form.addRow("API Key:", api_key_row)
 
         self._thinking_check = QCheckBox("启用 Thinking")
@@ -268,7 +263,8 @@ class SettingsDialog(QDialog):
 
         self._model_edit.setText(p.model)
         self._base_url_edit.setText(p.base_url)
-        self._api_key_edit.setText(p.api_key)
+        self._api_key_edit.clear()
+        self._api_key_edit.setPlaceholderText("已填写" if p.api_key else "输入 API Key")
         self._thinking_check.setChecked(p.thinking)
 
         idx = self._reasoning_effort_combo.findText(p.reasoning_effort)
@@ -399,7 +395,7 @@ class SettingsDialog(QDialog):
 
         model = self._model_edit.text().strip()
         base_url = self._base_url_edit.text().strip()
-        api_key = self._api_key_edit.text().strip()
+        api_key = self._api_key_edit.text().strip() or p.api_key
 
         # Explicit model aliases win over stale base_url (openclaw_wb before openclaw).
         if is_openclaw_wb_model(model) or should_use_workbuddy_provider(model, base_url):
@@ -517,11 +513,3 @@ class SettingsDialog(QDialog):
 
     def _open_agent_tutorial_url(self) -> None:
         QDesktopServices.openUrl(QUrl(_AGENT_TUTORIAL_URL))
-
-    def _toggle_api_key_visibility(self, checked: bool) -> None:
-        if checked:
-            self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-            self._show_key_btn.setText("显示")
-        else:
-            self._api_key_edit.setEchoMode(QLineEdit.EchoMode.Normal)
-            self._show_key_btn.setText("隐藏")

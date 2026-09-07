@@ -301,7 +301,7 @@ class MainWindow(QMainWindow):
         self._debug_widget = self._ai_sidebar.debug
         self._prompt_files_panel = self._ai_sidebar.prompt_files
         self._decision_panel = self._ai_sidebar.decision
-        self._future_trend_panel = self._ai_sidebar.future_trend
+        self._future_trend_panel = self._decision_panel._future_trend_panel
         self._decision_tree_panel = self._ai_sidebar.decision_tree
         self._decision_flow_viz_panel = self._ai_sidebar.decision_flow_viz
         # Summary metrics are rendered directly in the decision diagnosis grid.
@@ -488,7 +488,7 @@ class MainWindow(QMainWindow):
         ctrl_layout.addWidget(self._tv_exchange_combo, 0, 3)
 
         # Symbol — editable combo (user can type any symbol)
-        ctrl_layout.addWidget(QLabel("品种:"), 1, 0)
+        ctrl_layout.addWidget(QLabel("分析品种:"), 1, 0)
         self._symbol_combo = QComboBox()
         self._symbol_combo.setEditable(True)
         self._symbol_combo.setCurrentText(_last_symbol)
@@ -501,15 +501,15 @@ class MainWindow(QMainWindow):
         self._symbol_alert_label.setStyleSheet("color: #f85149; font-size: 11px;")
         self._symbol_alert_label.setWordWrap(True)
         self._symbol_alert_label.hide()
-        ctrl_layout.addWidget(self._symbol_alert_label, 2, 0, 1, 4)
+        ctrl_layout.addWidget(self._symbol_alert_label, 3, 0, 1, 4)
 
         # Timeframe
-        ctrl_layout.addWidget(QLabel("周期:"), 1, 2)
+        ctrl_layout.addWidget(QLabel("分析周期:"), 2, 0)
         self._tf_combo = QComboBox()
         self._tf_combo.addItems(["1m", "5m", "15m", "1h", "4h", "1d"])
         self._tf_combo.setCurrentText(_last_tf)
         self._tf_combo.setMinimumWidth(60)
-        ctrl_layout.addWidget(self._tf_combo, 1, 3)
+        ctrl_layout.addWidget(self._tf_combo, 2, 1)
         self._populate_timeframe_combo_for_source()
         self._sync_tv_exchange_visibility()
 
@@ -518,7 +518,7 @@ class MainWindow(QMainWindow):
         self._fetch_data_btn.setMinimumWidth(90)
         self._fetch_data_btn.setToolTip("开始从当前数据源持续拉取 K 线数据并实时更新图表")
         self._fetch_data_btn.clicked.connect(self._on_fetch_data_clicked)
-        ctrl_layout.addWidget(self._fetch_data_btn, 3, 0, 1, 2)
+        ctrl_layout.addWidget(self._fetch_data_btn, 4, 0, 1, 2)
 
         self._wait_close_checkbox = QCheckBox("等待最新K线收盘后再提交分析")
         self._wait_close_checkbox.setObjectName("waitCloseCheckbox")
@@ -538,7 +538,7 @@ class MainWindow(QMainWindow):
         self._submit_btn.setObjectName("primaryButton")
         self._submit_btn.setMinimumWidth(100)
         self._submit_btn.clicked.connect(self._on_submit_analysis)
-        ctrl_row2.addWidget(self._submit_btn, 1, 0, 1, 2)
+        ctrl_row2.addWidget(self._submit_btn, 2, 0, 1, 2)
 
         # Incremental button is kept for programmatic use but hidden from the
         # toolbar — the submit button's label changes to "增量分析" automatically
@@ -566,7 +566,7 @@ class MainWindow(QMainWindow):
             "勾选后，每当有新的K线收盘时自动开始新一轮分析"
         )
         self._keep_analysis_checkbox.stateChanged.connect(self._on_keep_analysis_checkbox_changed)
-        ctrl_row2.addWidget(self._keep_analysis_checkbox, 1, 2, 1, 2)
+        ctrl_row2.addWidget(self._keep_analysis_checkbox, 1, 0, 1, 4)
 
         # Reset persisted keep_analysis flag so future restarts also start unchecked
         if _settings is not None:
@@ -581,26 +581,28 @@ class MainWindow(QMainWindow):
             "恢复 K 线实时刷新；最右侧未收盘 K 线为浅色空心 K 线，不参与 AI 分析"
         )
         self._resume_chart_btn.clicked.connect(self._on_resume_chart_refresh)
-        ctrl_layout.addWidget(self._resume_chart_btn, 3, 2)
 
         self._fit_chart_btn = QPushButton("恢复图表")
         self._fit_chart_btn.setToolTip(
             "自动调整图表缩放，将 K 线和价格线适配到可视区域"
         )
         self._fit_chart_btn.clicked.connect(self._on_fit_chart)
-        ctrl_layout.addWidget(self._fit_chart_btn, 3, 3)
 
         self._decision_badge = QLabel("")
         self._decision_badge.setObjectName("mutedLabel")
-        ctrl_row2.addWidget(self._decision_badge, 2, 0, 1, 2)
+        self._decision_badge.setStyleSheet(
+            "font-size: 16px; font-weight: 700; color: #078c48;"
+        )
 
         self._ai_mode_label = QLabel("")
         self._ai_mode_label.setObjectName("mutedLabel")
-        # 状态标签不强制撑宽，窗口变窄时允许其被压缩/裁剪
+        self._ai_mode_label.setStyleSheet("font-size: 14px; color: #5f7188;")
         self._ai_mode_label.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
         )
-        ctrl_row2.addWidget(self._ai_mode_label, 2, 2, 1, 2)
+        self._ai_mode_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
 
         analysis_controls = QWidget()
         analysis_controls.setObjectName("analysisSettingsContent")
@@ -609,10 +611,24 @@ class MainWindow(QMainWindow):
         )
         analysis_controls_layout = QVBoxLayout(analysis_controls)
         analysis_controls_layout.setContentsMargins(0, 0, 0, 0)
-        analysis_controls_layout.setSpacing(8)
+        analysis_controls_layout.setSpacing(10)
         analysis_title = QLabel("分析设置")
         analysis_title.setObjectName("sectionTitle")
         analysis_controls_layout.addWidget(analysis_title)
+        status_strip = QWidget(analysis_controls)
+        status_strip.setObjectName("analysisStatusStrip")
+        status_strip.setStyleSheet(
+            "QWidget#analysisStatusStrip { background: #eaf8ef; border: 1px solid #c9e8d4; "
+            "border-radius: 8px; padding: 4px 8px; }"
+        )
+        status_strip_layout = QHBoxLayout(status_strip)
+        status_strip_layout.setContentsMargins(8, 5, 8, 5)
+        status_strip_layout.setSpacing(12)
+        status_strip_layout.addWidget(self._decision_badge)
+        status_strip_layout.addStretch(1)
+        status_strip_layout.addWidget(self._ai_mode_label)
+        self._status_strip = status_strip
+        analysis_controls_layout.addWidget(status_strip)
         analysis_controls_layout.addLayout(ctrl_layout)
         analysis_controls_layout.addLayout(ctrl_row2)
         self._analysis_settings_content = analysis_controls
@@ -697,7 +713,23 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         self._apply_chart_display_settings()
-        workbench.addWidget(self._chart_widget)
+        chart_panel = QWidget(parent=workbench)
+        chart_panel.setObjectName("chartPanel")
+        chart_panel_layout = QVBoxLayout(chart_panel)
+        chart_panel_layout.setContentsMargins(0, 0, 0, 0)
+        chart_panel_layout.setSpacing(0)
+        chart_toolbar = QWidget(chart_panel)
+        chart_toolbar.setObjectName("chartToolbar")
+        chart_toolbar_layout = QHBoxLayout(chart_toolbar)
+        chart_toolbar_layout.setContentsMargins(8, 6, 8, 6)
+        chart_toolbar_layout.setSpacing(8)
+        chart_toolbar_layout.addStretch(1)
+        chart_toolbar_layout.addWidget(self._resume_chart_btn)
+        chart_toolbar_layout.addWidget(self._fit_chart_btn)
+        self._chart_toolbar = chart_toolbar
+        chart_panel_layout.addWidget(chart_toolbar)
+        chart_panel_layout.addWidget(self._chart_widget, stretch=1)
+        workbench.addWidget(chart_panel)
 
         self._ai_sidebar.setMinimumWidth(400)
         workbench.addWidget(self._ai_sidebar)
@@ -1670,6 +1702,8 @@ class MainWindow(QMainWindow):
         if text == "数据延迟":
             self._update_symbol_data_alert()
         if self._analysis_in_progress:
+            if "分析中" in text:
+                self._decision_badge.setText("● 分析中…")
             panel = stream_panel
             if panel is not None:
                 if text in ("阶段一重试",):
@@ -2880,7 +2914,6 @@ class MainWindow(QMainWindow):
         self._decision_tree_panel.clear()
         self._decision_flow_viz_panel.clear()
         self._decision_panel.clear()
-        self._future_trend_panel.clear()
 
         from pa_agent.ai.prompt_assembler import stage1_prompt_txt_files
 
@@ -2938,7 +2971,10 @@ class MainWindow(QMainWindow):
             return
         if getattr(self, "_demo_mode_kind", None) != "auto":
             return
-        sidebar = getattr(self, "_ai_sidebar", None)
+        try:
+            sidebar = getattr(self, "_ai_sidebar", None)
+        except RuntimeError:
+            sidebar = None
         if sidebar is not None:
             sidebar.focus_stream()
         if getattr(self, "_demo_waiting_flow_playback", False):
@@ -3353,7 +3389,7 @@ class MainWindow(QMainWindow):
             self._status_bar.showMessage(
                 f"分析中…（倾向:{stance_label}，图表已冻结，K1=最新已收盘K线）"
             )
-        self._decision_badge.setText("分析中…")
+        self._decision_badge.setText("● 分析中…")
         self._ai_sidebar.focus_stream()
 
         panel = getattr(self, "_stream_panel", None)
@@ -3522,7 +3558,6 @@ class MainWindow(QMainWindow):
                 decision_stance=stance,
                 confidence_threshold=self._confidence_threshold(),
             )
-            self._future_trend_panel.set_prediction(inner)
             self._bind_decision_tree(decision, stage1_diag or None)
             order = inner.get("order_type", "—")
             self._decision_badge.setText(f"决策: {order}")
@@ -3602,7 +3637,6 @@ class MainWindow(QMainWindow):
             self._chart_widget.clear_decision_overlay()
             self._chart_widget.clear_support_resistance()
             self._decision_panel.clear()
-            self._future_trend_panel.clear()
             self._decision_tree_panel.clear()
             if getattr(self, "_decision_flow_viz_panel", None) is not None:
                 self._decision_flow_viz_panel.clear()
@@ -3684,7 +3718,10 @@ class MainWindow(QMainWindow):
         record: Any = None,
     ) -> None:
         """Switch to 原始 tab and show debug dialog (no automatic API retry)."""
-        sidebar = getattr(self, "_ai_sidebar", None)
+        try:
+            sidebar = getattr(self, "_ai_sidebar", None)
+        except RuntimeError:
+            sidebar = None
         debug = getattr(self, "_debug_widget", None)
         if sidebar is not None:
             sidebar.focus_raw()
@@ -3975,7 +4012,6 @@ class MainWindow(QMainWindow):
                 decision_stance=stance,
                 confidence_threshold=self._confidence_threshold(),
             )
-            self._future_trend_panel.set_prediction(inner)
             self._bind_decision_tree(
                 s2_full,
                 s1_diag if isinstance(s1_diag, dict) else None,
@@ -4249,22 +4285,18 @@ class MainWindow(QMainWindow):
         ).start()
 
     def _maybe_alert_order_opportunity(self, decision_inner: dict) -> bool:
-        """Beep, popup, and focus decision tab when stage-2 proposes an order."""
+        """Beep and focus the decision tab when stage-2 proposes an order."""
         if not self._order_opportunity_alert_enabled():
             return False
         if not self._has_order_opportunity(decision_inner):
             return False
 
-        from pa_agent.gui.order_opportunity import (
-            play_order_alert_sound,
-            show_order_opportunity_alert,
-        )
+        from pa_agent.gui.order_opportunity import play_order_alert_sound
 
         play_order_alert_sound()
         sidebar = getattr(self, "_ai_sidebar", None)
         if sidebar is not None:
             sidebar.focus_decision()
-        show_order_opportunity_alert(self, decision_inner)
         return True
 
     def _trigger_decision_flow_playback(self) -> None:
@@ -4403,7 +4435,6 @@ class MainWindow(QMainWindow):
             "_flow_bar",
             "_stream_panel",
             "_decision_panel",
-            "_future_trend_panel",
         ):
             widget = getattr(self, name, None)
             refresh = getattr(widget, "refresh_theme", None)
@@ -4487,10 +4518,7 @@ class MainWindow(QMainWindow):
         p = settings.provider
         base = (p.base_url or "").lower()
         if "deepseek.com" in base:
-            thinking = "开" if p.thinking else "关"
-            self._ai_mode_label.setText(
-                f"思考: {thinking} · effort={p.reasoning_effort} · {p.model}"
-            )
+            self._ai_mode_label.setText(f"深度求索 DeepSeek · {p.model}")
         elif "kkone.vip" in base:
             thinking = "开" if p.thinking else "关"
             effort = p.reasoning_effort if p.thinking else "—"

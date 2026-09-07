@@ -73,3 +73,23 @@ def test_play_order_alert_sound_uses_wav_on_windows(monkeypatch) -> None:
 
     assert play_order_alert_sound() is True
     assert played and played[0].endswith("notify.wav")
+
+
+def test_analysis_order_opportunity_does_not_open_popup(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from pa_agent.gui.main_window import MainWindow
+
+    popup_calls: list[dict] = []
+    monkeypatch.setattr("pa_agent.gui.order_opportunity.play_order_alert_sound", lambda: True)
+    monkeypatch.setattr(
+        "pa_agent.gui.order_opportunity.show_order_opportunity_alert",
+        lambda _parent, decision: popup_calls.append(decision),
+    )
+    window = MainWindow.__new__(MainWindow)
+    window._order_opportunity_alert_enabled = lambda: True
+    window._has_order_opportunity = lambda _decision: True
+    window._ai_sidebar = SimpleNamespace(focus_decision=lambda: None)
+
+    assert window._maybe_alert_order_opportunity({"order_type": "限价单"}) is True
+    assert popup_calls == []

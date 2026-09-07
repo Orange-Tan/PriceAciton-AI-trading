@@ -188,6 +188,11 @@ def _is_minimax(base_url: str) -> bool:
     return "minimax.io" in url or "minimax.com" in url
 
 
+def _is_flatkey(base_url: str) -> bool:
+    """Flatkey's DeepSeek-compatible route uses enabled/disabled thinking types."""
+    return "flatkey.ai" in (base_url or "").lower()
+
+
 # Packy claude-officially returns 400 if max_tokens exceeds model output cap.
 _PACKY_CLAUDE_MAX_OUTPUT_TOKENS = 128_000
 # DeepSeek API: max_tokens must be in [1, 393216].
@@ -320,6 +325,13 @@ def _resolve_thinking_params(
     _thinking = thinking if thinking is not None else settings.thinking
     _effort = reasoning_effort if reasoning_effort is not None else settings.reasoning_effort
     model = settings.model or ""
+
+    if _is_flatkey(settings.base_url) and _is_deepseek_model(model):
+        # Flatkey rejects DeepSeek's native ``adaptive`` type.
+        return (
+            {"thinking": {"type": "enabled" if _thinking else "disabled"}},
+            None,
+        )
 
     if _is_deepseek_native(settings.base_url) or _is_deepseek_model(model):
         # DeepSeek v4+ requires thinking.type=adaptive + output_config.effort;

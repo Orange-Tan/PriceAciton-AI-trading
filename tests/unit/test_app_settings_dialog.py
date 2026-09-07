@@ -91,6 +91,18 @@ def test_preset_model_uses_clean_model_id(qtbot):
     assert dialog._model_form_value() == "deepseek-v4-flash"
 
 
+def test_preset_model_selector_shows_ids_without_capability_suffix(qtbot):
+    from pa_agent.gui.app_settings_dialog import AppSettingsDialog
+
+    dialog = AppSettingsDialog(Settings())
+    qtbot.addWidget(dialog)
+
+    assert dialog._model_combo.itemText(0) == "deepseek-v4-flash"
+    assert "多模态" not in dialog._model_combo.itemText(0)
+    assert "均衡" not in dialog._model_combo.itemText(0)
+    assert "默认" not in dialog._model_combo.itemText(0)
+
+
 def test_switching_provider_does_not_reuse_previous_api_key(qtbot):
     from pa_agent.gui.app_settings_dialog import AppSettingsDialog
 
@@ -107,6 +119,38 @@ def test_switching_provider_does_not_reuse_previous_api_key(qtbot):
     assert dialog._api_key_edit.placeholderText() == "输入 API Key"
 
 
+def test_custom_provider_starts_with_empty_url_and_model(qtbot):
+    from pa_agent.gui.app_settings_dialog import AppSettingsDialog
+
+    dialog = AppSettingsDialog(Settings())
+    qtbot.addWidget(dialog)
+    custom_index = dialog._provider_combo.findData("__custom__")
+    assert custom_index >= 0
+
+    dialog._provider_combo.setCurrentIndex(custom_index)
+
+    assert dialog._base_url_edit.text() == ""
+    assert dialog._model_form_value() == ""
+
+
+def test_custom_provider_values_are_kept_when_saved(qtbot, monkeypatch):
+    from pa_agent.gui.app_settings_dialog import AppSettingsDialog
+
+    settings = Settings()
+    dialog = AppSettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    custom_index = dialog._provider_combo.findData("__custom__")
+    dialog._provider_combo.setCurrentIndex(custom_index)
+    dialog._base_url_edit.setText("https://example.test/v1")
+    dialog._model_combo.setEditText("custom-model")
+    monkeypatch.setattr("pa_agent.gui.app_settings_dialog.save_settings", lambda *_: None)
+
+    dialog._on_save()
+
+    assert settings.provider.base_url == "https://example.test/v1"
+    assert settings.provider.model == "custom-model"
+
+
 def test_existing_api_key_is_not_rendered_as_plaintext(qtbot):
     from PyQt6.QtWidgets import QLineEdit
     from pa_agent.gui.app_settings_dialog import AppSettingsDialog
@@ -118,7 +162,7 @@ def test_existing_api_key_is_not_rendered_as_plaintext(qtbot):
 
     assert dialog._api_key_edit.echoMode() == QLineEdit.EchoMode.Password
     assert dialog._api_key_edit.text() == ""
-    assert dialog._api_key_edit.placeholderText() == "已输入"
+    assert dialog._api_key_edit.placeholderText() == "已填写"
 
 
 def test_save_preserves_existing_key_when_field_is_untouched(qtbot, monkeypatch):
@@ -133,4 +177,51 @@ def test_save_preserves_existing_key_when_field_is_untouched(qtbot, monkeypatch)
 
     dialog._on_save()
 
+    assert settings.provider.api_key == "token-existing-value"
+
+
+def test_api_key_field_has_no_visibility_button(qtbot):
+    from pa_agent.gui.app_settings_dialog import AppSettingsDialog
+
+    dialog = AppSettingsDialog(Settings())
+    qtbot.addWidget(dialog)
+
+    assert not hasattr(dialog, "_show_key_btn")
+
+
+def test_legacy_settings_dialog_masks_and_preserves_existing_key(qtbot, monkeypatch):
+    from PyQt6.QtWidgets import QLineEdit
+    from pa_agent.gui.settings_dialog import SettingsDialog
+
+    settings = Settings()
+    settings.provider.api_key = "token-existing-value"
+    dialog = SettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    monkeypatch.setattr("pa_agent.gui.settings_dialog.save_settings", lambda *_: None)
+    monkeypatch.setattr(dialog, "accept", lambda: None)
+
+    assert not hasattr(dialog, "_show_key_btn")
+    assert dialog._api_key_edit.echoMode() == QLineEdit.EchoMode.Password
+    assert dialog._api_key_edit.text() == ""
+    assert dialog._api_key_edit.placeholderText() == "已填写"
+    dialog._on_save()
+    assert settings.provider.api_key == "token-existing-value"
+
+
+def test_model_settings_dialog_masks_and_preserves_existing_key(qtbot, monkeypatch):
+    from PyQt6.QtWidgets import QLineEdit
+    from pa_agent.gui.ai_model_settings_dialog import AIModelSettingsDialog
+
+    settings = Settings()
+    settings.provider.api_key = "token-existing-value"
+    dialog = AIModelSettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    monkeypatch.setattr("pa_agent.gui.ai_model_settings_dialog.save_settings", lambda *_: None)
+    monkeypatch.setattr(dialog, "accept", lambda: None)
+
+    assert not hasattr(dialog, "_show_key_btn")
+    assert dialog._api_key_edit.echoMode() == QLineEdit.EchoMode.Password
+    assert dialog._api_key_edit.text() == ""
+    assert dialog._api_key_edit.placeholderText() == "已填写"
+    dialog._on_save()
     assert settings.provider.api_key == "token-existing-value"
