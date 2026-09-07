@@ -379,6 +379,22 @@ def _normalize_stage2_enum_aliases(out: dict[str, Any]) -> bool:
             logger.debug("always_in %r -> %r", raw_ai, mapped_ai)
             changed = True
 
+        # Keep this low-level compatibility pass useful on its own. Some
+        # callers invoke it before the broader bar-analysis normalizer.
+        entry_bar = bar_analysis.get("entry_bar")
+        if isinstance(entry_bar, dict):
+            if _normalize_entry_bar_freshness(entry_bar):
+                changed = True
+            raw_strength = entry_bar.get("strength")
+            mapped_strength = _normalize_closed_enum(
+                raw_strength,
+                _ENTRY_BAR_STRENGTH_ENUM,
+                aliases=_ENTRY_BAR_STRENGTH_ALIASES,
+            )
+            if mapped_strength and mapped_strength != raw_strength:
+                entry_bar["strength"] = mapped_strength
+                changed = True
+
     terminal = out.get("terminal")
     if isinstance(terminal, dict):
         raw_outcome = terminal.get("outcome")
