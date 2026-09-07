@@ -172,6 +172,22 @@ QScrollArea {
     border: none;
     background-color: transparent;
 }
+QScrollArea#analysisToolbarScroll {
+    background-color: #f8fafc;
+    border-bottom: 1px solid #d1d6dd;
+}
+QWidget#analysisToolbar {
+    background-color: #f8fafc;
+}
+QToolButton#analysisSettingsButton {
+    min-width: 52px;
+    padding: 4px 10px;
+    border: 1px solid #d1d6dd;
+    border-radius: 6px;
+}
+QToolButton#analysisSettingsButton:hover {
+    background-color: #eef1f4;
+}
 QScrollBar:vertical {
     background: #f3f5f7;
     width: 10px;

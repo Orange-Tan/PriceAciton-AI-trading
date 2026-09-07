@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QMenuBar,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStatusBar,
@@ -407,7 +408,8 @@ class MainWindow(QMainWindow):
             )
         self._active_data_source_kind = _last_ds
 
-        ctrl_layout.addWidget(QLabel("数据来源:"), 0, 0)
+        self._data_source_label = QLabel("数据来源:")
+        ctrl_layout.addWidget(self._data_source_label, 0, 0)
         self._data_source_combo = QComboBox()
         for kind, label in DATA_SOURCE_CHOICES:
             self._data_source_combo.addItem(label, kind)
@@ -488,7 +490,8 @@ class MainWindow(QMainWindow):
         ctrl_layout.addWidget(self._tv_exchange_combo, 0, 3)
 
         # Symbol — editable combo (user can type any symbol)
-        ctrl_layout.addWidget(QLabel("分析品种:"), 1, 0)
+        self._symbol_label = QLabel("代码/名称:")
+        ctrl_layout.addWidget(self._symbol_label, 1, 0)
         self._symbol_combo = QComboBox()
         self._symbol_combo.setEditable(True)
         self._symbol_combo.setCurrentText(_last_symbol)
@@ -496,6 +499,11 @@ class MainWindow(QMainWindow):
         self._apply_data_source_symbol_placeholder()
         ctrl_layout.addWidget(self._symbol_combo, 1, 1)
         self._populate_symbol_combo_for_source()
+        self._symbol_search_button = QToolButton()
+        self._symbol_search_button.setObjectName("symbolSearchButton")
+        self._symbol_search_button.setText("⌕")
+        self._symbol_search_button.setToolTip("搜索/选择代码或名称")
+        self._symbol_search_button.clicked.connect(self._focus_symbol_search)
 
         self._symbol_alert_label = QLabel("")
         self._symbol_alert_label.setStyleSheet("color: #f85149; font-size: 11px;")
@@ -504,7 +512,8 @@ class MainWindow(QMainWindow):
         ctrl_layout.addWidget(self._symbol_alert_label, 3, 0, 1, 4)
 
         # Timeframe
-        ctrl_layout.addWidget(QLabel("分析周期:"), 2, 0)
+        self._tf_label = QLabel("周期:")
+        ctrl_layout.addWidget(self._tf_label, 2, 0)
         self._tf_combo = QComboBox()
         self._tf_combo.addItems(["1m", "5m", "15m", "1h", "4h", "1d"])
         self._tf_combo.setCurrentText(_last_tf)
@@ -528,11 +537,13 @@ class MainWindow(QMainWindow):
         )
         self._wait_close_checkbox.stateChanged.connect(self._on_wait_close_checkbox_changed)
         ctrl_row2.addWidget(self._wait_close_checkbox, 0, 0, 1, 2)
+        self._wait_close_checkbox.hide()
 
         self._wait_close_countdown_label = QLabel("")
         self._wait_close_countdown_label.setObjectName("mutedLabel")
         self._wait_close_countdown_label.setMinimumWidth(100)
         ctrl_row2.addWidget(self._wait_close_countdown_label, 0, 2)
+        self._wait_close_countdown_label.hide()
 
         self._submit_btn = QPushButton("提交分析")
         self._submit_btn.setObjectName("primaryButton")
@@ -568,6 +579,16 @@ class MainWindow(QMainWindow):
         self._keep_analysis_checkbox.stateChanged.connect(self._on_keep_analysis_checkbox_changed)
         ctrl_row2.addWidget(self._keep_analysis_checkbox, 1, 0, 1, 4)
 
+        # Instrument kind is shown only when the data source explicitly exposes
+        # metadata.  Never derive it from the symbol, exchange, or source name.
+        self._instrument_kind_label = QLabel("品种:")
+        self._instrument_kind_combo = QComboBox()
+        self._instrument_kind_combo.setObjectName("instrumentKindCombo")
+        self._instrument_kind_combo.setMinimumWidth(84)
+        self._instrument_kind_label.hide()
+        self._instrument_kind_combo.hide()
+        self._update_instrument_kind_from_source(getattr(self._ctx, "data_source", None))
+
         # Reset persisted keep_analysis flag so future restarts also start unchecked
         if _settings is not None:
             try:
@@ -587,6 +608,45 @@ class MainWindow(QMainWindow):
             "自动调整图表缩放，将 K 线和价格线适配到可视区域"
         )
         self._fit_chart_btn.clicked.connect(self._on_fit_chart)
+
+        # Fixed-height, horizontally scrollable single-line analysis toolbar.
+        toolbar_scroll = QScrollArea(tab)
+        toolbar_scroll.setObjectName("analysisToolbarScroll")
+        toolbar_scroll.setWidgetResizable(True)
+        toolbar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        toolbar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        toolbar_scroll.setFixedHeight(52)
+        toolbar_content = QWidget(toolbar_scroll)
+        toolbar_content.setObjectName("analysisToolbar")
+        toolbar_content.setMinimumHeight(40)
+        toolbar_layout = QHBoxLayout(toolbar_content)
+        toolbar_layout.setContentsMargins(8, 6, 8, 6)
+        toolbar_layout.setSpacing(8)
+
+        toolbar_layout.addWidget(self._data_source_label)
+        toolbar_layout.addWidget(self._data_source_combo)
+        toolbar_layout.addWidget(self._tv_exchange_label)
+        toolbar_layout.addWidget(self._tv_exchange_combo)
+        toolbar_layout.addWidget(self._instrument_kind_label)
+        toolbar_layout.addWidget(self._instrument_kind_combo)
+        toolbar_layout.addWidget(self._symbol_label)
+        toolbar_layout.addWidget(self._symbol_combo)
+        toolbar_layout.addWidget(self._symbol_search_button)
+        toolbar_layout.addWidget(self._tf_label)
+        toolbar_layout.addWidget(self._tf_combo)
+        toolbar_layout.addWidget(self._fetch_data_btn)
+        toolbar_layout.addWidget(self._submit_btn)
+        toolbar_layout.addWidget(self._keep_analysis_checkbox)
+        toolbar_layout.addWidget(self._resume_chart_btn)
+        toolbar_layout.addStretch(1)
+        self._analysis_settings_button = QToolButton(toolbar_content)
+        self._analysis_settings_button.setObjectName("analysisSettingsButton")
+        self._analysis_settings_button.setText("设置")
+        self._analysis_settings_button.setToolTip("打开应用设置")
+        self._analysis_settings_button.clicked.connect(self._open_app_settings_dialog)
+        toolbar_layout.addWidget(self._analysis_settings_button)
+        toolbar_scroll.setWidget(toolbar_content)
+        self._analysis_toolbar_scroll = toolbar_scroll
 
         self._decision_badge = QLabel("")
         self._decision_badge.setObjectName("mutedLabel")
@@ -629,8 +689,9 @@ class MainWindow(QMainWindow):
         status_strip_layout.addWidget(self._ai_mode_label)
         self._status_strip = status_strip
         analysis_controls_layout.addWidget(status_strip)
-        analysis_controls_layout.addLayout(ctrl_layout)
-        analysis_controls_layout.addLayout(ctrl_row2)
+        # Keep validation feedback anchored in the sidebar while controls live
+        # in the top toolbar.
+        analysis_controls_layout.addWidget(self._symbol_alert_label)
         self._analysis_settings_content = analysis_controls
         self._ai_sidebar.set_analysis_settings_content(analysis_controls)
 
@@ -724,7 +785,6 @@ class MainWindow(QMainWindow):
         chart_toolbar_layout.setContentsMargins(8, 6, 8, 6)
         chart_toolbar_layout.setSpacing(8)
         chart_toolbar_layout.addStretch(1)
-        chart_toolbar_layout.addWidget(self._resume_chart_btn)
         chart_toolbar_layout.addWidget(self._fit_chart_btn)
         self._chart_toolbar = chart_toolbar
         chart_panel_layout.addWidget(chart_toolbar)
@@ -740,6 +800,7 @@ class MainWindow(QMainWindow):
         workbench.setStretchFactor(2, 2)
         workbench.setCollapsible(0, False)
 
+        outer_layout.addWidget(toolbar_scroll)
         outer_layout.addWidget(workbench, stretch=1)
 
         # Connect symbol/timeframe combo boxes to the switch handler
@@ -1072,6 +1133,13 @@ class MainWindow(QMainWindow):
     def _current_data_source_kind(self) -> str:
         return getattr(self, "_active_data_source_kind", "tradingview")
 
+    def _focus_symbol_search(self) -> None:
+        """Focus the editable code/name field from the toolbar search affordance."""
+        line = self._symbol_combo.lineEdit()
+        if line is not None:
+            line.setFocus()
+            line.selectAll()
+
     def _tv_exchange_text(self) -> str:
         combo = getattr(self, "_tv_exchange_combo", None)
         if combo is None:
@@ -1097,6 +1165,50 @@ class MainWindow(QMainWindow):
             if w is not None:
                 w.setVisible(visible)
                 w.setEnabled(visible)
+
+    def _update_instrument_kind_from_source(self, source: Any | None) -> None:
+        """Display only instrument metadata explicitly provided by *source*.
+
+        Symbol text, exchange, and data-source names are intentionally never
+        interpreted as an instrument kind.  Providers may expose the value on
+        the source itself or in a metadata mapping attached to a frame/response.
+        """
+        label = getattr(self, "_instrument_kind_label", None)
+        combo = getattr(self, "_instrument_kind_combo", None)
+        if label is None or combo is None:
+            return
+        value: object | None = None
+        candidates = [source]
+        if source is not None:
+            candidates.extend(
+                getattr(source, name, None)
+                for name in ("frame", "last_frame", "response", "metadata", "response_metadata")
+            )
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            for name in ("instrument_kind", "asset_type", "instrument_type"):
+                if isinstance(candidate, dict):
+                    raw = candidate.get(name)
+                else:
+                    raw = getattr(candidate, name, None)
+                if raw is not None and str(raw).strip():
+                    value = raw
+                    break
+            if value is None and isinstance(candidate, dict):
+                raw = candidate.get("kind")
+                if raw is not None and str(raw).strip():
+                    value = raw
+            if value is not None:
+                break
+        combo.clear()
+        if value is None:
+            label.hide()
+            combo.hide()
+            return
+        combo.addItem(str(value).strip())
+        label.show()
+        combo.show()
 
     def _force_tv_exchange_auto(self) -> None:
         """Force TradingView exchange UI to «auto» (empty string)."""
@@ -1367,6 +1479,7 @@ class MainWindow(QMainWindow):
             new_source.subscribe(symbol, timeframe)
 
             self._ctx.data_source = new_source
+            self._update_instrument_kind_from_source(new_source)
 
             self._populate_symbol_combo_for_source()
             self._populate_timeframe_combo_for_source()
@@ -3062,16 +3175,6 @@ class MainWindow(QMainWindow):
         symbol = self._symbol_combo.currentText().strip()
         timeframe = self._tf_combo.currentText()
         bar_count = self._analysis_bar_count()
-
-        if self._wait_close_checkbox.isChecked():
-            if not self._arm_wait_for_bar_close(
-                symbol,
-                timeframe,
-                bar_count,
-                force_incremental=force_incremental,
-            ):
-                return
-            return
 
         self._start_analysis(
             symbol,

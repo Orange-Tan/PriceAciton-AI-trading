@@ -172,7 +172,85 @@ def test_workbench_uses_zero_outer_spacing():
     window.close()
 
 
-def test_analysis_settings_layout_v3_uses_three_parameter_rows_and_chart_toolbar():
+def test_analysis_toolbar_is_single_row_in_requested_order():
+    from pa_agent.gui.main_window import MainWindow
+
+    _qapp()
+    ctx = AppContext(
+        settings=Settings(),
+        event_bus=EventBus(),
+        data_source=SimpleNamespace(_connected=False),
+    )
+    window = MainWindow(ctx)
+    window.show()
+    _qapp().processEvents()
+    toolbar = window.findChild(QScrollArea, "analysisToolbarScroll")
+    assert toolbar is not None
+    row = toolbar.widget().layout()
+    assert row is not None
+    assert row.count() >= 8
+    assert toolbar.widget().minimumHeight() > 0
+    widgets = [row.itemAt(i).widget() for i in range(row.count())]
+    widgets = [widget for widget in widgets if widget is not None]
+    assert widgets.index(window._data_source_combo) < widgets.index(window._tv_exchange_combo)
+    assert widgets.index(window._tv_exchange_combo) < widgets.index(window._symbol_combo)
+    assert widgets.index(window._symbol_combo) < widgets.index(window._tf_combo)
+    assert widgets.index(window._tf_combo) < widgets.index(window._fetch_data_btn)
+    assert widgets.index(window._fetch_data_btn) < widgets.index(window._submit_btn)
+    window.close()
+
+
+def test_analysis_toolbar_hides_wait_controls_and_has_settings_button():
+    from pa_agent.gui.main_window import MainWindow
+
+    _qapp()
+    ctx = AppContext(
+        settings=Settings(),
+        event_bus=EventBus(),
+        data_source=SimpleNamespace(_connected=False),
+    )
+    window = MainWindow(ctx)
+    window.show()
+    _qapp().processEvents()
+    toolbar = window.findChild(QScrollArea, "analysisToolbarScroll")
+    assert toolbar is not None
+    assert not window._wait_close_checkbox.isVisible()
+    assert not window._wait_close_countdown_label.isVisible()
+    settings_button = window.findChild(QToolButton, "analysisSettingsButton")
+    assert settings_button is not None
+    assert settings_button.isVisible()
+    window.close()
+
+
+def test_instrument_kind_only_shows_when_explicitly_provided_by_source():
+    from pa_agent.gui.main_window import MainWindow
+
+    _qapp()
+    source = SimpleNamespace(_connected=False, instrument_kind="期货")
+    ctx = AppContext(settings=Settings(), event_bus=EventBus(), data_source=source)
+    window = MainWindow(ctx)
+    window.show()
+    _qapp().processEvents()
+    assert window._instrument_kind_combo.isVisible()
+    assert window._instrument_kind_combo.currentText() == "期货"
+    window.close()
+
+
+def test_instrument_kind_is_hidden_when_source_has_no_explicit_metadata():
+    from pa_agent.gui.main_window import MainWindow
+
+    _qapp()
+    source = SimpleNamespace(_connected=False)
+    ctx = AppContext(settings=Settings(), event_bus=EventBus(), data_source=source)
+    window = MainWindow(ctx)
+    window.show()
+    _qapp().processEvents()
+    assert not window._instrument_kind_label.isVisible()
+    assert not window._instrument_kind_combo.isVisible()
+    window.close()
+
+
+def test_analysis_toolbar_replaces_sidebar_parameter_rows_and_keeps_fit_in_chart_toolbar():
     from pa_agent.gui.main_window import MainWindow
 
     _qapp()
@@ -184,22 +262,13 @@ def test_analysis_settings_layout_v3_uses_three_parameter_rows_and_chart_toolbar
     window = MainWindow(ctx)
     window.resize(1400, 900)
     window.show()
-    window._ai_sidebar._tabs.setCurrentIndex(window._ai_sidebar.TAB_ANALYSIS_SETTINGS)
     _qapp().processEvents()
 
-    labels = [label.text() for label in window.findChildren(QLabel)]
-    assert "分析品种:" in labels
-    assert "分析周期:" in labels
-    y_positions = {
-        window._data_source_combo.geometry().y(),
-        window._symbol_combo.geometry().y(),
-        window._tf_combo.geometry().y(),
-    }
-    assert len(y_positions) == 3
-    assert window._resume_chart_btn.parentWidget() is window._chart_toolbar
+    assert window._symbol_label.text() == "代码/名称:"
+    assert window._tf_label.text() == "周期:"
+    assert window._resume_chart_btn.parentWidget() is window._analysis_toolbar_scroll.widget()
     assert window._fit_chart_btn.parentWidget() is window._chart_toolbar
-    assert window._keep_analysis_checkbox.geometry().y() < window._submit_btn.geometry().y()
-    assert window._resume_chart_btn.parentWidget() is not window._analysis_settings_content
+    assert window._keep_analysis_checkbox.parentWidget() is window._analysis_toolbar_scroll.widget()
     window.close()
 
 
