@@ -27,15 +27,23 @@ def _record_with_provider_error() -> SimpleNamespace:
     )
 
 
-def _window(debug_widget) -> tuple[object, list[str], list[tuple]]:
+def _window(debug_widget, stream_widget=None) -> tuple[object, list[str], list[tuple]]:
     from pa_agent.gui.main_window import MainWindow
 
     status_messages: list[str] = []
     debug_reports: list[tuple] = []
+    stream_statuses: list[str] = []
     window = MainWindow.__new__(MainWindow)
     window._debug_widget = debug_widget
     window._prompt_files_panel = None
-    window._stream_panel = None
+    if stream_widget is None:
+        stream_widget = SimpleNamespace(
+            set_status=stream_statuses.append,
+            on_analysis_started=lambda: None,
+            on_analysis_progress=lambda _text: None,
+            mark_retry=lambda _stage: None,
+        )
+    window._stream_panel = stream_widget
     window._ctx = SimpleNamespace(settings=None)
     window._status_bar = SimpleNamespace(showMessage=status_messages.append)
     window._ui_is_alive = lambda: True
@@ -45,6 +53,7 @@ def _window(debug_widget) -> tuple[object, list[str], list[tuple]]:
     truncation_calls: list[dict] = []
     window._maybe_show_truncation_help_dialog = lambda exc: truncation_calls.append(exc)
     window._truncation_calls = truncation_calls
+    window._stream_statuses = stream_statuses
     return window, status_messages, debug_reports
 
 
@@ -54,7 +63,8 @@ def test_provider_error_record_completion_does_not_prompt_dialogs() -> None:
     window._on_record_ready(_record_with_provider_error())
 
     assert window._last_analysis_had_error is True
-    assert status_messages == ["provider unavailable"]
+    assert status_messages == []
+    assert window._stream_statuses == ["provider unavailable"]
     assert debug_reports == []
     assert window._truncation_calls == []
 
@@ -83,6 +93,8 @@ def test_exception_focuses_raw_debug_without_prompt_helpers() -> None:
 
     assert window._ai_sidebar.raw_focuses == 1
     assert window._debug_widget.exception_focuses == 1
+    assert window._stream_statuses == ["provider unavailable"]
+    assert status_messages == []
     assert debug_reports == []
     assert window._truncation_calls == []
 
@@ -99,7 +111,8 @@ def test_ordinary_record_error_keeps_status_summary() -> None:
 
     window._on_record_ready(record)
 
-    assert status_messages == ["validation: invalid decision"]
+    assert status_messages == []
+    assert window._stream_statuses == ["validation: invalid decision"]
     assert debug_reports == []
     assert window._truncation_calls == []
 
@@ -114,7 +127,8 @@ def test_destroyed_debug_widget_does_not_abort_record_handling() -> None:
     window._on_record_ready(_record_with_provider_error())
 
     assert window._last_analysis_had_error is True
-    assert status_messages == ["provider unavailable"]
+    assert status_messages == []
+    assert window._stream_statuses == ["provider unavailable"]
     assert debug_reports == []
 
 
@@ -142,6 +156,7 @@ def test_unhandled_analysis_error_does_not_prompt_dialogs() -> None:
         }
     ]
     assert status_messages == []
+    assert window._stream_statuses == ["boom"]
     assert debug_reports == []
     assert window._truncation_calls == []
 
@@ -158,5 +173,6 @@ def test_worker_done_still_writes_completion_status_without_prompting() -> None:
 
     window._on_worker_done()
 
-    assert status_messages == ["分析完成"]
+    assert status_messages == []
+    assert window._stream_statuses == ["分析完成"]
     assert debug_reports == []

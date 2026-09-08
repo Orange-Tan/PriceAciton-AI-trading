@@ -281,7 +281,6 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._status_bar)
         self._setup_ui()
         self._connect_event_bus()
-        self._update_ai_mode_label()
         self._sync_submit_button_state()
 
     # ── UI construction ───────────────────────────────────────────────────────
@@ -648,87 +647,15 @@ class MainWindow(QMainWindow):
         toolbar_scroll.setWidget(toolbar_content)
         self._analysis_toolbar_scroll = toolbar_scroll
 
-        self._decision_badge = QLabel("")
-        self._decision_badge.setObjectName("mutedLabel")
-        self._decision_badge.setStyleSheet(
-            "font-size: 16px; font-weight: 700; color: #078c48;"
-        )
-
-        self._ai_mode_label = QLabel("")
-        self._ai_mode_label.setObjectName("mutedLabel")
-        self._ai_mode_label.setStyleSheet("font-size: 14px; color: #5f7188;")
-        self._ai_mode_label.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
-        )
-        self._ai_mode_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-
-        analysis_controls = QWidget()
-        analysis_controls.setObjectName("analysisSettingsContent")
-        analysis_controls.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
-        analysis_controls_layout = QVBoxLayout(analysis_controls)
-        analysis_controls_layout.setContentsMargins(0, 0, 0, 0)
-        analysis_controls_layout.setSpacing(10)
-        analysis_title = QLabel("分析设置")
-        analysis_title.setObjectName("sectionTitle")
-        analysis_controls_layout.addWidget(analysis_title)
-        status_strip = QWidget(analysis_controls)
-        status_strip.setObjectName("analysisStatusStrip")
-        status_strip.setStyleSheet(
-            "QWidget#analysisStatusStrip { background: #eaf8ef; border: 1px solid #c9e8d4; "
-            "border-radius: 8px; padding: 4px 8px; }"
-        )
-        status_strip_layout = QHBoxLayout(status_strip)
-        status_strip_layout.setContentsMargins(8, 5, 8, 5)
-        status_strip_layout.setSpacing(12)
-        status_strip_layout.addWidget(self._decision_badge)
-        status_strip_layout.addStretch(1)
-        status_strip_layout.addWidget(self._ai_mode_label)
-        self._status_strip = status_strip
-        analysis_controls_layout.addWidget(status_strip)
-        # Keep validation feedback anchored in the sidebar while controls live
-        # in the top toolbar.
-        analysis_controls_layout.addWidget(self._symbol_alert_label)
-        self._analysis_settings_content = analysis_controls
-        self._ai_sidebar.set_analysis_settings_content(analysis_controls)
-
-        self._api_key_alert_label = QLabel(
-            "未配置 API Key：请点击左上角「设置 → 模型 API」填写 API Key 后才能进行 AI 分析。"
-        )
-        self._api_key_alert_label.setWordWrap(True)
-        self._api_key_alert_label.setStyleSheet(
-            "background-color: #3d2a00; color: #ffb86c; padding: 8px 10px; "
-            "border: 1px solid #8a6d2f; border-radius: 4px; font-weight: 600;"
-        )
-        self._api_key_alert_label.hide()
-        analysis_controls_layout.addWidget(self._api_key_alert_label)
-
-        # Risk disclaimer (UI-only; never included in AI prompts)
-        self._disclaimer_label = QLabel("分析仅供参考，不构成投资建议")
-        self._disclaimer_label.setObjectName("mutedLabel")
-        self._disclaimer_label.setWordWrap(True)
-        self._disclaimer_label.setStyleSheet(
-            f"color: {T.FG_2}; font-size: 11px; padding: 2px 0;"
-        )
-        analysis_controls_layout.addWidget(self._disclaimer_label)
-
-        status_row = QHBoxLayout()
-        status_row.addStretch()
         self._last_refresh_ts: float = 0.0
         self._refresh_elapsed_label = QLabel("距上次刷新: —")
         self._refresh_elapsed_label.setObjectName("mutedLabel")
-        status_row.addWidget(self._refresh_elapsed_label)
 
         from PyQt6.QtCore import QTimer as _QTimer
         self._elapsed_ticker = _QTimer(tab)
         self._elapsed_ticker.setInterval(1000)
         self._elapsed_ticker.timeout.connect(self._update_refresh_elapsed)
         self._elapsed_ticker.start()
-
-        analysis_controls_layout.addLayout(status_row)
 
         workbench = QSplitter(Qt.Orientation.Horizontal)
         self._workbench = workbench
@@ -1782,32 +1709,39 @@ class MainWindow(QMainWindow):
             return 100
         return int(getattr(settings.general, "analysis_bar_count", 100))
 
+    def _set_stream_status(self, text: str) -> None:
+        """Push AI status text into the live stream panel."""
+        panel = getattr(self, "_stream_panel", None)
+        if panel is None or not text:
+            return
+        try:
+            panel.set_status(text)
+        except (AttributeError, RuntimeError):
+            pass
+
     def _on_status_update(self, text: str) -> None:
-        """Update the status bar with subscription / analysis / data-delay text."""
+        """Update the status bar for non-AI text and route AI text to the stream pane."""
         if not self._ui_is_alive():
             return
         if not text:
-            # Empty string means data fetch recovered — clear any previous error.
             if not self._analysis_in_progress:
                 self._status_bar.clearMessage()
             return
-        stream_panel = getattr(self, "_stream_panel", None)
-        if stream_panel is not None:
-            stream_panel.set_status(text)
-        self._status_bar.showMessage(text)
         if text == "数据延迟":
+            self._status_bar.showMessage(text)
             self._update_symbol_data_alert()
+            return
         if self._analysis_in_progress:
-            if "分析中" in text:
-                self._decision_badge.setText("● 分析中…")
-            panel = stream_panel
-            if panel is not None:
+            stream_panel = getattr(self, "_stream_panel", None)
+            if stream_panel is not None:
                 if text in ("阶段一重试",):
-                    panel.mark_retry("stage1")
+                    stream_panel.mark_retry("stage1")
                 elif text in ("阶段二重试",):
-                    panel.mark_retry("stage2")
+                    stream_panel.mark_retry("stage2")
                 else:
-                    panel.on_analysis_progress(text)
+                    stream_panel.on_analysis_progress(text)
+            return
+        self._status_bar.showMessage(text)
         # ── Drive FlowBar step indicators ────────────────────────────────────
         flow = getattr(self, "_flow_bar", None)
         if flow is not None:
@@ -2999,7 +2933,6 @@ class MainWindow(QMainWindow):
         self._demo_mode_label.setText(f"当前为演示模式 · {name}")
         self._demo_mode_label.show()
         self._status_bar.showMessage(f"演示回放中… ({name})")
-        self._decision_badge.setText("演示中…")
 
         self._ai_sidebar.focus_stream()
         panel = self._stream_panel
@@ -3108,7 +3041,6 @@ class MainWindow(QMainWindow):
         self._analysis_in_progress = False
         self._set_chart_refresh_paused(False)
         self._update_submit_button_state()
-        self._decision_badge.setText("")
 
         if was_demo and not silent:
             if hasattr(self, "_chart_widget"):
@@ -3291,8 +3223,7 @@ class MainWindow(QMainWindow):
         self._analysis_in_progress = True
         self._last_analysis_had_error = False
         self._update_submit_button_state()
-        self._status_bar.showMessage("准备分析…（构建快照）")
-        self._decision_badge.setText("准备中…")
+        self._set_stream_status("准备分析…（构建快照）")
 
         from pa_agent.gui.analysis_prep_worker import AnalysisPrepWorker
 
@@ -3334,8 +3265,7 @@ class MainWindow(QMainWindow):
             self._prep_worker = None
             self._analysis_in_progress = False
             self._update_submit_button_state()
-            self._status_bar.showMessage(msg or "准备分析失败")
-            self._decision_badge.setText("")
+            self._set_stream_status(msg or "准备分析失败")
 
         prep.ready.connect(_on_ready)
         prep.failed.connect(_on_failed)
@@ -3480,15 +3410,10 @@ class MainWindow(QMainWindow):
                 detail = incremental_detail or f"新增{incremental_new_bar_count}根已收盘K线"
             else:
                 detail = "无新增K线，基于上一轮结论复核"
-            self._status_bar.showMessage(
-                f"{prefix}…（倾向:{stance_label}，{detail}，图表已冻结）"
-            )
+            self._set_stream_status(f"{prefix}…（倾向:{stance_label}，{detail}，图表已冻结）")
             logger.info("Incremental submit: %s", detail)
         else:
-            self._status_bar.showMessage(
-                f"分析中…（倾向:{stance_label}，图表已冻结，K1=最新已收盘K线）"
-            )
-        self._decision_badge.setText("● 分析中…")
+            self._set_stream_status(f"分析中…（倾向:{stance_label}，图表已冻结，K1=最新已收盘K线）")
         self._ai_sidebar.focus_stream()
 
         panel = getattr(self, "_stream_panel", None)
@@ -3658,8 +3583,6 @@ class MainWindow(QMainWindow):
                 confidence_threshold=self._confidence_threshold(),
             )
             self._bind_decision_tree(decision, stage1_diag or None)
-            order = inner.get("order_type", "—")
-            self._decision_badge.setText(f"决策: {order}")
             if self._maybe_alert_order_opportunity(inner):
                 self._spawn_post_order_followup(inner, decision)
 
@@ -3739,7 +3662,6 @@ class MainWindow(QMainWindow):
             self._decision_tree_panel.clear()
             if getattr(self, "_decision_flow_viz_panel", None) is not None:
                 self._decision_flow_viz_panel.clear()
-            self._decision_badge.setText("")
             strip = getattr(self, "_summary_strip", None)
             if strip is not None:
                 strip.reset()
@@ -3933,6 +3855,7 @@ class MainWindow(QMainWindow):
                 })
             except (AttributeError, RuntimeError):
                 pass
+        self._set_stream_status(message or "分析错误")
 
     def _on_retry_occurred(self, stage: str) -> None:
         """Handle retry event: if cancel_keep_analysis_on_retry is enabled, disable keep_analysis."""
@@ -4063,12 +3986,11 @@ class MainWindow(QMainWindow):
             msg = exc_info.get("message", "")
             if err_type == "provider_error" or category == "e":
                 detail = msg or "OpenClaw 积分不足，请充值或更换 API"
-                self._status_bar.showMessage(detail)
             elif err_type == "auth_error":
-                self._status_bar.showMessage("API Key 无效，请到设置中重新填写")
+                detail = "API Key 无效，请到设置中重新填写"
             else:
                 detail = f"{category}: {msg}" if category else (msg or err_type)
-                self._status_bar.showMessage(detail)
+            self._set_stream_status(detail)
         else:
             self._last_analysis_had_error = False
 
@@ -4451,7 +4373,7 @@ class MainWindow(QMainWindow):
                 msg = "分析完成，图表已恢复实时更新"
             else:
                 msg = "分析完成"
-            self._status_bar.showMessage(msg)
+            self._set_stream_status(msg)
         except RuntimeError as exc:
             logger.debug("MainWindow UI torn down during worker cleanup: %s", exc)
 
@@ -4575,7 +4497,6 @@ class MainWindow(QMainWindow):
         self._debug_widget._api_key = key
         self._ai_sidebar.bind_settings(settings)
         update_api_key(key)
-        self._update_ai_mode_label()
         self._refresh_api_key_ui_state()
 
         # 通用设置可能改变图表字号/决策树缩放；界面风格可能已切换
@@ -4607,45 +4528,6 @@ class MainWindow(QMainWindow):
         if flow_viz is not None:
             flow_viz.refit_view()
             flow_viz.schedule_refit_view()
-
-    def _update_ai_mode_label(self) -> None:
-        """Show current thinking / reasoning_effort / model in the toolbar."""
-        settings = getattr(self._ctx, "settings", None)
-        if settings is None:
-            self._ai_mode_label.setText("")
-            return
-        p = settings.provider
-        base = (p.base_url or "").lower()
-        if "deepseek.com" in base:
-            self._ai_mode_label.setText(f"深度求索 DeepSeek · {p.model}")
-        elif "kkone.vip" in base:
-            thinking = "开" if p.thinking else "关"
-            effort = p.reasoning_effort if p.thinking else "—"
-            self._ai_mode_label.setText(
-                f"KKAI 思考: {thinking} · budget≈{effort} · {p.model}"
-            )
-        elif "yunwu.ai" in base:
-            thinking = "开" if p.thinking else "关"
-            effort = p.reasoning_effort if p.thinking else "—"
-            mode = "adaptive" if "opus-4-7" in p.model or "opus-4-6" in p.model else "effort"
-            self._ai_mode_label.setText(
-                f"云雾 思考: {thinking} · {mode}={effort} · {p.model}"
-            )
-        elif "packyapi.com" in base:
-            thinking = "开" if p.thinking else "关"
-            effort = p.reasoning_effort if p.thinking else "—"
-            mode = "adaptive" if "opus-4-7" in p.model or "opus-4-6" in p.model else "effort"
-            self._ai_mode_label.setText(
-                f"PackyAPI 思考: {thinking} · {mode}={effort} · {p.model}"
-            )
-        else:
-            from pa_agent.config.model_providers import find_provider, guess_provider
-
-            preset = find_provider(guess_provider(p.base_url, p.model))
-            vendor = f"{preset.name} · " if preset else ""
-            self._ai_mode_label.setText(
-                f"{vendor}{p.model} · 思考={('开' if p.thinking else '关')}"
-            )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
