@@ -263,6 +263,7 @@ class AppSettingsDialog(QDialog):
         self._loading_values = True
         self._active_provider_id: str | None = None
         self._provider_key_cache: dict[str, str] = {}
+        self.requested_demo_mode: str | None = None
         self._setup_ui()
         self._load_values()
         self._loading_values = False
@@ -356,6 +357,7 @@ class AppSettingsDialog(QDialog):
 
         # 通用设置：四组选项作为独立模块加入（对应 _MODULE_GENERAL_START 起的行号）
         self._general_panel = GeneralSettingsPanel(self._settings)
+        self._general_panel.demo_mode_requested.connect(self._request_demo_mode)
         self._general_panel.set_decision_flow_play_handler(
             self._decision_flow_play_handler
         )
@@ -380,6 +382,11 @@ class AppSettingsDialog(QDialog):
         buttons.accepted.connect(self._on_save)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+    def _request_demo_mode(self, mode: str) -> None:
+        """Close settings before starting a demo action in the main window."""
+        self.requested_demo_mode = mode
+        self.accept()
 
     def _build_model_tab(self) -> QWidget:
         tab = QWidget()

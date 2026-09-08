@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
-    QMenuBar,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -362,46 +361,8 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage("就绪")
         self._refresh_api_key_ui_state()
 
-        # ── Menu bar ─── 顶层直接触发按钮 + 演示模式下拉 ────────────────────
-        menu_bar: QMenuBar = self.menuBar()  # type: ignore[assignment]
-        # macOS 系统菜单栏（屏幕顶部）对顶层菜单项渲染不稳定，曾多次出现「设置」
-        # 看不到。强制在窗口内渲染菜单栏（QMainWindow 顶部），保证始终可见。
-        menu_bar.setNativeMenuBar(False)
-
-        # 1. 设置 — 点击直接弹出设置对话框（数据源 / 模型 API / 飞书通知 / 通用设置），
-        #    模型配置统一在这里的「模型 API」页完成。
-        #    窗口内菜单栏上裸 QAction 可正常渲染并直接触发，无需下拉子项。
-        _settings_action = QAction("设置", self)
-        _settings_action.triggered.connect(self._open_app_settings_dialog)
-        menu_bar.addAction(_settings_action)
-
-        # 2. 演示模式 — 保留下拉菜单
-        demo_menu = menu_bar.addMenu("演示模式")
-        self._demo_manual_action = QAction("手动选择记录…", self)
-        self._demo_manual_action.triggered.connect(lambda: self._on_demo_menu_action("manual"))
-        demo_menu.addAction(self._demo_manual_action)
-        self._demo_auto_action = QAction("自动随机记录", self)
-        self._demo_auto_action.triggered.connect(lambda: self._on_demo_menu_action("auto"))
-        demo_menu.addAction(self._demo_auto_action)
-        demo_menu.addSeparator()
-        self._demo_exit_action = QAction("退出演示模式", self)
-        self._demo_exit_action.triggered.connect(self._exit_demo_mode)
-        self._demo_exit_action.setEnabled(False)
-        demo_menu.addAction(self._demo_exit_action)
-
-        self._right_sidebar_toggle_action = QAction("隐藏右侧栏", self)
-        self._right_sidebar_toggle_action.setCheckable(True)
-        self._right_sidebar_toggle_action.triggered.connect(self._toggle_ai_sidebar)
-        self._right_sidebar_toggle_button = QToolButton(menu_bar)
-        self._right_sidebar_toggle_button.setDefaultAction(self._right_sidebar_toggle_action)
-        self._right_sidebar_toggle_button.setText(">")
-        self._right_sidebar_toggle_button.setToolTip("隐藏右侧栏")
-        self._right_sidebar_toggle_button.setAccessibleName("隐藏右侧栏")
-        self._right_sidebar_toggle_button.setAutoRaise(True)
-        menu_bar.setCornerWidget(
-            self._right_sidebar_toggle_button,
-            Qt.Corner.TopRightCorner,
-        )
+        # 顶部菜单栏已移除，设置和演示入口统一收纳到工作台顶栏/设置面板。
+        self.menuBar().hide()
 
     def _build_workbench(self) -> QWidget:
         """Build chart + AI sidebar workbench."""
@@ -450,7 +411,7 @@ class MainWindow(QMainWindow):
             "K 线数据来源：\n"
             "· TradingView（tvDatafeed）：全球外汇/贵金属/A股/港股/美股/指数/期货/加密货币\n"
             "· AkShare / 东方财富 / Tushare / 通达信 / 腾讯财经（A股）：A股与指数\n"
-            "各来源的支持行情与连通条件详见菜单栏「设置 → 数据源」。"
+            "各来源的支持行情与连通条件详见顶部齿轮「数据源」面板。"
         )
         self._data_source_combo.currentIndexChanged.connect(
             self._on_data_source_combo_changed
@@ -593,7 +554,7 @@ class MainWindow(QMainWindow):
         self._incremental_submit_btn.clicked.connect(self._on_submit_incremental_analysis)
         self._incremental_submit_btn.hide()
 
-        # 演示模式按钮已移至左上角「设置」菜单，此处保留引用供内部逻辑使用（不加入 ctrl_layout）
+        # 演示模式入口位于齿轮设置面板，此处保留内部按钮供旧逻辑复用。
         self._demo_btn = QPushButton("演示模式")
         self._demo_btn.setToolTip("用 records/pending 中已保存的分析记录回放界面")
         self._demo_btn.clicked.connect(self._on_demo_mode_button)
@@ -701,6 +662,17 @@ class MainWindow(QMainWindow):
         self._analysis_settings_button.setToolTip("打开应用设置")
         self._analysis_settings_button.clicked.connect(self._open_app_settings_dialog)
         toolbar_layout.addWidget(self._analysis_settings_button)
+        self._right_sidebar_toggle_action = QAction("隐藏右侧栏", self)
+        self._right_sidebar_toggle_action.setCheckable(True)
+        self._right_sidebar_toggle_action.triggered.connect(self._toggle_ai_sidebar)
+        self._right_sidebar_toggle_button = QToolButton(toolbar_content)
+        self._right_sidebar_toggle_button.setObjectName("rightSidebarToggleButton")
+        self._right_sidebar_toggle_button.setDefaultAction(self._right_sidebar_toggle_action)
+        self._right_sidebar_toggle_button.setText(">")
+        self._right_sidebar_toggle_button.setToolTip("隐藏右侧栏")
+        self._right_sidebar_toggle_button.setAccessibleName("隐藏右侧栏")
+        self._right_sidebar_toggle_button.setAutoRaise(True)
+        toolbar_layout.addWidget(self._right_sidebar_toggle_button)
         toolbar_scroll.setWidget(toolbar_content)
         toolbar_card_layout.addWidget(toolbar_scroll)
         toolbar_host_layout.addWidget(toolbar_card)
@@ -4503,7 +4475,7 @@ class MainWindow(QMainWindow):
         cur = status_bar.currentMessage() or ""
         if cur in ("就绪", "") or "API Key" in cur or "提交分析已锁定" in cur:
             status_bar.showMessage(
-                "未配置 API Key：请点击左上角「设置 → 模型 API」填写后才能分析"
+                "未配置 API Key：请点击顶部齿轮进入「模型 API」填写后才能分析"
             )
 
     def _refresh_theme_ui(self) -> None:
@@ -4525,7 +4497,7 @@ class MainWindow(QMainWindow):
                     logger.warning("refresh_theme(%s) failed: %s", name, exc)
 
     def _open_app_settings_dialog(self) -> None:
-        """打开菜单栏「设置」对话框（数据源 + 模型 API + 飞书通知 + 通用设置）。"""
+        """打开齿轮设置对话框（数据源、模型 API、通知与通用设置）。"""
         from pa_agent.gui.app_settings_dialog import AppSettingsDialog
         from pa_agent.config.settings import Settings
         from pa_agent.util.logging import update_api_key
@@ -4542,6 +4514,7 @@ class MainWindow(QMainWindow):
         )
         if not dlg.exec():
             return
+        requested_demo_mode = dlg.requested_demo_mode
 
         self._ctx.settings = settings
 
@@ -4575,6 +4548,15 @@ class MainWindow(QMainWindow):
                     f"无法切换到 {new_kind}：\n{exc}",
                 )
 
+        if requested_demo_mode:
+            if requested_demo_mode == "exit":
+                self._exit_demo_mode()
+            else:
+                QTimer.singleShot(
+                    0,
+                    lambda mode=requested_demo_mode: self._on_demo_menu_action(mode),
+                )
+
     def _apply_chart_display_settings(self) -> None:
         """Sync chart label font sizes and decision-flow zoom from persisted settings."""
         chart = getattr(self, "_chart_widget", None)
@@ -4597,7 +4579,7 @@ class MainWindow(QMainWindow):
     def _submit_block_reason(self) -> str | None:
         """Human-readable reason when submit is disabled, or None if allowed."""
         if not self._has_api_key_configured():
-            return "未配置 API Key，请点击左上角「设置 → 模型 API」填写后才能分析"
+            return "未配置 API Key，请点击顶部齿轮进入「模型 API」填写后才能分析"
         if self._demo_mode:
             return "演示模式中，请退出演示后再提交真实分析"
         if self._analysis_in_progress:

@@ -248,6 +248,19 @@ QToolButton#analysisSettingsButton {
 QToolButton#analysisSettingsButton:hover {
     background-color: #eef1f4;
 }
+QToolButton#rightSidebarToggleButton {
+    min-width: 34px;
+    max-width: 34px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0px;
+    border: 1px solid #d1d6dd;
+    border-radius: 8px;
+    color: #2563eb;
+}
+QToolButton#rightSidebarToggleButton:hover {
+    background-color: #eef1f4;
+}
 QScrollBar:vertical {
     background: #f3f5f7;
     width: 10px;

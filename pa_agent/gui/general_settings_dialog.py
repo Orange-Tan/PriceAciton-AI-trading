@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -48,6 +48,7 @@ class GeneralSettingsPanel(QWidget):
         "图表与界面",
         "决策树可视化",
     )
+    demo_mode_requested = pyqtSignal(str)
 
     def __init__(self, settings: Settings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -202,7 +203,25 @@ class GeneralSettingsPanel(QWidget):
         self._chart_seq_font_spin.setToolTip("K 线图上 #1、#3… 序号标签的字体大小")
         form.addRow("图表K线序号字号:", self._chart_seq_font_spin)
 
-        return self._page(group)
+        page = self._page(group)
+        demo_group = QGroupBox("演示模式")
+        demo_layout = QHBoxLayout(demo_group)
+        manual_btn = QPushButton("手动选择记录…")
+        manual_btn.setObjectName("demoManualButton")
+        manual_btn.clicked.connect(lambda: self.demo_mode_requested.emit("manual"))
+        auto_btn = QPushButton("自动随机记录")
+        auto_btn.setObjectName("demoAutoButton")
+        auto_btn.clicked.connect(lambda: self.demo_mode_requested.emit("auto"))
+        exit_btn = QPushButton("退出演示模式")
+        exit_btn.setObjectName("demoExitButton")
+        exit_btn.clicked.connect(lambda: self.demo_mode_requested.emit("exit"))
+        demo_layout.addWidget(manual_btn)
+        demo_layout.addWidget(auto_btn)
+        demo_layout.addWidget(exit_btn)
+        layout = page.layout()
+        if layout is not None:
+            layout.insertWidget(layout.count() - 1, demo_group)
+        return page
 
     # ── 决策树可视化 ──────────────────────────────────────────────────────────
     def _build_flow_page(self) -> QWidget:

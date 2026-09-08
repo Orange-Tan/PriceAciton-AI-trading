@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
-from PyQt6.QtWidgets import QApplication, QScrollArea, QWidget
+from PyQt6.QtWidgets import QApplication, QScrollArea, QPushButton, QWidget
 from PyQt6.QtWidgets import QLabel, QToolButton
 from PyQt6.QtWidgets import QSplitter
 
@@ -239,6 +239,42 @@ def test_analysis_toolbar_hides_wait_controls_and_has_settings_button():
     assert settings_button is not None
     assert settings_button.isVisible()
     window.close()
+
+
+def test_top_menu_is_removed_and_sidebar_toggle_sits_after_settings_gear():
+    from pa_agent.gui.main_window import MainWindow
+
+    _qapp()
+    ctx = AppContext(
+        settings=Settings(),
+        event_bus=EventBus(),
+        data_source=SimpleNamespace(_connected=False),
+    )
+    window = MainWindow(ctx)
+    window.show()
+    _qapp().processEvents()
+
+    assert window.menuBar().isHidden()
+    toolbar = window._analysis_toolbar_scroll.widget()
+    row = toolbar.layout()
+    assert row is not None
+    assert window._right_sidebar_toggle_button.parentWidget() is toolbar
+    assert row.indexOf(window._analysis_settings_button) < row.indexOf(
+        window._right_sidebar_toggle_button
+    )
+    assert window._right_sidebar_toggle_button.isVisible()
+    window.close()
+
+
+def test_settings_panel_contains_demo_mode_actions():
+    from pa_agent.gui.app_settings_dialog import AppSettingsDialog
+
+    _qapp()
+    dialog = AppSettingsDialog(Settings())
+    assert dialog.findChild(QPushButton, "demoManualButton") is not None
+    assert dialog.findChild(QPushButton, "demoAutoButton") is not None
+    assert dialog.findChild(QPushButton, "demoExitButton") is not None
+    dialog.close()
 
 
 def test_analysis_toolbar_uses_reference_card_switch_and_live_state():
