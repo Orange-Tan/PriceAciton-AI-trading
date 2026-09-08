@@ -250,6 +250,24 @@ def test_instrument_kind_is_hidden_when_source_has_no_explicit_metadata():
     window.close()
 
 
+def test_instrument_kind_ignores_response_metadata_without_source_field():
+    from pa_agent.gui.main_window import MainWindow
+
+    _qapp()
+    source = SimpleNamespace(
+        _connected=False,
+        response={"instrument_kind": "期货"},
+        metadata={"asset_type": "期货"},
+    )
+    ctx = AppContext(settings=Settings(), event_bus=EventBus(), data_source=source)
+    window = MainWindow(ctx)
+    window.show()
+    _qapp().processEvents()
+    assert not window._instrument_kind_label.isVisible()
+    assert not window._instrument_kind_combo.isVisible()
+    window.close()
+
+
 def test_analysis_toolbar_replaces_sidebar_parameter_rows_and_keeps_fit_in_chart_toolbar():
     from pa_agent.gui.main_window import MainWindow
 

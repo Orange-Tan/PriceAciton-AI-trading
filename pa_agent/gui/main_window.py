@@ -1169,38 +1169,21 @@ class MainWindow(QMainWindow):
     def _update_instrument_kind_from_source(self, source: Any | None) -> None:
         """Display only instrument metadata explicitly provided by *source*.
 
-        Symbol text, exchange, and data-source names are intentionally never
-        interpreted as an instrument kind.  Providers may expose the value on
-        the source itself or in a metadata mapping attached to a frame/response.
+        Symbol text, exchange, data-source names, frames, and responses are
+        intentionally never interpreted as an instrument kind. Providers may
+        expose the value directly on the source object.
         """
         label = getattr(self, "_instrument_kind_label", None)
         combo = getattr(self, "_instrument_kind_combo", None)
         if label is None or combo is None:
             return
         value: object | None = None
-        candidates = [source]
         if source is not None:
-            candidates.extend(
-                getattr(source, name, None)
-                for name in ("frame", "last_frame", "response", "metadata", "response_metadata")
-            )
-        for candidate in candidates:
-            if candidate is None:
-                continue
             for name in ("instrument_kind", "asset_type", "instrument_type"):
-                if isinstance(candidate, dict):
-                    raw = candidate.get(name)
-                else:
-                    raw = getattr(candidate, name, None)
+                raw = getattr(source, name, None)
                 if raw is not None and str(raw).strip():
                     value = raw
                     break
-            if value is None and isinstance(candidate, dict):
-                raw = candidate.get("kind")
-                if raw is not None and str(raw).strip():
-                    value = raw
-            if value is not None:
-                break
         combo.clear()
         if value is None:
             label.hide()
@@ -3175,6 +3158,19 @@ class MainWindow(QMainWindow):
         symbol = self._symbol_combo.currentText().strip()
         timeframe = self._tf_combo.currentText()
         bar_count = self._analysis_bar_count()
+
+        # Keep the existing deferred-submit behavior for programmatic or
+        # persisted callers, even though the wait controls are hidden from the
+        # reference toolbar.
+        if self._wait_close_checkbox.isChecked():
+            if not self._arm_wait_for_bar_close(
+                symbol,
+                timeframe,
+                bar_count,
+                force_incremental=force_incremental,
+            ):
+                return
+            return
 
         self._start_analysis(
             symbol,
