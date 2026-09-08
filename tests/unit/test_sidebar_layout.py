@@ -258,6 +258,9 @@ def test_top_menu_is_removed_and_sidebar_toggle_sits_after_settings_gear():
     toolbar = window._analysis_toolbar_scroll.widget()
     row = toolbar.layout()
     assert row is not None
+    assert row.indexOf(window._analysis_settings_button) < row.indexOf(
+        window._data_source_combo
+    )
     assert window._right_sidebar_toggle_button.parentWidget() is toolbar
     assert row.indexOf(window._analysis_settings_button) < row.indexOf(
         window._right_sidebar_toggle_button
@@ -293,7 +296,7 @@ def test_analysis_toolbar_uses_reference_card_switch_and_live_state():
 
     card = window.findChild(QWidget, "analysisToolbarCard")
     assert card is not None
-    assert card.height() >= 70
+    assert 55 <= card.height() <= 64
     assert window._keep_analysis_label.text() == "持续跟踪"
     assert window._keep_analysis_checkbox.objectName() == "keepAnalysisSwitch"
     assert window._keep_analysis_checkbox.text() == ""
