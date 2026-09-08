@@ -4,12 +4,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from PyQt6.QtCore import QThread, QTimer, pyqtSignal, QObject
-from PyQt6.QtGui import QAction, QCloseEvent, QShowEvent
+from PyQt6.QtCore import QThread, QTimer, QRectF, QSize, pyqtSignal, QObject
+from PyQt6.QtGui import QAction, QCloseEvent, QColor, QPainter, QShowEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -36,6 +37,35 @@ logger = logging.getLogger(__name__)
 
 # Zombie timeout in milliseconds (5 seconds)
 _WORKER_JOIN_TIMEOUT_MS = 5000
+
+
+class _ToggleSwitch(QCheckBox):
+    """Compact switch used by the top analysis toolbar."""
+
+    _WIDTH = 42
+    _HEIGHT = 24
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(self._WIDTH, self._HEIGHT)
+        self.stateChanged.connect(lambda _state: self.update())
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(self._WIDTH, self._HEIGHT)
+
+    def paintEvent(self, _event: Any) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        track_color = "#1f7bf2" if self.isChecked() else "#cbd5e1"
+        if not self.isEnabled():
+            track_color = "#e2e8f0"
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(track_color))
+        painter.drawRoundedRect(QRectF(0.5, 0.5, self.width() - 1, self.height() - 1), 12, 12)
+        knob = 18
+        knob_x = self.width() - knob - 3 if self.isChecked() else 3
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawEllipse(knob_x, 3, knob, knob)
 
 
 def _default_window_size(screen: Any | None) -> tuple[int, int]:
@@ -522,7 +552,7 @@ class MainWindow(QMainWindow):
         self._sync_tv_exchange_visibility()
 
         self._fetch_data_btn = QPushButton("获取数据")
-        self._fetch_data_btn.setObjectName("primaryButton")
+        self._fetch_data_btn.setObjectName("fetchDataButton")
         self._fetch_data_btn.setMinimumWidth(90)
         self._fetch_data_btn.setToolTip("开始从当前数据源持续拉取 K 线数据并实时更新图表")
         self._fetch_data_btn.clicked.connect(self._on_fetch_data_clicked)
@@ -545,7 +575,7 @@ class MainWindow(QMainWindow):
         self._wait_close_countdown_label.hide()
 
         self._submit_btn = QPushButton("提交分析")
-        self._submit_btn.setObjectName("primaryButton")
+        self._submit_btn.setObjectName("submitAnalysisButton")
         self._submit_btn.setMinimumWidth(100)
         self._submit_btn.clicked.connect(self._on_submit_analysis)
         ctrl_row2.addWidget(self._submit_btn, 2, 0, 1, 2)
@@ -570,7 +600,9 @@ class MainWindow(QMainWindow):
 
         # 持续跟踪分析勾选框：勾选后有新K线收盘时自动开始新一轮分析
         # 每次启动强制为未勾选，避免程序启动时立即自动拉取数据
-        self._keep_analysis_checkbox = QCheckBox("持续跟踪分析")
+        self._keep_analysis_label = QLabel("持续跟踪")
+        self._keep_analysis_checkbox = _ToggleSwitch()
+        self._keep_analysis_checkbox.setObjectName("keepAnalysisSwitch")
         self._keep_analysis_checkbox.setChecked(False)
         self._keep_analysis_checkbox.setToolTip(
             "勾选后，每当有新的K线收盘时自动开始新一轮分析"
@@ -596,6 +628,8 @@ class MainWindow(QMainWindow):
                 pass
 
         self._resume_chart_btn = QPushButton("图表实时更新")
+        self._resume_chart_btn.setObjectName("chartLiveUpdateButton")
+        self._resume_chart_btn.setFlat(True)
         self._resume_chart_btn.setEnabled(False)
         self._resume_chart_btn.setToolTip(
             "恢复 K 线实时刷新；最右侧未收盘 K 线为浅色空心 K 线，不参与 AI 分析"
@@ -609,18 +643,28 @@ class MainWindow(QMainWindow):
         self._fit_chart_btn.clicked.connect(self._on_fit_chart)
 
         # Fixed-height, horizontally scrollable single-line analysis toolbar.
-        toolbar_scroll = QScrollArea(tab)
+        toolbar_host = QWidget(tab)
+        toolbar_host.setObjectName("analysisToolbarHost")
+        toolbar_host_layout = QVBoxLayout(toolbar_host)
+        toolbar_host_layout.setContentsMargins(8, 6, 8, 6)
+
+        toolbar_card = QWidget(toolbar_host)
+        toolbar_card.setObjectName("analysisToolbarCard")
+        toolbar_card_layout = QVBoxLayout(toolbar_card)
+        toolbar_card_layout.setContentsMargins(10, 6, 10, 6)
+
+        toolbar_scroll = QScrollArea(toolbar_card)
         toolbar_scroll.setObjectName("analysisToolbarScroll")
         toolbar_scroll.setWidgetResizable(True)
         toolbar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         toolbar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        toolbar_scroll.setFixedHeight(52)
+        toolbar_scroll.setFixedHeight(58)
         toolbar_content = QWidget(toolbar_scroll)
         toolbar_content.setObjectName("analysisToolbar")
         toolbar_content.setMinimumHeight(40)
         toolbar_layout = QHBoxLayout(toolbar_content)
-        toolbar_layout.setContentsMargins(8, 6, 8, 6)
-        toolbar_layout.setSpacing(8)
+        toolbar_layout.setContentsMargins(14, 4, 14, 4)
+        toolbar_layout.setSpacing(12)
 
         toolbar_layout.addWidget(self._data_source_label)
         toolbar_layout.addWidget(self._data_source_combo)
@@ -635,16 +679,31 @@ class MainWindow(QMainWindow):
         toolbar_layout.addWidget(self._tf_combo)
         toolbar_layout.addWidget(self._fetch_data_btn)
         toolbar_layout.addWidget(self._submit_btn)
+        tracking_separator = QFrame(toolbar_content)
+        tracking_separator.setObjectName("toolbarSeparator")
+        tracking_separator.setFrameShape(QFrame.Shape.VLine)
+        toolbar_layout.addWidget(tracking_separator)
+        toolbar_layout.addWidget(self._keep_analysis_label)
         toolbar_layout.addWidget(self._keep_analysis_checkbox)
+        chart_separator = QFrame(toolbar_content)
+        chart_separator.setObjectName("toolbarSeparator")
+        chart_separator.setFrameShape(QFrame.Shape.VLine)
+        toolbar_layout.addWidget(chart_separator)
         toolbar_layout.addWidget(self._resume_chart_btn)
+        self._chart_realtime_state = QLabel("实时 ●")
+        self._chart_realtime_state.setObjectName("chartRealtimeState")
+        self._chart_realtime_state.setToolTip("图表实时刷新状态")
+        toolbar_layout.addWidget(self._chart_realtime_state)
         toolbar_layout.addStretch(1)
         self._analysis_settings_button = QToolButton(toolbar_content)
         self._analysis_settings_button.setObjectName("analysisSettingsButton")
-        self._analysis_settings_button.setText("设置")
+        self._analysis_settings_button.setText("⚙")
         self._analysis_settings_button.setToolTip("打开应用设置")
         self._analysis_settings_button.clicked.connect(self._open_app_settings_dialog)
         toolbar_layout.addWidget(self._analysis_settings_button)
         toolbar_scroll.setWidget(toolbar_content)
+        toolbar_card_layout.addWidget(toolbar_scroll)
+        toolbar_host_layout.addWidget(toolbar_card)
         self._analysis_toolbar_scroll = toolbar_scroll
 
         self._last_refresh_ts: float = 0.0
@@ -727,7 +786,7 @@ class MainWindow(QMainWindow):
         workbench.setStretchFactor(2, 2)
         workbench.setCollapsible(0, False)
 
-        outer_layout.addWidget(toolbar_scroll)
+        outer_layout.addWidget(toolbar_host)
         outer_layout.addWidget(workbench, stretch=1)
 
         # Connect symbol/timeframe combo boxes to the switch handler

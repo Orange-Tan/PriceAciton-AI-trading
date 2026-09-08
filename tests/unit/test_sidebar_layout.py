@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
-from PyQt6.QtWidgets import QApplication, QScrollArea
+from PyQt6.QtWidgets import QApplication, QScrollArea, QWidget
 from PyQt6.QtWidgets import QLabel, QToolButton
 from PyQt6.QtWidgets import QSplitter
 
@@ -238,6 +238,33 @@ def test_analysis_toolbar_hides_wait_controls_and_has_settings_button():
     settings_button = window.findChild(QToolButton, "analysisSettingsButton")
     assert settings_button is not None
     assert settings_button.isVisible()
+    window.close()
+
+
+def test_analysis_toolbar_uses_reference_card_switch_and_live_state():
+    from pa_agent.gui.main_window import MainWindow
+
+    _qapp()
+    ctx = AppContext(
+        settings=Settings(),
+        event_bus=EventBus(),
+        data_source=SimpleNamespace(_connected=False),
+    )
+    window = MainWindow(ctx)
+    window.resize(1900, 900)
+    window.show()
+    _qapp().processEvents()
+
+    card = window.findChild(QWidget, "analysisToolbarCard")
+    assert card is not None
+    assert card.height() >= 70
+    assert window._keep_analysis_label.text() == "持续跟踪"
+    assert window._keep_analysis_checkbox.objectName() == "keepAnalysisSwitch"
+    assert window._keep_analysis_checkbox.text() == ""
+    assert window._fetch_data_btn.objectName() == "fetchDataButton"
+    assert window._submit_btn.objectName() == "submitAnalysisButton"
+    assert window._chart_realtime_state.text() == "实时 ●"
+    assert window._analysis_settings_button.text() == "⚙"
     window.close()
 
 

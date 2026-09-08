@@ -173,17 +173,77 @@ QScrollArea {
     background-color: transparent;
 }
 QScrollArea#analysisToolbarScroll {
-    background-color: #f8fafc;
-    border-bottom: 1px solid #d1d6dd;
+    background-color: transparent;
+    border: none;
 }
 QWidget#analysisToolbar {
+    background-color: transparent;
+}
+QWidget#analysisToolbarCard {
+    background-color: #ffffff;
+    border: 1px solid #e3e7ec;
+    border-radius: 10px;
+}
+QFrame#toolbarSeparator {
+    color: #e3e7ec;
+    background-color: #e3e7ec;
+    max-width: 1px;
+}
+QWidget#analysisToolbar QComboBox,
+QWidget#analysisToolbar QPushButton {
+    min-height: 32px;
+    border-radius: 8px;
+}
+QPushButton#submitAnalysisButton {
+    background-color: #2178f2;
+    border-color: #2178f2;
+    color: #ffffff;
+    font-weight: bold;
+}
+QPushButton#submitAnalysisButton:hover {
+    background-color: #1769dc;
+}
+QPushButton#fetchDataButton {
+    background-color: #ffffff;
+    border-color: #cbd5e1;
+    color: #1f2937;
+    font-weight: normal;
+}
+QPushButton#fetchDataButton:hover {
     background-color: #f8fafc;
+    border-color: #93c5fd;
+}
+QPushButton#chartLiveUpdateButton {
+    border: none;
+    background: transparent;
+    color: #334155;
+    padding-left: 2px;
+    padding-right: 2px;
+}
+QPushButton#chartLiveUpdateButton:disabled {
+    color: #94a3b8;
+    background: transparent;
+}
+QLabel#chartRealtimeState {
+    color: #10a36a;
+    font-weight: 600;
+    padding-left: 0px;
+    padding-right: 4px;
+}
+QCheckBox#keepAnalysisSwitch {
+    min-width: 42px;
+    max-width: 42px;
+    padding: 0px;
 }
 QToolButton#analysisSettingsButton {
-    min-width: 52px;
-    padding: 4px 10px;
+    min-width: 34px;
+    max-width: 34px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0px;
+    font-size: 18px;
     border: 1px solid #d1d6dd;
-    border-radius: 6px;
+    border-radius: 8px;
 }
 QToolButton#analysisSettingsButton:hover {
     background-color: #eef1f4;
