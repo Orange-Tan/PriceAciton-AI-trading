@@ -176,3 +176,44 @@ def test_worker_done_still_writes_completion_status_without_prompting() -> None:
     assert status_messages == []
     assert window._stream_statuses == ["分析完成"]
     assert debug_reports == []
+
+
+def test_analysis_progress_updates_stream_and_flow_bar_without_bottom_status() -> None:
+    from pa_agent.gui.main_window import MainWindow
+
+    class _StreamPanel:
+        def __init__(self) -> None:
+            self.progress: list[str] = []
+            self.retries: list[str] = []
+
+        def on_analysis_progress(self, text: str) -> None:
+            self.progress.append(text)
+
+        def mark_retry(self, stage: str) -> None:
+            self.retries.append(stage)
+
+    class _FlowBar:
+        def __init__(self) -> None:
+            self.statuses: list[tuple[int, str]] = []
+            self.captions: list[tuple[int, str]] = []
+
+        def set_step_status(self, index: int, status: str) -> None:
+            self.statuses.append((index, status))
+
+        def set_step_caption(self, index: int, caption: str) -> None:
+            self.captions.append((index, caption))
+
+    status_messages: list[str] = []
+    window = MainWindow.__new__(MainWindow)
+    window._ui_is_alive = lambda: True
+    window._analysis_in_progress = True
+    window._status_bar = SimpleNamespace(showMessage=status_messages.append)
+    window._stream_panel = _StreamPanel()
+    window._flow_bar = _FlowBar()
+
+    window._on_status_update("阶段一分析中…")
+
+    assert status_messages == []
+    assert window._stream_panel.progress == ["阶段一分析中…"]
+    assert (2, "active") in window._flow_bar.statuses
+    assert (2, "分析中…") in window._flow_bar.captions

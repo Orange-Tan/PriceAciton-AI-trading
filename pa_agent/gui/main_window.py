@@ -1740,8 +1740,8 @@ class MainWindow(QMainWindow):
                     stream_panel.mark_retry("stage2")
                 else:
                     stream_panel.on_analysis_progress(text)
-            return
-        self._status_bar.showMessage(text)
+        else:
+            self._status_bar.showMessage(text)
         # ── Drive FlowBar step indicators ────────────────────────────────────
         flow = getattr(self, "_flow_bar", None)
         if flow is not None:
