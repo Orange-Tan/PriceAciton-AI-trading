@@ -191,8 +191,10 @@ QFrame#toolbarSeparator {
 }
 QWidget#analysisToolbar QComboBox,
 QWidget#analysisToolbar QPushButton {
-    min-height: 32px;
-    border-radius: 8px;
+    min-height: 22px;
+    max-height: 26px;
+    padding: 2px 10px;
+    border-radius: 6px;
 }
 QPushButton#submitAnalysisButton {
     background-color: #2178f2;
@@ -238,12 +240,12 @@ QCheckBox#keepAnalysisSwitch {
 QToolButton#analysisSettingsButton {
     min-width: 34px;
     max-width: 34px;
-    min-height: 32px;
-    max-height: 32px;
+    min-height: 26px;
+    max-height: 26px;
     padding: 0px;
-    font-size: 18px;
+    font-size: 16px;
     border: 1px solid #d1d6dd;
-    border-radius: 8px;
+    border-radius: 6px;
 }
 QToolButton#analysisSettingsButton:hover {
     background-color: #eef1f4;
@@ -251,11 +253,11 @@ QToolButton#analysisSettingsButton:hover {
 QToolButton#rightSidebarToggleButton {
     min-width: 34px;
     max-width: 34px;
-    min-height: 32px;
-    max-height: 32px;
+    min-height: 26px;
+    max-height: 26px;
     padding: 0px;
     border: 1px solid #d1d6dd;
-    border-radius: 8px;
+    border-radius: 6px;
     color: #2563eb;
 }
 QToolButton#rightSidebarToggleButton:hover {

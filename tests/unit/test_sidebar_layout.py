@@ -284,6 +284,7 @@ def test_analysis_toolbar_uses_reference_card_switch_and_live_state():
     from pa_agent.gui.main_window import MainWindow
 
     _qapp()
+    theme_apply.apply_theme(_qapp(), "light")
     ctx = AppContext(
         settings=Settings(),
         event_bus=EventBus(),
@@ -296,7 +297,10 @@ def test_analysis_toolbar_uses_reference_card_switch_and_live_state():
 
     card = window.findChild(QWidget, "analysisToolbarCard")
     assert card is not None
-    assert 55 <= card.height() <= 64
+    assert 48 <= card.height() <= 56
+    assert window._data_source_combo.height() <= 34
+    assert window._fetch_data_btn.height() <= 34
+    assert window._analysis_settings_button.height() <= 28
     assert window._keep_analysis_label.text() == "持续跟踪"
     assert window._keep_analysis_checkbox.objectName() == "keepAnalysisSwitch"
     assert window._keep_analysis_checkbox.text() == ""

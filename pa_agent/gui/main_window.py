@@ -612,20 +612,32 @@ class MainWindow(QMainWindow):
         toolbar_card = QWidget(toolbar_host)
         toolbar_card.setObjectName("analysisToolbarCard")
         toolbar_card_layout = QVBoxLayout(toolbar_card)
-        toolbar_card_layout.setContentsMargins(10, 6, 10, 6)
+        toolbar_card_layout.setContentsMargins(10, 4, 10, 4)
 
         toolbar_scroll = QScrollArea(toolbar_card)
         toolbar_scroll.setObjectName("analysisToolbarScroll")
         toolbar_scroll.setWidgetResizable(True)
         toolbar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         toolbar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        toolbar_scroll.setFixedHeight(46)
+        toolbar_scroll.setFixedHeight(42)
         toolbar_content = QWidget(toolbar_scroll)
         toolbar_content.setObjectName("analysisToolbar")
         toolbar_content.setMinimumHeight(40)
         toolbar_layout = QHBoxLayout(toolbar_content)
-        toolbar_layout.setContentsMargins(14, 4, 14, 4)
+        toolbar_layout.setContentsMargins(12, 3, 12, 3)
         toolbar_layout.setSpacing(12)
+
+        for compact_widget in (
+            self._data_source_combo,
+            self._tv_exchange_combo,
+            self._symbol_combo,
+            self._symbol_search_button,
+            self._tf_combo,
+            self._fetch_data_btn,
+            self._submit_btn,
+            self._resume_chart_btn,
+        ):
+            compact_widget.setFixedHeight(28)
 
         self._analysis_settings_button = QToolButton(toolbar_content)
         self._analysis_settings_button.setObjectName("analysisSettingsButton")
@@ -674,6 +686,19 @@ class MainWindow(QMainWindow):
         self._right_sidebar_toggle_button.setAutoRaise(True)
         toolbar_layout.addWidget(self._right_sidebar_toggle_button)
         toolbar_scroll.setWidget(toolbar_content)
+        for compact_widget in (
+            self._data_source_combo,
+            self._tv_exchange_combo,
+            self._symbol_combo,
+            self._symbol_search_button,
+            self._tf_combo,
+            self._fetch_data_btn,
+            self._submit_btn,
+            self._resume_chart_btn,
+            self._analysis_settings_button,
+            self._right_sidebar_toggle_button,
+        ):
+            compact_widget.setFixedHeight(28)
         toolbar_card_layout.addWidget(toolbar_scroll)
         toolbar_host_layout.addWidget(toolbar_card)
         self._analysis_toolbar_scroll = toolbar_scroll
