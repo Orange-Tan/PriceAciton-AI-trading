@@ -4,12 +4,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from PyQt6.QtCore import QThread, QTimer, pyqtSignal, QObject
-from PyQt6.QtGui import QAction, QCloseEvent, QShowEvent
+from PyQt6.QtCore import QThread, QTimer, QRectF, QSize, pyqtSignal, QObject
+from PyQt6.QtGui import QAction, QCloseEvent, QColor, QPainter, QShowEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -18,6 +19,7 @@ from PyQt6.QtWidgets import (
     QMenuBar,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStatusBar,
@@ -35,6 +37,35 @@ logger = logging.getLogger(__name__)
 
 # Zombie timeout in milliseconds (5 seconds)
 _WORKER_JOIN_TIMEOUT_MS = 5000
+
+
+class _ToggleSwitch(QCheckBox):
+    """Compact switch used by the top analysis toolbar."""
+
+    _WIDTH = 42
+    _HEIGHT = 24
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(self._WIDTH, self._HEIGHT)
+        self.stateChanged.connect(lambda _state: self.update())
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(self._WIDTH, self._HEIGHT)
+
+    def paintEvent(self, _event: Any) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        track_color = "#1f7bf2" if self.isChecked() else "#cbd5e1"
+        if not self.isEnabled():
+            track_color = "#e2e8f0"
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(track_color))
+        painter.drawRoundedRect(QRectF(0.5, 0.5, self.width() - 1, self.height() - 1), 12, 12)
+        knob = 18
+        knob_x = self.width() - knob - 3 if self.isChecked() else 3
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawEllipse(knob_x, 3, knob, knob)
 
 
 def _default_window_size(screen: Any | None) -> tuple[int, int]:
@@ -280,7 +311,6 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._status_bar)
         self._setup_ui()
         self._connect_event_bus()
-        self._update_ai_mode_label()
         self._sync_submit_button_state()
 
     # ── UI construction ───────────────────────────────────────────────────────
@@ -407,7 +437,8 @@ class MainWindow(QMainWindow):
             )
         self._active_data_source_kind = _last_ds
 
-        ctrl_layout.addWidget(QLabel("数据来源:"), 0, 0)
+        self._data_source_label = QLabel("数据来源:")
+        ctrl_layout.addWidget(self._data_source_label, 0, 0)
         self._data_source_combo = QComboBox()
         for kind, label in DATA_SOURCE_CHOICES:
             self._data_source_combo.addItem(label, kind)
@@ -488,7 +519,8 @@ class MainWindow(QMainWindow):
         ctrl_layout.addWidget(self._tv_exchange_combo, 0, 3)
 
         # Symbol — editable combo (user can type any symbol)
-        ctrl_layout.addWidget(QLabel("分析品种:"), 1, 0)
+        self._symbol_label = QLabel("代码/名称:")
+        ctrl_layout.addWidget(self._symbol_label, 1, 0)
         self._symbol_combo = QComboBox()
         self._symbol_combo.setEditable(True)
         self._symbol_combo.setCurrentText(_last_symbol)
@@ -496,6 +528,11 @@ class MainWindow(QMainWindow):
         self._apply_data_source_symbol_placeholder()
         ctrl_layout.addWidget(self._symbol_combo, 1, 1)
         self._populate_symbol_combo_for_source()
+        self._symbol_search_button = QToolButton()
+        self._symbol_search_button.setObjectName("symbolSearchButton")
+        self._symbol_search_button.setText("⌕")
+        self._symbol_search_button.setToolTip("搜索/选择代码或名称")
+        self._symbol_search_button.clicked.connect(self._focus_symbol_search)
 
         self._symbol_alert_label = QLabel("")
         self._symbol_alert_label.setStyleSheet("color: #f85149; font-size: 11px;")
@@ -504,7 +541,8 @@ class MainWindow(QMainWindow):
         ctrl_layout.addWidget(self._symbol_alert_label, 3, 0, 1, 4)
 
         # Timeframe
-        ctrl_layout.addWidget(QLabel("分析周期:"), 2, 0)
+        self._tf_label = QLabel("周期:")
+        ctrl_layout.addWidget(self._tf_label, 2, 0)
         self._tf_combo = QComboBox()
         self._tf_combo.addItems(["1m", "5m", "15m", "1h", "4h", "1d"])
         self._tf_combo.setCurrentText(_last_tf)
@@ -514,7 +552,7 @@ class MainWindow(QMainWindow):
         self._sync_tv_exchange_visibility()
 
         self._fetch_data_btn = QPushButton("获取数据")
-        self._fetch_data_btn.setObjectName("primaryButton")
+        self._fetch_data_btn.setObjectName("fetchDataButton")
         self._fetch_data_btn.setMinimumWidth(90)
         self._fetch_data_btn.setToolTip("开始从当前数据源持续拉取 K 线数据并实时更新图表")
         self._fetch_data_btn.clicked.connect(self._on_fetch_data_clicked)
@@ -528,14 +566,16 @@ class MainWindow(QMainWindow):
         )
         self._wait_close_checkbox.stateChanged.connect(self._on_wait_close_checkbox_changed)
         ctrl_row2.addWidget(self._wait_close_checkbox, 0, 0, 1, 2)
+        self._wait_close_checkbox.hide()
 
         self._wait_close_countdown_label = QLabel("")
         self._wait_close_countdown_label.setObjectName("mutedLabel")
         self._wait_close_countdown_label.setMinimumWidth(100)
         ctrl_row2.addWidget(self._wait_close_countdown_label, 0, 2)
+        self._wait_close_countdown_label.hide()
 
         self._submit_btn = QPushButton("提交分析")
-        self._submit_btn.setObjectName("primaryButton")
+        self._submit_btn.setObjectName("submitAnalysisButton")
         self._submit_btn.setMinimumWidth(100)
         self._submit_btn.clicked.connect(self._on_submit_analysis)
         ctrl_row2.addWidget(self._submit_btn, 2, 0, 1, 2)
@@ -560,13 +600,25 @@ class MainWindow(QMainWindow):
 
         # 持续跟踪分析勾选框：勾选后有新K线收盘时自动开始新一轮分析
         # 每次启动强制为未勾选，避免程序启动时立即自动拉取数据
-        self._keep_analysis_checkbox = QCheckBox("持续跟踪分析")
+        self._keep_analysis_label = QLabel("持续跟踪")
+        self._keep_analysis_checkbox = _ToggleSwitch()
+        self._keep_analysis_checkbox.setObjectName("keepAnalysisSwitch")
         self._keep_analysis_checkbox.setChecked(False)
         self._keep_analysis_checkbox.setToolTip(
             "勾选后，每当有新的K线收盘时自动开始新一轮分析"
         )
         self._keep_analysis_checkbox.stateChanged.connect(self._on_keep_analysis_checkbox_changed)
         ctrl_row2.addWidget(self._keep_analysis_checkbox, 1, 0, 1, 4)
+
+        # Instrument kind is shown only when the data source explicitly exposes
+        # metadata.  Never derive it from the symbol, exchange, or source name.
+        self._instrument_kind_label = QLabel("品种:")
+        self._instrument_kind_combo = QComboBox()
+        self._instrument_kind_combo.setObjectName("instrumentKindCombo")
+        self._instrument_kind_combo.setMinimumWidth(84)
+        self._instrument_kind_label.hide()
+        self._instrument_kind_combo.hide()
+        self._update_instrument_kind_from_source(getattr(self._ctx, "data_source", None))
 
         # Reset persisted keep_analysis flag so future restarts also start unchecked
         if _settings is not None:
@@ -576,6 +628,8 @@ class MainWindow(QMainWindow):
                 pass
 
         self._resume_chart_btn = QPushButton("图表实时更新")
+        self._resume_chart_btn.setObjectName("chartLiveUpdateButton")
+        self._resume_chart_btn.setFlat(True)
         self._resume_chart_btn.setEnabled(False)
         self._resume_chart_btn.setToolTip(
             "恢复 K 线实时刷新；最右侧未收盘 K 线为浅色空心 K 线，不参与 AI 分析"
@@ -588,86 +642,79 @@ class MainWindow(QMainWindow):
         )
         self._fit_chart_btn.clicked.connect(self._on_fit_chart)
 
-        self._decision_badge = QLabel("")
-        self._decision_badge.setObjectName("mutedLabel")
-        self._decision_badge.setStyleSheet(
-            "font-size: 16px; font-weight: 700; color: #078c48;"
-        )
+        # Fixed-height, horizontally scrollable single-line analysis toolbar.
+        toolbar_host = QWidget(tab)
+        toolbar_host.setObjectName("analysisToolbarHost")
+        toolbar_host_layout = QVBoxLayout(toolbar_host)
+        toolbar_host_layout.setContentsMargins(8, 6, 8, 6)
 
-        self._ai_mode_label = QLabel("")
-        self._ai_mode_label.setObjectName("mutedLabel")
-        self._ai_mode_label.setStyleSheet("font-size: 14px; color: #5f7188;")
-        self._ai_mode_label.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
-        )
-        self._ai_mode_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
+        toolbar_card = QWidget(toolbar_host)
+        toolbar_card.setObjectName("analysisToolbarCard")
+        toolbar_card_layout = QVBoxLayout(toolbar_card)
+        toolbar_card_layout.setContentsMargins(10, 6, 10, 6)
 
-        analysis_controls = QWidget()
-        analysis_controls.setObjectName("analysisSettingsContent")
-        analysis_controls.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
-        analysis_controls_layout = QVBoxLayout(analysis_controls)
-        analysis_controls_layout.setContentsMargins(0, 0, 0, 0)
-        analysis_controls_layout.setSpacing(10)
-        analysis_title = QLabel("分析设置")
-        analysis_title.setObjectName("sectionTitle")
-        analysis_controls_layout.addWidget(analysis_title)
-        status_strip = QWidget(analysis_controls)
-        status_strip.setObjectName("analysisStatusStrip")
-        status_strip.setStyleSheet(
-            "QWidget#analysisStatusStrip { background: #eaf8ef; border: 1px solid #c9e8d4; "
-            "border-radius: 8px; padding: 4px 8px; }"
-        )
-        status_strip_layout = QHBoxLayout(status_strip)
-        status_strip_layout.setContentsMargins(8, 5, 8, 5)
-        status_strip_layout.setSpacing(12)
-        status_strip_layout.addWidget(self._decision_badge)
-        status_strip_layout.addStretch(1)
-        status_strip_layout.addWidget(self._ai_mode_label)
-        self._status_strip = status_strip
-        analysis_controls_layout.addWidget(status_strip)
-        analysis_controls_layout.addLayout(ctrl_layout)
-        analysis_controls_layout.addLayout(ctrl_row2)
-        self._analysis_settings_content = analysis_controls
-        self._ai_sidebar.set_analysis_settings_content(analysis_controls)
+        toolbar_scroll = QScrollArea(toolbar_card)
+        toolbar_scroll.setObjectName("analysisToolbarScroll")
+        toolbar_scroll.setWidgetResizable(True)
+        toolbar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        toolbar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        toolbar_scroll.setFixedHeight(58)
+        toolbar_content = QWidget(toolbar_scroll)
+        toolbar_content.setObjectName("analysisToolbar")
+        toolbar_content.setMinimumHeight(40)
+        toolbar_layout = QHBoxLayout(toolbar_content)
+        toolbar_layout.setContentsMargins(14, 4, 14, 4)
+        toolbar_layout.setSpacing(12)
 
-        self._api_key_alert_label = QLabel(
-            "未配置 API Key：请点击左上角「设置 → 模型 API」填写 API Key 后才能进行 AI 分析。"
-        )
-        self._api_key_alert_label.setWordWrap(True)
-        self._api_key_alert_label.setStyleSheet(
-            "background-color: #3d2a00; color: #ffb86c; padding: 8px 10px; "
-            "border: 1px solid #8a6d2f; border-radius: 4px; font-weight: 600;"
-        )
-        self._api_key_alert_label.hide()
-        analysis_controls_layout.addWidget(self._api_key_alert_label)
+        toolbar_layout.addWidget(self._data_source_label)
+        toolbar_layout.addWidget(self._data_source_combo)
+        toolbar_layout.addWidget(self._tv_exchange_label)
+        toolbar_layout.addWidget(self._tv_exchange_combo)
+        toolbar_layout.addWidget(self._instrument_kind_label)
+        toolbar_layout.addWidget(self._instrument_kind_combo)
+        toolbar_layout.addWidget(self._symbol_label)
+        toolbar_layout.addWidget(self._symbol_combo)
+        toolbar_layout.addWidget(self._symbol_search_button)
+        toolbar_layout.addWidget(self._tf_label)
+        toolbar_layout.addWidget(self._tf_combo)
+        toolbar_layout.addWidget(self._fetch_data_btn)
+        toolbar_layout.addWidget(self._submit_btn)
+        tracking_separator = QFrame(toolbar_content)
+        tracking_separator.setObjectName("toolbarSeparator")
+        tracking_separator.setFrameShape(QFrame.Shape.VLine)
+        toolbar_layout.addWidget(tracking_separator)
+        toolbar_layout.addWidget(self._keep_analysis_label)
+        toolbar_layout.addWidget(self._keep_analysis_checkbox)
+        chart_separator = QFrame(toolbar_content)
+        chart_separator.setObjectName("toolbarSeparator")
+        chart_separator.setFrameShape(QFrame.Shape.VLine)
+        toolbar_layout.addWidget(chart_separator)
+        toolbar_layout.addWidget(self._resume_chart_btn)
+        self._chart_realtime_state = QLabel("实时 ●")
+        self._chart_realtime_state.setObjectName("chartRealtimeState")
+        self._chart_realtime_state.setToolTip("图表实时刷新状态")
+        toolbar_layout.addWidget(self._chart_realtime_state)
+        toolbar_layout.addStretch(1)
+        self._analysis_settings_button = QToolButton(toolbar_content)
+        self._analysis_settings_button.setObjectName("analysisSettingsButton")
+        self._analysis_settings_button.setText("⚙")
+        self._analysis_settings_button.setToolTip("打开应用设置")
+        self._analysis_settings_button.clicked.connect(self._open_app_settings_dialog)
+        toolbar_layout.addWidget(self._analysis_settings_button)
+        toolbar_scroll.setWidget(toolbar_content)
+        toolbar_card_layout.addWidget(toolbar_scroll)
+        toolbar_host_layout.addWidget(toolbar_card)
+        self._analysis_toolbar_scroll = toolbar_scroll
 
-        # Risk disclaimer (UI-only; never included in AI prompts)
-        self._disclaimer_label = QLabel("分析仅供参考，不构成投资建议")
-        self._disclaimer_label.setObjectName("mutedLabel")
-        self._disclaimer_label.setWordWrap(True)
-        self._disclaimer_label.setStyleSheet(
-            f"color: {T.FG_2}; font-size: 11px; padding: 2px 0;"
-        )
-        analysis_controls_layout.addWidget(self._disclaimer_label)
-
-        status_row = QHBoxLayout()
-        status_row.addStretch()
         self._last_refresh_ts: float = 0.0
         self._refresh_elapsed_label = QLabel("距上次刷新: —")
         self._refresh_elapsed_label.setObjectName("mutedLabel")
-        status_row.addWidget(self._refresh_elapsed_label)
 
         from PyQt6.QtCore import QTimer as _QTimer
         self._elapsed_ticker = _QTimer(tab)
         self._elapsed_ticker.setInterval(1000)
         self._elapsed_ticker.timeout.connect(self._update_refresh_elapsed)
         self._elapsed_ticker.start()
-
-        analysis_controls_layout.addLayout(status_row)
 
         workbench = QSplitter(Qt.Orientation.Horizontal)
         self._workbench = workbench
@@ -724,7 +771,6 @@ class MainWindow(QMainWindow):
         chart_toolbar_layout.setContentsMargins(8, 6, 8, 6)
         chart_toolbar_layout.setSpacing(8)
         chart_toolbar_layout.addStretch(1)
-        chart_toolbar_layout.addWidget(self._resume_chart_btn)
         chart_toolbar_layout.addWidget(self._fit_chart_btn)
         self._chart_toolbar = chart_toolbar
         chart_panel_layout.addWidget(chart_toolbar)
@@ -740,6 +786,7 @@ class MainWindow(QMainWindow):
         workbench.setStretchFactor(2, 2)
         workbench.setCollapsible(0, False)
 
+        outer_layout.addWidget(toolbar_host)
         outer_layout.addWidget(workbench, stretch=1)
 
         # Connect symbol/timeframe combo boxes to the switch handler
@@ -1072,6 +1119,13 @@ class MainWindow(QMainWindow):
     def _current_data_source_kind(self) -> str:
         return getattr(self, "_active_data_source_kind", "tradingview")
 
+    def _focus_symbol_search(self) -> None:
+        """Focus the editable code/name field from the toolbar search affordance."""
+        line = self._symbol_combo.lineEdit()
+        if line is not None:
+            line.setFocus()
+            line.selectAll()
+
     def _tv_exchange_text(self) -> str:
         combo = getattr(self, "_tv_exchange_combo", None)
         if combo is None:
@@ -1097,6 +1151,33 @@ class MainWindow(QMainWindow):
             if w is not None:
                 w.setVisible(visible)
                 w.setEnabled(visible)
+
+    def _update_instrument_kind_from_source(self, source: Any | None) -> None:
+        """Display only instrument metadata explicitly provided by *source*.
+
+        Symbol text, exchange, data-source names, frames, and responses are
+        intentionally never interpreted as an instrument kind. Providers may
+        expose the value directly on the source object.
+        """
+        label = getattr(self, "_instrument_kind_label", None)
+        combo = getattr(self, "_instrument_kind_combo", None)
+        if label is None or combo is None:
+            return
+        value: object | None = None
+        if source is not None:
+            for name in ("instrument_kind", "asset_type", "instrument_type"):
+                raw = getattr(source, name, None)
+                if raw is not None and str(raw).strip():
+                    value = raw
+                    break
+        combo.clear()
+        if value is None:
+            label.hide()
+            combo.hide()
+            return
+        combo.addItem(str(value).strip())
+        label.show()
+        combo.show()
 
     def _force_tv_exchange_auto(self) -> None:
         """Force TradingView exchange UI to «auto» (empty string)."""
@@ -1367,6 +1448,7 @@ class MainWindow(QMainWindow):
             new_source.subscribe(symbol, timeframe)
 
             self._ctx.data_source = new_source
+            self._update_instrument_kind_from_source(new_source)
 
             self._populate_symbol_combo_for_source()
             self._populate_timeframe_combo_for_source()
@@ -1686,32 +1768,39 @@ class MainWindow(QMainWindow):
             return 100
         return int(getattr(settings.general, "analysis_bar_count", 100))
 
+    def _set_stream_status(self, text: str) -> None:
+        """Push AI status text into the live stream panel."""
+        panel = getattr(self, "_stream_panel", None)
+        if panel is None or not text:
+            return
+        try:
+            panel.set_status(text)
+        except (AttributeError, RuntimeError):
+            pass
+
     def _on_status_update(self, text: str) -> None:
-        """Update the status bar with subscription / analysis / data-delay text."""
+        """Update the status bar for non-AI text and route AI text to the stream pane."""
         if not self._ui_is_alive():
             return
         if not text:
-            # Empty string means data fetch recovered — clear any previous error.
             if not self._analysis_in_progress:
                 self._status_bar.clearMessage()
             return
-        stream_panel = getattr(self, "_stream_panel", None)
-        if stream_panel is not None:
-            stream_panel.set_status(text)
-        self._status_bar.showMessage(text)
         if text == "数据延迟":
+            self._status_bar.showMessage(text)
             self._update_symbol_data_alert()
+            return
         if self._analysis_in_progress:
-            if "分析中" in text:
-                self._decision_badge.setText("● 分析中…")
-            panel = stream_panel
-            if panel is not None:
+            stream_panel = getattr(self, "_stream_panel", None)
+            if stream_panel is not None:
                 if text in ("阶段一重试",):
-                    panel.mark_retry("stage1")
+                    stream_panel.mark_retry("stage1")
                 elif text in ("阶段二重试",):
-                    panel.mark_retry("stage2")
+                    stream_panel.mark_retry("stage2")
                 else:
-                    panel.on_analysis_progress(text)
+                    stream_panel.on_analysis_progress(text)
+        else:
+            self._status_bar.showMessage(text)
         # ── Drive FlowBar step indicators ────────────────────────────────────
         flow = getattr(self, "_flow_bar", None)
         if flow is not None:
@@ -2903,7 +2992,6 @@ class MainWindow(QMainWindow):
         self._demo_mode_label.setText(f"当前为演示模式 · {name}")
         self._demo_mode_label.show()
         self._status_bar.showMessage(f"演示回放中… ({name})")
-        self._decision_badge.setText("演示中…")
 
         self._ai_sidebar.focus_stream()
         panel = self._stream_panel
@@ -3012,7 +3100,6 @@ class MainWindow(QMainWindow):
         self._analysis_in_progress = False
         self._set_chart_refresh_paused(False)
         self._update_submit_button_state()
-        self._decision_badge.setText("")
 
         if was_demo and not silent:
             if hasattr(self, "_chart_widget"):
@@ -3063,6 +3150,9 @@ class MainWindow(QMainWindow):
         timeframe = self._tf_combo.currentText()
         bar_count = self._analysis_bar_count()
 
+        # Keep the existing deferred-submit behavior for programmatic or
+        # persisted callers, even though the wait controls are hidden from the
+        # reference toolbar.
         if self._wait_close_checkbox.isChecked():
             if not self._arm_wait_for_bar_close(
                 symbol,
@@ -3192,8 +3282,7 @@ class MainWindow(QMainWindow):
         self._analysis_in_progress = True
         self._last_analysis_had_error = False
         self._update_submit_button_state()
-        self._status_bar.showMessage("准备分析…（构建快照）")
-        self._decision_badge.setText("准备中…")
+        self._set_stream_status("准备分析…（构建快照）")
 
         from pa_agent.gui.analysis_prep_worker import AnalysisPrepWorker
 
@@ -3235,8 +3324,7 @@ class MainWindow(QMainWindow):
             self._prep_worker = None
             self._analysis_in_progress = False
             self._update_submit_button_state()
-            self._status_bar.showMessage(msg or "准备分析失败")
-            self._decision_badge.setText("")
+            self._set_stream_status(msg or "准备分析失败")
 
         prep.ready.connect(_on_ready)
         prep.failed.connect(_on_failed)
@@ -3381,15 +3469,10 @@ class MainWindow(QMainWindow):
                 detail = incremental_detail or f"新增{incremental_new_bar_count}根已收盘K线"
             else:
                 detail = "无新增K线，基于上一轮结论复核"
-            self._status_bar.showMessage(
-                f"{prefix}…（倾向:{stance_label}，{detail}，图表已冻结）"
-            )
+            self._set_stream_status(f"{prefix}…（倾向:{stance_label}，{detail}，图表已冻结）")
             logger.info("Incremental submit: %s", detail)
         else:
-            self._status_bar.showMessage(
-                f"分析中…（倾向:{stance_label}，图表已冻结，K1=最新已收盘K线）"
-            )
-        self._decision_badge.setText("● 分析中…")
+            self._set_stream_status(f"分析中…（倾向:{stance_label}，图表已冻结，K1=最新已收盘K线）")
         self._ai_sidebar.focus_stream()
 
         panel = getattr(self, "_stream_panel", None)
@@ -3559,8 +3642,6 @@ class MainWindow(QMainWindow):
                 confidence_threshold=self._confidence_threshold(),
             )
             self._bind_decision_tree(decision, stage1_diag or None)
-            order = inner.get("order_type", "—")
-            self._decision_badge.setText(f"决策: {order}")
             if self._maybe_alert_order_opportunity(inner):
                 self._spawn_post_order_followup(inner, decision)
 
@@ -3640,7 +3721,6 @@ class MainWindow(QMainWindow):
             self._decision_tree_panel.clear()
             if getattr(self, "_decision_flow_viz_panel", None) is not None:
                 self._decision_flow_viz_panel.clear()
-            self._decision_badge.setText("")
             strip = getattr(self, "_summary_strip", None)
             if strip is not None:
                 strip.reset()
@@ -3834,6 +3914,7 @@ class MainWindow(QMainWindow):
                 })
             except (AttributeError, RuntimeError):
                 pass
+        self._set_stream_status(message or "分析错误")
 
     def _on_retry_occurred(self, stage: str) -> None:
         """Handle retry event: if cancel_keep_analysis_on_retry is enabled, disable keep_analysis."""
@@ -3964,12 +4045,11 @@ class MainWindow(QMainWindow):
             msg = exc_info.get("message", "")
             if err_type == "provider_error" or category == "e":
                 detail = msg or "OpenClaw 积分不足，请充值或更换 API"
-                self._status_bar.showMessage(detail)
             elif err_type == "auth_error":
-                self._status_bar.showMessage("API Key 无效，请到设置中重新填写")
+                detail = "API Key 无效，请到设置中重新填写"
             else:
                 detail = f"{category}: {msg}" if category else (msg or err_type)
-                self._status_bar.showMessage(detail)
+            self._set_stream_status(detail)
         else:
             self._last_analysis_had_error = False
 
@@ -4352,7 +4432,7 @@ class MainWindow(QMainWindow):
                 msg = "分析完成，图表已恢复实时更新"
             else:
                 msg = "分析完成"
-            self._status_bar.showMessage(msg)
+            self._set_stream_status(msg)
         except RuntimeError as exc:
             logger.debug("MainWindow UI torn down during worker cleanup: %s", exc)
 
@@ -4476,7 +4556,6 @@ class MainWindow(QMainWindow):
         self._debug_widget._api_key = key
         self._ai_sidebar.bind_settings(settings)
         update_api_key(key)
-        self._update_ai_mode_label()
         self._refresh_api_key_ui_state()
 
         # 通用设置可能改变图表字号/决策树缩放；界面风格可能已切换
@@ -4508,45 +4587,6 @@ class MainWindow(QMainWindow):
         if flow_viz is not None:
             flow_viz.refit_view()
             flow_viz.schedule_refit_view()
-
-    def _update_ai_mode_label(self) -> None:
-        """Show current thinking / reasoning_effort / model in the toolbar."""
-        settings = getattr(self._ctx, "settings", None)
-        if settings is None:
-            self._ai_mode_label.setText("")
-            return
-        p = settings.provider
-        base = (p.base_url or "").lower()
-        if "deepseek.com" in base:
-            self._ai_mode_label.setText(f"深度求索 DeepSeek · {p.model}")
-        elif "kkone.vip" in base:
-            thinking = "开" if p.thinking else "关"
-            effort = p.reasoning_effort if p.thinking else "—"
-            self._ai_mode_label.setText(
-                f"KKAI 思考: {thinking} · budget≈{effort} · {p.model}"
-            )
-        elif "yunwu.ai" in base:
-            thinking = "开" if p.thinking else "关"
-            effort = p.reasoning_effort if p.thinking else "—"
-            mode = "adaptive" if "opus-4-7" in p.model or "opus-4-6" in p.model else "effort"
-            self._ai_mode_label.setText(
-                f"云雾 思考: {thinking} · {mode}={effort} · {p.model}"
-            )
-        elif "packyapi.com" in base:
-            thinking = "开" if p.thinking else "关"
-            effort = p.reasoning_effort if p.thinking else "—"
-            mode = "adaptive" if "opus-4-7" in p.model or "opus-4-6" in p.model else "effort"
-            self._ai_mode_label.setText(
-                f"PackyAPI 思考: {thinking} · {mode}={effort} · {p.model}"
-            )
-        else:
-            from pa_agent.config.model_providers import find_provider, guess_provider
-
-            preset = find_provider(guess_provider(p.base_url, p.model))
-            vendor = f"{preset.name} · " if preset else ""
-            self._ai_mode_label.setText(
-                f"{vendor}{p.model} · 思考={('开' if p.thinking else '关')}"
-            )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
