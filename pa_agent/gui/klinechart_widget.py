@@ -1,7 +1,9 @@
 """Qt WebEngine host for the local KLineChart page."""
+
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -20,11 +22,6 @@ from pa_agent.data.base import KlineFrame
 def klinechart_available() -> bool:
     """Return whether the optional Qt WebEngine dependency is importable."""
     return QWebEngineView is not None
-
-
-def tradingview_available() -> bool:
-    """Backward-compatible alias for callers that still use the old name."""
-    return klinechart_available()
 
 
 def frame_to_klinechart_bars(frame: KlineFrame) -> list[dict[str, Any]]:
@@ -123,7 +120,7 @@ def decision_to_klinechart_overlays(
     entry = decision.get("entry_price")
     direction = str(decision.get("order_direction", "") or "")
     if entry is not None and direction in {"做多", "做空"}:
-        try:
+        with suppress(TypeError, ValueError):
             overlays.append(
                 {
                     "id": "decision-direction",
@@ -134,14 +131,12 @@ def decision_to_klinechart_overlays(
                     "color": "#22c55e" if direction == "做多" else "#ef4444",
                 }
             )
-        except (TypeError, ValueError):
-            pass
     return overlays
 
 
 if QWebEngineView is not None:
 
-    class TradingViewChartWidget(QWebEngineView):
+    class KLineChartWidget(QWebEngineView):
         """KLineChart-backed replacement implementing the ChartWidget surface."""
 
         def __init__(self, parent: Any = None) -> None:
@@ -217,7 +212,7 @@ if QWebEngineView is not None:
         def refresh_theme(self) -> None:
             """Keep the KLineChart page theme stable with the existing chart surface."""
 
-        def closeEvent(self, event: Any) -> None:  # noqa: N802
+        def closeEvent(self, event: Any) -> None:
             super().closeEvent(event)
 
         def _on_loaded(self, ok: bool) -> None:
@@ -243,7 +238,7 @@ if QWebEngineView is not None:
             )
             if frame_key != self._last_frame_key:
                 self._run_json(
-                    "setFrame",
+                    "setContext",
                     {"symbol": frame.symbol, "timeframe": frame.timeframe},
                 )
             if can_update_last:
@@ -275,7 +270,7 @@ if QWebEngineView is not None:
 
 else:
 
-    class TradingViewChartWidget:  # pragma: no cover - import-time fallback only
+    class KLineChartWidget:  # pragma: no cover - import-time fallback only
         """Placeholder used when QtWebEngine is unavailable."""
 
         def __init__(self, *_args: Any, **_kwargs: Any) -> None:

@@ -742,13 +742,10 @@ class MainWindow(QMainWindow):
         # KLineChart is hosted in Qt WebEngine when the optional dependency is
         # installed. Keep the existing pyqtgraph widget as a graceful fallback
         # for deployments that have not installed WebEngine yet.
-        from pa_agent.gui.tradingview_chart_widget import (
-            TradingViewChartWidget,
-            klinechart_available,
-        )
+        from pa_agent.gui.klinechart_widget import KLineChartWidget, klinechart_available
 
         if klinechart_available():
-            self._chart_widget = TradingViewChartWidget(parent=workbench)
+            self._chart_widget = KLineChartWidget(parent=workbench)
             logger.info("Using embedded KLineChart")
         else:
             self._chart_widget = ChartWidget(parent=workbench)

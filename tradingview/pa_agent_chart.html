@@ -151,7 +151,7 @@
           if (!c) { pendingData = latestBars; return; }
           c.resetData();
         },
-        setFrame: function (frame) {
+        setContext: function (frame) {
           var c = ensureChart();
           if (!c || !frame) return;
           c.setSymbol({ ticker: frame.symbol || 'PA', pricePrecision: 6, volumePrecision: 2 });

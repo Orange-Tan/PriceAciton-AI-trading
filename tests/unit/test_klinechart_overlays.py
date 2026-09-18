@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 PAGE = Path(__file__).parents[2] / "tradingview" / "pa_agent_chart.html"
 
 
@@ -9,7 +8,7 @@ def test_page_exposes_program_overlay_and_user_drawing_controls() -> None:
 
     assert "horizontalStraightLine" in html
     assert "straightLine" in html
-    assert "data-overlay=\"paRect\"" in html
+    assert 'data-overlay="paRect"' in html
     assert "groupId: 'program'" in html
     assert "groupId: 'user'" in html
     assert "removeOverlay({ groupId: 'user' })" in html

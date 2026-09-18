@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pa_agent.data.base import IndicatorBundle, KlineBar, KlineFrame
-from pa_agent.gui.tradingview_chart_widget import (
+from pa_agent.gui.klinechart_widget import (
     decision_to_klinechart_overlays,
     frame_to_klinechart_bars,
     levels_to_klinechart_overlays,
@@ -43,7 +43,13 @@ def test_empty_frame_payload_is_empty() -> None:
 
 
 def test_program_overlays_map_levels_and_trade_decision() -> None:
-    levels = [type("Level", (), {"kind": "support", "price": 9.5, "low": 9.0, "high": 10.0, "label": "支撑"})()]
+    levels = [
+        type(
+            "Level",
+            (),
+            {"kind": "support", "price": 9.5, "low": 9.0, "high": 10.0, "label": "支撑"},
+        )()
+    ]
     level_items = levels_to_klinechart_overlays(levels, _frame())
     decision_items = decision_to_klinechart_overlays(
         {

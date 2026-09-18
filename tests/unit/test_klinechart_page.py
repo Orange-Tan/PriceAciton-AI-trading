@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 PAGE = Path(__file__).parents[2] / "tradingview" / "pa_agent_chart.html"
 
 
@@ -12,7 +11,7 @@ def test_chart_page_uses_local_klinechart_and_exposes_bridge_methods() -> None:
     assert "datafeeds/udf" not in html
     for method in (
         "setData",
-        "setFrame",
+        "setContext",
         "updateData",
         "setProgramOverlays",
         "clearProgramOverlays",
@@ -21,6 +20,7 @@ def test_chart_page_uses_local_klinechart_and_exposes_bridge_methods() -> None:
         assert f"{method}:" in html
     assert "setDataLoader" in html
     assert "resetData" in html
+    assert "setFrame:" not in html
 
 
 def test_chart_page_does_not_load_remote_scripts() -> None:
