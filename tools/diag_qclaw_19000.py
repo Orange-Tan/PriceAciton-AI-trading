@@ -1,11 +1,9 @@
 """Diagnose QClaw internal proxy (19000) vs relay (19004) payloads."""
+
 from __future__ import annotations
 
-import json
-from qclaw_gateway_token import read_gateway_token
-import sys
-
 import httpx
+from qclaw_gateway_token import read_gateway_token
 
 TOKEN = read_gateway_token()
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
@@ -16,57 +14,73 @@ ENDPOINTS = [
 ]
 
 PAYLOADS = [
-    ("minimal", {
-        "model": "pool-deepseek-v4-pro",
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 16,
-        "stream": False,
-    }),
-    ("reasoning_effort", {
-        "model": "pool-deepseek-v4-pro",
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 16,
-        "stream": False,
-        "reasoning_effort": "low",
-    }),
-    ("adaptive-thinking", {
-        "model": "pool-deepseek-v4-pro",
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 16,
-        "stream": False,
-        "thinking": {"type": "adaptive"},
-        "output_config": {"effort": "low"},
-    }),
-    ("deepseek-v4-pro", {
-        "model": "deepseek-v4-pro",
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 16,
-        "stream": False,
-        "reasoning_effort": "max",
-    }),
-    ("modelroute", {
-        "model": "modelroute",
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 16,
-        "stream": False,
-    }),
-    ("stream-adaptive", {
-        "model": "pool-deepseek-v4-pro",
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 16,
-        "stream": True,
-        "thinking": {"type": "adaptive"},
-        "output_config": {"effort": "low"},
-    }),
+    (
+        "minimal",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+        },
+    ),
+    (
+        "reasoning_effort",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+            "reasoning_effort": "low",
+        },
+    ),
+    (
+        "adaptive-thinking",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "low"},
+        },
+    ),
+    (
+        "deepseek-v4-pro",
+        {
+            "model": "deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+            "reasoning_effort": "max",
+        },
+    ),
+    (
+        "modelroute",
+        {
+            "model": "modelroute",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+        },
+    ),
+    (
+        "stream-adaptive",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": True,
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "low"},
+        },
+    ),
 ]
 
 
 def try_post(url: str, payload: dict) -> tuple[int, str]:
     try:
         if payload.get("stream"):
-            with httpx.stream(
-                "POST", url, headers=HEADERS, json=payload, timeout=30.0
-            ) as r:
+            with httpx.stream("POST", url, headers=HEADERS, json=payload, timeout=30.0) as r:
                 chunks = []
                 for line in r.iter_lines():
                     if line.startswith("data: "):

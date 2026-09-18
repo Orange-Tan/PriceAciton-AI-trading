@@ -1,4 +1,5 @@
 """One-off: strip stage-2 trade rules from 市场诊断框架.txt (stage-1 diagnosis only)."""
+
 from __future__ import annotations
 
 import re
@@ -99,7 +100,7 @@ def main() -> None:
     )
     text = text.replace(
         '市场周期频谱由强到弱分为8种状态。每种状态不仅有"识别标准"和"交易含义"，更有详细的"对应决策怎么做"——告诉你具体怎么入场、止损、止盈，以及绝对不能做什么。',
-        '市场周期频谱由强到弱分为8种状态。每种状态有「识别标准」与「交易含义」（方向偏好、常见陷阱、概率要点）；具体入场止损止盈见阶段二路由的策略文件。',
+        "市场周期频谱由强到弱分为8种状态。每种状态有「识别标准」与「交易含义」（方向偏好、常见陷阱、概率要点）；具体入场止损止盈见阶段二路由的策略文件。",
     )
 
     # Remove 清单E
@@ -138,7 +139,7 @@ def main() -> None:
         count=1,
     )
     text = text.replace(
-        "- 周期位置变化时，立即调整对应决策（参考\"周期转换时的决策调整规则\"）",
+        '- 周期位置变化时，立即调整对应决策（参考"周期转换时的决策调整规则"）',
         "- 周期位置变化时，更新 cycle_position、direction、strategy_files_needed（§2.5 惯性不足不单独设 gate_result=wait，见二元决策 §2.5）",
     )
 

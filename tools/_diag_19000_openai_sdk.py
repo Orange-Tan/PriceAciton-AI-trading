@@ -1,4 +1,5 @@
 from qclaw_gateway_token import read_gateway_token
+
 """Test 19000 via OpenAI SDK inside agent exec (historical success path)."""
 try:
     from openai import OpenAI

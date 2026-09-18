@@ -1,4 +1,5 @@
 """Qt-free normalization helpers for grouped watchlist settings."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -57,16 +58,11 @@ def migrate_watchlist(groups: object, legacy_symbols: object) -> dict[str, list[
         if named in ({DEFAULT_GROUP}, set()) and not _symbols(groups.get(DEFAULT_GROUP)):
             return default_watchlist_groups()
     normalized = normalize_watchlist_groups(groups)
-    has_explicit = isinstance(groups, Mapping) and any(
-        str(name or "").strip() for name in groups
-    )
+    has_explicit = isinstance(groups, Mapping) and any(str(name or "").strip() for name in groups)
     if not has_explicit:
         normalized[DEFAULT_GROUP] = legacy
     return normalized
 
 
 def serialize_watchlist_groups(groups: dict[str, list[str]]) -> dict[str, list[str]]:
-    return {
-        name: list(symbols)
-        for name, symbols in normalize_watchlist_groups(groups).items()
-    }
+    return {name: list(symbols) for name, symbols in normalize_watchlist_groups(groups).items()}

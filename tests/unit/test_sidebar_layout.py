@@ -1,19 +1,24 @@
 """Regression tests for the right-sidebar status/summary layout."""
+
 from __future__ import annotations
 
 import sys
 from types import SimpleNamespace
 
-from PyQt6.QtWidgets import QApplication, QScrollArea, QPushButton, QWidget
-from PyQt6.QtWidgets import QLabel, QToolButton
-from PyQt6.QtWidgets import QSplitter
+from PyQt6.QtWidgets import (
+    QApplication,
+    QPushButton,
+    QScrollArea,
+    QSplitter,
+    QToolButton,
+    QWidget,
+)
 
 from pa_agent.app_context import AppContext
 from pa_agent.config.settings import Settings
 from pa_agent.gui.ai_stream_window import AIStreamPanel
 from pa_agent.gui.decision_panel import DecisionPanel
-from pa_agent.gui.theme import tokens as T
-from pa_agent.gui.theme import apply as theme_apply
+from pa_agent.gui.theme import apply as theme_apply, tokens as T
 from pa_agent.util.event_bus import EventBus
 
 _APP: QApplication | None = None
@@ -258,9 +263,7 @@ def test_top_menu_is_removed_and_sidebar_toggle_sits_after_settings_gear():
     toolbar = window._analysis_toolbar_scroll.widget()
     row = toolbar.layout()
     assert row is not None
-    assert row.indexOf(window._analysis_settings_button) < row.indexOf(
-        window._data_source_combo
-    )
+    assert row.indexOf(window._analysis_settings_button) < row.indexOf(window._data_source_combo)
     assert window._right_sidebar_toggle_button.parentWidget() is toolbar
     assert row.indexOf(window._analysis_settings_button) < row.indexOf(
         window._right_sidebar_toggle_button

@@ -16,13 +16,14 @@
 协议参考来源（larksuite/cli 官方源码）：
   internal/auth/app_registration.go / device_flow.go / paths.go
 """
+
 from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Event
-from typing import Callable
 from urllib.parse import quote
 
 import requests  # type: ignore[import]
@@ -71,12 +72,7 @@ class RegistrationResult:
 
 
 def _error_text(data: dict) -> str:
-    return str(
-        data.get("error_description")
-        or data.get("error")
-        or data.get("msg")
-        or "未知错误"
-    )
+    return str(data.get("error_description") or data.get("error") or data.get("msg") or "未知错误")
 
 
 def begin_registration() -> BeginInfo:
@@ -118,8 +114,7 @@ def begin_registration() -> BeginInfo:
         expires_in, interval = 600, 5
 
     verification_url = (
-        f"{_REGISTRATION_PAGE}?user_code={quote(user_code)}"
-        f"&from=sdk&source=pa-agent&tp=sdk"
+        f"{_REGISTRATION_PAGE}?user_code={quote(user_code)}" f"&from=sdk&source=pa-agent&tp=sdk"
     )
     logger.info(
         "飞书扫码注册已发起 device_code=%s… user_code=%s",
@@ -221,9 +216,7 @@ def poll_registration(
                 client_secret=client_secret,
                 open_id=user_info.get("open_id") or "",
                 tenant_brand=tenant_brand or "feishu",
-                name=user_info.get("name")
-                or user_info.get("display_name")
-                or "",
+                name=user_info.get("name") or user_info.get("display_name") or "",
             )
             logger.info(
                 "飞书扫码绑定成功 app=%s… user=%s brand=%s",

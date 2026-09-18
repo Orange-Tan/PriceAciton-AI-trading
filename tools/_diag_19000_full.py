@@ -1,37 +1,48 @@
 """Full payload matrix matching historical successful tests."""
+
 import json
-from qclaw_gateway_token import read_gateway_token
 import urllib.error
 import urllib.request
+
+from qclaw_gateway_token import read_gateway_token
 
 URL = "http://127.0.0.1:19000/proxy/llm/chat/completions"
 TOKEN = read_gateway_token()
 
 CASES = [
-    ("hist-stream-full", {
-        "model": "pool-deepseek-v4-pro",
-        "messages": [{"role": "user", "content": "hi"}],
-        "stream": True,
-        "max_tokens": 524288,
-        "reasoning_effort": "max",
-        "stream_options": {"include_usage": True},
-        "thinking": {"type": "adaptive"},
-        "output_config": {"effort": "max"},
-    }),
-    ("hist-nonstream", {
-        "model": "pool-deepseek-v4-pro",
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 50,
-        "stream": False,
-    }),
-    ("api-server-style", {
-        "model": "pool-deepseek-v4-pro",
-        "messages": [{"role": "user", "content": "hi"}],
-        "max_tokens": 50,
-        "temperature": 0.6,
-        "reasoning_effort": "max",
-        "stream": False,
-    }),
+    (
+        "hist-stream-full",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+            "max_tokens": 524288,
+            "reasoning_effort": "max",
+            "stream_options": {"include_usage": True},
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "max"},
+        },
+    ),
+    (
+        "hist-nonstream",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 50,
+            "stream": False,
+        },
+    ),
+    (
+        "api-server-style",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 50,
+            "temperature": 0.6,
+            "reasoning_effort": "max",
+            "stream": False,
+        },
+    ),
 ]
 
 for name, body in CASES:
@@ -40,7 +51,9 @@ for name, body in CASES:
         "Authorization": f"Bearer {TOKEN}",
         "Host": "127.0.0.1:19000",
     }
-    req = urllib.request.Request(URL, data=json.dumps(body).encode(), headers=headers, method="POST")
+    req = urllib.request.Request(
+        URL, data=json.dumps(body).encode(), headers=headers, method="POST"
+    )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             raw = resp.read(500)

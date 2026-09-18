@@ -1,4 +1,5 @@
 """Read QClaw gateway token from local OpenClaw config (never hardcode tokens)."""
+
 from __future__ import annotations
 
 import json

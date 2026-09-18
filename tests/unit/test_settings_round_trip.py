@@ -1,12 +1,14 @@
 """Unit tests for settings load/save round-trip (task 2.4)."""
+
 from __future__ import annotations
+
 import json
 import sys
 import types
 from unittest.mock import patch
 
 import pytest
-from pathlib import Path
+
 from pa_agent.config.settings import AIProviderSettings, Settings, load_settings, save_settings
 
 
@@ -41,7 +43,9 @@ def test_round_trip(tmp_path, monkeypatch):
         sys.modules,
         "keyring",
         types.SimpleNamespace(
-            set_password=lambda service, username, value: stored.__setitem__((service, username), value),
+            set_password=lambda service, username, value: stored.__setitem__(
+                (service, username), value
+            ),
             get_password=lambda service, username: stored.get((service, username)),
             delete_password=lambda service, username: stored.pop((service, username), None),
         ),
@@ -62,7 +66,9 @@ def test_api_key_is_stored_in_keyring_not_on_disk(tmp_path, monkeypatch):
     """The saved JSON omits the API key and delegates storage to keyring."""
     stored: dict[tuple[str, str], str] = {}
     fake_keyring = types.SimpleNamespace(
-        set_password=lambda service, username, value: stored.__setitem__((service, username), value),
+        set_password=lambda service, username, value: stored.__setitem__(
+            (service, username), value
+        ),
         get_password=lambda service, username: stored.get((service, username)),
         delete_password=lambda service, username: stored.pop((service, username), None),
     )
@@ -144,7 +150,9 @@ def test_route_credentials_do_not_overwrite_default_provider_key(tmp_path, monke
     """Gateway route tokens must use a separate keyring item from normal API keys."""
     stored: dict[tuple[str, str], str] = {}
     fake_keyring = types.SimpleNamespace(
-        set_password=lambda service, username, value: stored.__setitem__((service, username), value),
+        set_password=lambda service, username, value: stored.__setitem__(
+            (service, username), value
+        ),
         get_password=lambda service, username: stored.get((service, username)),
         delete_password=lambda service, username: stored.pop((service, username), None),
     )

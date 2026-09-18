@@ -1,4 +1,5 @@
 """Pure tests for grouped watchlist normalization and legacy migration."""
+
 from __future__ import annotations
 
 from pa_agent.config.watchlist_store import (

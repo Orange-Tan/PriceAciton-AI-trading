@@ -1,6 +1,13 @@
 """Pydantic settings models for PA Agent."""
+
 from __future__ import annotations
+
+import json
 import logging
+import os
+import tempfile
+import time
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -80,6 +87,7 @@ def _keyring_set(value: str, username: str = _KEYRING_USERNAME) -> bool:
         logger.warning("Unable to write API key to OS credential store: %s", exc)
         return False
 
+
 DecisionStance = Literal["conservative", "balanced", "aggressive", "extreme_aggressive"]
 DataSourceKind = Literal["tradingview", "akshare", "eastmoney", "tushare", "tdx", "tencent"]
 NormalizationMode = Literal["strict", "lenient"]
@@ -89,6 +97,7 @@ ThemeKind = Literal["dark_gray", "light"]
 
 class AIProviderSettings(BaseModel):
     """AI provider connection and behaviour settings."""
+
     model_config = ConfigDict(extra="ignore")
 
     model: str = "deepseek-v4-flash"
@@ -102,6 +111,7 @@ class AIProviderSettings(BaseModel):
 
 class PromptSettings(BaseModel):
     """Prompt assembly tuning (accuracy-oriented defaults)."""
+
     model_config = ConfigDict(extra="ignore")
 
     #: When True, Stage 2 loads every strategy .txt (legacy/test behaviour).
@@ -114,6 +124,7 @@ class PromptSettings(BaseModel):
 
 class ValidationSettings(BaseModel):
     """Post-LLM validation behaviour."""
+
     model_config = ConfigDict(extra="ignore")
 
     normalization_mode: NormalizationMode = "lenient"
@@ -135,6 +146,7 @@ class ValidationSettings(BaseModel):
 
 class GeneralSettings(BaseModel):
     """UI and data-feed general settings."""
+
     model_config = ConfigDict(extra="ignore")
 
     analysis_bar_count: int = Field(default=100, ge=2, le=5000)
@@ -175,9 +187,7 @@ class GeneralSettings(BaseModel):
     #: 同一结构位 entry 相差≤3跳时，禁止反向新方案的冷却 K 线根数（已收盘）
     structure_flip_cooldown_bars: int = Field(default=3, ge=1, le=50)
     #: 左侧「自选股」栏列表（6位A股代码 / 指数，或 TradingView 品种名）
-    watchlist: list[str] = Field(
-        default_factory=lambda: ["sh000001", "sz399001", "sz399006"]
-    )
+    watchlist: list[str] = Field(default_factory=lambda: ["sh000001", "sz399001", "sz399006"])
     #: 左侧「自选股」板块及其品种归属
     watchlist_groups: dict[str, list[str]] = Field(
         default_factory=lambda: {
@@ -256,6 +266,7 @@ _FEISHU_CONFIG_KEYS = (
 
 class FeishuSettings(BaseModel):
     """Feishu bot notification settings (persisted in settings.json)."""
+
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
@@ -276,6 +287,7 @@ class FeishuSettings(BaseModel):
 
 class TushareSettings(BaseModel):
     """Tushare Pro data source settings (persisted in ignored settings.json)."""
+
     model_config = ConfigDict(extra="ignore")
 
     token: str = ""
@@ -283,6 +295,7 @@ class TushareSettings(BaseModel):
 
 class PushPlusSettings(BaseModel):
     """PushPlus notification settings (settings.json only; no GUI)."""
+
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = False
@@ -291,6 +304,7 @@ class PushPlusSettings(BaseModel):
 
 class Settings(BaseModel):
     """Root settings object persisted to config/settings.json."""
+
     model_config = ConfigDict(extra="ignore")
 
     provider: AIProviderSettings = Field(default_factory=AIProviderSettings)
@@ -310,14 +324,6 @@ def provider_api_key_configured(settings: Settings | None) -> bool:
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
-import json
-import logging
-import os
-import tempfile
-import time
-from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 
 def _migrate_legacy_feishu_json(raw: dict, settings_path: Path) -> bool:
@@ -351,7 +357,7 @@ def _migrate_legacy_feishu_json(raw: dict, settings_path: Path) -> bool:
     return migrated
 
 
-def load_settings(path: Path | None = None) -> "Settings":
+def load_settings(path: Path | None = None) -> Settings:
     """Load settings from *path* (default: SETTINGS_JSON_PATH).
 
     Returns default Settings and writes them to disk if the file is absent.
@@ -423,14 +429,10 @@ def load_settings(path: Path | None = None) -> "Settings":
         try:
             if invalid_path.exists():
                 invalid_path = path.with_name(f"{path.name}.{int(time.time())}.invalid")
-            invalid_path.write_text(
-                json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            invalid_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError as backup_exc:
             logger.warning("Unable to quarantine invalid settings: %s", backup_exc)
-        fields = ", ".join(
-            str(error.get("loc", "<root>")) for error in exc.errors()[:5]
-        )
+        fields = ", ".join(str(error.get("loc", "<root>")) for error in exc.errors()[:5])
         logger.warning("settings.json validation failed (%s); using defaults", fields)
         defaults = Settings()
         try:
@@ -452,7 +454,7 @@ def load_settings(path: Path | None = None) -> "Settings":
     return settings
 
 
-def save_settings(settings: "Settings", path: Path | None = None) -> None:
+def save_settings(settings: Settings, path: Path | None = None) -> None:
     """Persist settings to *path* (default: SETTINGS_JSON_PATH)."""
     from pa_agent.config.paths import SETTINGS_JSON_PATH
 

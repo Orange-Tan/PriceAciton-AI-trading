@@ -8,6 +8,7 @@
 K 线行格式（fqkline 与 mkline 一致）：``[时间, 开, 收, 高, 低, 成交量(手)]``。
 个股成交量换算为「股」、指数保持原值，统一复用 ``quote_volume_lots_to_shares``。
 """
+
 from __future__ import annotations
 
 import json
@@ -94,8 +95,7 @@ def _normalize_tencent_time(value: Any) -> str:
             return f"{text[0:4]}-{text[4:6]}-{text[6:8]} {text[8:10]}:{text[10:12]}"
         if len(text) == 14:
             return (
-                f"{text[0:4]}-{text[4:6]}-{text[6:8]} "
-                f"{text[8:10]}:{text[10:12]}:{text[12:14]}"
+                f"{text[0:4]}-{text[4:6]}-{text[6:8]} " f"{text[8:10]}:{text[10:12]}:{text[12:14]}"
             )
     return text
 
@@ -216,9 +216,7 @@ class TencentSource(DataSource):
             raise DataSourceTransientError(f"腾讯财经拉取失败: {exc}") from exc
 
         if not rows_asc:
-            raise DataSourceTransientError(
-                f"腾讯财经未返回数据: {self._symbol} {self._timeframe}"
-            )
+            raise DataSourceTransientError(f"腾讯财经未返回数据: {self._symbol} {self._timeframe}")
 
         daily = self._timeframe == "1d"
         quote = self._fetch_quote(self._symbol)
@@ -233,9 +231,7 @@ class TencentSource(DataSource):
                 session_volume_lots=quote["vol"] if quote else 0.0,
                 session_amount=quote["amount"] if quote else 0.0,
             )
-        if quote is not None and (
-            (daily and ashare_trading_day()) or ashare_session_open()
-        ):
+        if quote is not None and ((daily and ashare_trading_day()) or ashare_session_open()):
             self._apply_spot_to_forming(rows_asc, daily=daily, quote=quote)
 
         rows_newest = list(reversed(rows_asc[-fetch_n:]))
@@ -259,9 +255,7 @@ class TencentSource(DataSource):
             return resample_rows_to_4h(rows)[-n:]
         return self._fetch_minute(prefixed, timeframe, n)
 
-    def _fetch_day(
-        self, prefixed: str, timeframe: str, n: int
-    ) -> list[dict[str, Any]]:
+    def _fetch_day(self, prefixed: str, timeframe: str, n: int) -> list[dict[str, Any]]:
         url = f"{_KLINE_URL}?param={prefixed},{_DAY_PERIOD[timeframe]},,,{n + 5},qfq"
         payload = json.loads(self._fetch_text(url))
         data = (payload.get("data") or {}).get(prefixed) or {}
@@ -272,9 +266,7 @@ class TencentSource(DataSource):
                 return rows[-(n + 5) :]
         return []
 
-    def _fetch_minute(
-        self, prefixed: str, timeframe: str, n: int
-    ) -> list[dict[str, Any]]:
+    def _fetch_minute(self, prefixed: str, timeframe: str, n: int) -> list[dict[str, Any]]:
         period = _MINUTE_PERIOD[timeframe]
         param = f"param={prefixed},{period},,{n + 8}"
         last_exc: Exception | None = None

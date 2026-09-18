@@ -1,12 +1,13 @@
 """Grouped watchlist panel with quote and daily-decision columns."""
+
 from __future__ import annotations
 
-from datetime import date
 import time
+from datetime import date
 from typing import Any
 
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, Qt, pyqtSignal
-from PyQt6.QtGui import QKeyEvent, QColor
+from PyQt6.QtCore import QObject, QRunnable, Qt, QThreadPool, pyqtSignal
+from PyQt6.QtGui import QColor, QKeyEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -15,8 +16,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QMenu,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QSplitter,
@@ -26,7 +27,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from pa_agent.config.watchlist_store import DEFAULT_GROUP, normalize_watchlist_groups, serialize_watchlist_groups
+from pa_agent.config.watchlist_store import (
+    DEFAULT_GROUP,
+    normalize_watchlist_groups,
+    serialize_watchlist_groups,
+)
 from pa_agent.data.ashare_common import normalize_ashare_symbol
 from pa_agent.gui.theme import tokens as T
 
@@ -61,7 +66,7 @@ class _NameLookupTask(QRunnable):
         self._symbol = symbol
         self._signals = signals
 
-    def run(self) -> None:  # noqa: D401
+    def run(self) -> None:
         def _emit(name: str) -> None:
             try:
                 self._signals.resolved.emit(self._symbol, name)
@@ -90,9 +95,13 @@ class WatchlistPanel(QWidget):
     scan_requested = pyqtSignal(str, int)
     _HEADERS = ["代码", "名称", "现价", "今日涨幅", "今日决策"]
 
-    def __init__(self, symbols: list[str] | dict[str, list[str]] | None = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, symbols: list[str] | dict[str, list[str]] | None = None, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
-        self._groups = normalize_watchlist_groups({DEFAULT_GROUP: symbols} if isinstance(symbols, list) else symbols)
+        self._groups = normalize_watchlist_groups(
+            {DEFAULT_GROUP: symbols} if isinstance(symbols, list) else symbols
+        )
         self._current_group = DEFAULT_GROUP
         self._quotes: dict[str, dict[str, Any]] = {}
         self._name_lookup_pending: set[str] = set()
@@ -124,9 +133,7 @@ class WatchlistPanel(QWidget):
 
         self._group_column = QWidget()
         self._group_column.setMaximumWidth(180)
-        self._group_column.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
-        )
+        self._group_column.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         group_col_layout = QVBoxLayout(self._group_column)
         group_col_layout.setContentsMargins(0, 0, 0, 0)
         group_col_layout.setSpacing(2)
@@ -156,9 +163,7 @@ class WatchlistPanel(QWidget):
         self._group_splitter.addWidget(self._group_column)
 
         self._stock_column = QWidget()
-        self._stock_column.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
+        self._stock_column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         right_layout = QVBoxLayout(self._stock_column)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(2)
@@ -299,21 +304,33 @@ class WatchlistPanel(QWidget):
             self._list.setCurrentRow(min(row, len(self.symbols()) - 1))
         self._emit_groups_changed()
 
-    def update_quote(self, symbol: str, *, name: str | None = None, price: object = "", change: object = "") -> None:
+    def update_quote(
+        self, symbol: str, *, name: str | None = None, price: object = "", change: object = ""
+    ) -> None:
         key = self._normalize_symbol(symbol)
         if not key:
             return
         data = self._quotes.setdefault(key, {})
-        data.update({"name": name or self._name_for_symbol(key), "price": self._format_price(price), "change": self._format_change(change)})
+        data.update(
+            {
+                "name": name or self._name_for_symbol(key),
+                "price": self._format_price(price),
+                "change": self._format_change(change),
+            }
+        )
         self._refresh_table()
 
-    def update_decision(self, symbol: str, text: str, decision_date: date | str | None = None) -> None:
+    def update_decision(
+        self, symbol: str, text: str, decision_date: date | str | None = None
+    ) -> None:
         key = self._normalize_symbol(symbol)
         if not key:
             return
         raw_date = decision_date or date.today()
         day = raw_date.isoformat() if isinstance(raw_date, date) else str(raw_date)
-        self._quotes.setdefault(key, {}).update({"decision": (text or "").strip(), "decision_date": day})
+        self._quotes.setdefault(key, {}).update(
+            {"decision": (text or "").strip(), "decision_date": day}
+        )
         self._refresh_table()
 
     @staticmethod
@@ -322,7 +339,11 @@ class WatchlistPanel(QWidget):
         if not value:
             return ""
         normalized = normalize_ashare_symbol(value)
-        return normalized if normalized and (normalized.isdigit() or normalized.startswith(("sh", "sz"))) else value
+        return (
+            normalized
+            if normalized and (normalized.isdigit() or normalized.startswith(("sh", "sz")))
+            else value
+        )
 
     @staticmethod
     def _name_for_symbol(symbol: str) -> str:
@@ -422,7 +443,13 @@ class WatchlistPanel(QWidget):
             name = data.get("name") or self._name_for_symbol(symbol)
             if not data.get("name") and name == symbol:
                 self._request_name_lookup(symbol)
-            values = [symbol, name, data.get("price", ""), data.get("change", ""), data.get("decision", "")]
+            values = [
+                symbol,
+                name,
+                data.get("price", ""),
+                data.get("change", ""),
+                data.get("decision", ""),
+            ]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(str(value or ""))
                 item.setData(Qt.ItemDataRole.UserRole, symbol)
@@ -475,7 +502,10 @@ class WatchlistPanel(QWidget):
         if self._current_group == DEFAULT_GROUP:
             QMessageBox.information(self, "删除板块", "“全部”板块不能删除。")
             return
-        if QMessageBox.question(self, "删除板块", f"确定删除「{self._current_group}」？") == QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(self, "删除板块", f"确定删除「{self._current_group}」？")
+            == QMessageBox.StandardButton.Yes
+        ):
             self.remove_current_group()
 
     def _on_add_clicked(self) -> None:
@@ -515,11 +545,17 @@ class WatchlistPanel(QWidget):
         if count == 0:
             QMessageBox.information(self, "分析当前板块", "当前板块没有自选股。")
             return
-        answer = QMessageBox.question(self, "分析当前板块", f"将分析当前板块的 {count} 只个股" + ("，将消耗较多 token" if count > 5 else "") + "，是否继续？")
+        answer = QMessageBox.question(
+            self,
+            "分析当前板块",
+            f"将分析当前板块的 {count} 只个股"
+            + ("，将消耗较多 token" if count > 5 else "")
+            + "，是否继续？",
+        )
         if answer == QMessageBox.StandardButton.Yes:
             self.scan_requested.emit(self._current_group, count)
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Delete:
             self.remove_selected()
             event.accept()

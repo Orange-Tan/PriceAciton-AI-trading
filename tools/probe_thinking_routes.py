@@ -1,4 +1,5 @@
 """Probe QClaw / WorkBuddy thinking control. Run: python tools/probe_thinking_routes.py"""
+
 from __future__ import annotations
 
 import json
@@ -32,9 +33,7 @@ def _banner(title: str) -> None:
 
 
 def _probe_label(settings: AIProviderSettings, thinking: bool, effort: str | None) -> str:
-    extra, eff = _resolve_thinking_params(
-        settings, thinking=thinking, reasoning_effort=effort
-    )
+    extra, eff = _resolve_thinking_params(settings, thinking=thinking, reasoning_effort=effort)
     api_model = _effective_api_model(settings)
     return (
         f"route_model={settings.model!r} api_model={api_model!r} "
@@ -183,9 +182,7 @@ def _run_raw_workbuddy_stream(
         "content_preview": content[:120],
         "reasoning_preview": reasoning[:200],
     }
-    print(
-        f"OK {ms:.0f}ms | reasoning={len(reasoning)} chars | content={len(content)} chars"
-    )
+    print(f"OK {ms:.0f}ms | reasoning={len(reasoning)} chars | content={len(content)} chars")
     if reasoning:
         print(f"reasoning_preview: {reasoning[:180]!r}")
     print(f"content_preview: {content[:80]!r}")

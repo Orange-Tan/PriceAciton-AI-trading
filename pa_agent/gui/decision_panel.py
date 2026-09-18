@@ -1,22 +1,13 @@
 """DecisionPanel — trading decision + market diagnosis summary."""
+
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-
-from pa_agent.util.trade_metrics import (
-    compute_risk_reward,
-    format_estimated_win_rate,
-    max_risk_reward_ratio,
-    min_risk_reward_ratio,
-    passes_trader_equation,
-)
-from pa_agent.ai.cycle_enums import format_cycle_position, format_cycle_with_direction
-
 from PyQt6.QtWidgets import (
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QGridLayout,
     QProgressBar,
     QSizePolicy,
     QTextEdit,
@@ -24,8 +15,16 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from pa_agent.ai.cycle_enums import format_cycle_position, format_cycle_with_direction
 from pa_agent.gui.future_trend_panel import FutureTrendPanel
 from pa_agent.gui.theme import tokens as T
+from pa_agent.util.trade_metrics import (
+    compute_risk_reward,
+    format_estimated_win_rate,
+    max_risk_reward_ratio,
+    min_risk_reward_ratio,
+    passes_trader_equation,
+)
 
 _NO_ORDER = "不下单"
 
@@ -40,6 +39,7 @@ def _reason_edit_css() -> str:
         f"font-size: 14px; color: {T.FG}; line-height: 1.45;"
         "font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;"
     )
+
 
 _PREDICTION_UNPREDICTABLE_LABEL = "不可预测"
 
@@ -312,9 +312,7 @@ class DecisionPanel(QWidget):
         # 说明支持展开/收起，默认全部展开，便于直接阅读完整决策依据。
         self._reasoning_edit = self._make_detail(layout, "分析理由", open=True)
         self._confidence_reasoning_edit = self._make_detail(layout, "置信度理由", open=True)
-        self._risk_reasoning_edit = self._make_detail(
-            layout, "风险评估与失效条件", open=True
-        )
+        self._risk_reasoning_edit = self._make_detail(layout, "风险评估与失效条件", open=True)
 
         future_title = QLabel("未来走势预期")
         future_title.setStyleSheet("font-weight: bold; color: #58a6ff; margin-top: 8px;")
@@ -455,9 +453,7 @@ class DecisionPanel(QWidget):
             self._diag_conf_label.setText(f"评分 {score} / 100")
             self._diag_conf_label.setStyleSheet(f"color: {c_color}; font-weight: bold;")
             reason_text = str(diagnosis_confidence_reasoning or "").strip()
-            self._diag_reasoning_label.setText(
-                f"理由：{reason_text}" if reason_text else ""
-            )
+            self._diag_reasoning_label.setText(f"理由：{reason_text}" if reason_text else "")
             self._diag_conf_title.setVisible(True)
             self._diag_conf_bar.setVisible(True)
             self._diag_conf_label.setVisible(True)
@@ -481,17 +477,13 @@ class DecisionPanel(QWidget):
         if score is not None:
             c_color = _score_color(score)
             hint = "观望" if no_order else "入场"
-            self._trade_conf_inline_label.setText(
-                f"置信度 {score} / 100 · {hint}"
-            )
+            self._trade_conf_inline_label.setText(f"置信度 {score} / 100 · {hint}")
             self._trade_conf_inline_label.setStyleSheet(
                 f"font-size: 15px; font-weight: bold; color: {c_color};"
             )
             self._trade_conf_inline_label.setVisible(True)
             reason_text = str(trade_confidence_reasoning or "").strip()
-            self._trade_reasoning_label.setText(
-                f"置信度理由：{reason_text}" if reason_text else ""
-            )
+            self._trade_reasoning_label.setText(f"置信度理由：{reason_text}" if reason_text else "")
             self._trade_reasoning_label.setVisible(bool(reason_text))
         else:
             self._trade_conf_inline_label.setText("")
@@ -535,20 +527,28 @@ class DecisionPanel(QWidget):
         order_type = decision.get("order_type", _NO_ORDER)
         reasoning = decision.get("reasoning", decision.get("brief_reasoning", ""))
         # Confidence gate: suppress order display when confidence < threshold
-        if confidence_threshold is not None and confidence_threshold > 0 and order_type != _NO_ORDER:
+        if (
+            confidence_threshold is not None
+            and confidence_threshold > 0
+            and order_type != _NO_ORDER
+        ):
             raw_conf = decision.get("trade_confidence")
             try:
-                conf_val = int(float(str(raw_conf).strip())) if raw_conf is not None and raw_conf != "" else -1
+                conf_val = (
+                    int(float(str(raw_conf).strip()))
+                    if raw_conf is not None and raw_conf != ""
+                    else -1
+                )
             except (ValueError, TypeError):
                 conf_val = -1
             if conf_val < confidence_threshold:
                 order_type = _NO_ORDER
                 prefix = "有入场机会，但置信度未通过"
                 reasoning = f"{prefix}\n\n{reasoning}" if reasoning else prefix
-        diag_conf = decision.get("diagnosis_confidence", None)
-        diag_conf_reasoning = decision.get("diagnosis_confidence_reasoning", None)
-        trade_conf = decision.get("trade_confidence", None)
-        trade_conf_reasoning = decision.get("trade_confidence_reasoning", None)
+        diag_conf = decision.get("diagnosis_confidence")
+        diag_conf_reasoning = decision.get("diagnosis_confidence_reasoning")
+        trade_conf = decision.get("trade_confidence")
+        trade_conf_reasoning = decision.get("trade_confidence_reasoning")
 
         self._apply_diagnosis_confidence(diag_conf, diag_conf_reasoning)
 
@@ -564,7 +564,8 @@ class DecisionPanel(QWidget):
             self._conclusion_bar.setVisible(True)
             self._set_conclusion_bar_style()
             self._apply_trade_confidence_inline(
-                trade_conf, trade_conf_reasoning,
+                trade_conf,
+                trade_conf_reasoning,
                 no_order=True,
             )
         else:
@@ -585,13 +586,9 @@ class DecisionPanel(QWidget):
             )
             self._direction_inline_label.setVisible(True)
 
-            self._entry_label.setText(
-                f"入场  {entry:.5g}" if entry is not None else "入场  —"
-            )
+            self._entry_label.setText(f"入场  {entry:.5g}" if entry is not None else "入场  —")
             self._tp_label.setText(f"TP1  {tp:.5g}" if tp is not None else "TP1  —")
-            self._tp2_label.setText(
-                f"TP2  {tp2:.5g}" if tp2 is not None else "TP2  —"
-            )
+            self._tp2_label.setText(f"TP2  {tp2:.5g}" if tp2 is not None else "TP2  —")
             self._sl_label.setText(f"止损  {sl:.5g}" if sl is not None else "止损  —")
             self._trade_prices_row.setVisible(True)
 
@@ -604,10 +601,7 @@ class DecisionPanel(QWidget):
                 risk = float(rr["risk"])
                 reward = float(rr["reward"])
                 win_pct = _parse_score_100(decision.get("estimated_win_rate"))
-                eq_ok = (
-                    win_pct is not None
-                    and passes_trader_equation(win_pct, risk, reward)
-                )
+                eq_ok = win_pct is not None and passes_trader_equation(win_pct, risk, reward)
                 min_rr = min_risk_reward_ratio(decision_stance)
                 max_rr = max_risk_reward_ratio()
                 metrics_ok = (
@@ -641,7 +635,8 @@ class DecisionPanel(QWidget):
             self._win_rate_inline_label.setVisible(True)
 
             self._apply_trade_confidence_inline(
-                trade_conf, trade_conf_reasoning,
+                trade_conf,
+                trade_conf_reasoning,
                 no_order=False,
             )
 
@@ -652,7 +647,9 @@ class DecisionPanel(QWidget):
         invalidation = str(decision.get("invalidation_condition") or "").strip()
         risk_text = risk
         if invalidation:
-            risk_text = f"{risk}\n\n失效条件：{invalidation}" if risk else f"失效条件：{invalidation}"
+            risk_text = (
+                f"{risk}\n\n失效条件：{invalidation}" if risk else f"失效条件：{invalidation}"
+            )
         self._risk_reasoning_edit.setPlainText(risk_text)
 
         self.set_prediction(decision)

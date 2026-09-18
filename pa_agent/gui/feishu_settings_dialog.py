@@ -4,6 +4,7 @@
 包含：Webhook URL、签名密钥、企业自建应用 App ID / App Secret，
 以及启用/禁用开关，并带有一键发送测试消息功能。
 """
+
 from __future__ import annotations
 
 import base64
@@ -52,9 +53,7 @@ class FeishuSettingsPanel(QWidget):
 
         # ── 状态开关 ───────────────────────────────────────────────────────────
         self._enabled_check = QCheckBox("启用飞书通知（下单信号推送到飞书）")
-        self._enabled_check.setToolTip(
-            "关闭后即使有下单决策也不发送飞书消息，其余配置保留。"
-        )
+        self._enabled_check.setToolTip("关闭后即使有下单决策也不发送飞书消息，其余配置保留。")
         root.addWidget(self._enabled_check)
 
         # ── 扫码一键创建并绑定（推荐，无需建群）─────────────────────────────────
@@ -83,9 +82,7 @@ class FeishuSettingsPanel(QWidget):
         basic_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self._webhook_edit = QLineEdit()
-        self._webhook_edit.setPlaceholderText(
-            "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxx"
-        )
+        self._webhook_edit.setPlaceholderText("https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxx")
         self._webhook_edit.setToolTip(
             "飞书群 → 右上角设置 → 群机器人 → 添加自定义机器人 → 复制 Webhook 地址"
         )
@@ -193,9 +190,7 @@ class FeishuSettingsPanel(QWidget):
     def _on_scan(self) -> None:
         from pa_agent.gui.feishu_scan_dialog import FeishuScanDialog
 
-        dlg = FeishuScanDialog(
-            self._settings, self, on_bound=self._refresh_bound_label
-        )
+        dlg = FeishuScanDialog(self._settings, self, on_bound=self._refresh_bound_label)
         dlg.exec()
         # 绑定后把新 app_id / app_secret 同步回表单字段与绑定状态
         self.load_values()
@@ -205,14 +200,10 @@ class FeishuSettingsPanel(QWidget):
         if (cfg.app_id or "").strip() and (cfg.bound_open_id or "").strip():
             who = cfg.bound_name or cfg.bound_open_id
             self._bound_label.setText(f"✅ 已绑定：{who}\nApp ID：{cfg.app_id}")
-            self._bound_label.setStyleSheet(
-                f"color: {T.ACCENT_PRIMARY}; font-size: 11px;"
-            )
+            self._bound_label.setStyleSheet(f"color: {T.ACCENT_PRIMARY}; font-size: 11px;")
         else:
             self._bound_label.setText("未绑定")
-            self._bound_label.setStyleSheet(
-                f"color: {T.FG_2}; font-size: 11px;"
-            )
+            self._bound_label.setStyleSheet(f"color: {T.FG_2}; font-size: 11px;")
 
     # ── 显示 / 隐藏密钥 ───────────────────────────────────────────────────────
 
@@ -302,9 +293,7 @@ class FeishuSettingsPanel(QWidget):
         if secret:
             ts = int(time.time())
             string_to_sign = f"{ts}\n{secret}"
-            hmac_code = hmac.new(
-                string_to_sign.encode("utf-8"), digestmod=hashlib.sha256
-            ).digest()
+            hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
             payload["timestamp"] = str(ts)
             payload["sign"] = base64.b64encode(hmac_code).decode("utf-8")
 
@@ -359,8 +348,7 @@ class FeishuSettingsDialog(QDialog):
         root.addWidget(self._panel)
 
         btn_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save
-            | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         save_btn = btn_box.button(QDialogButtonBox.StandardButton.Save)
         if save_btn is not None:

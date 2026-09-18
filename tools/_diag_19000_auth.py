@@ -1,8 +1,10 @@
 """Compare auth tokens and payload shapes for 19000."""
+
 import json
-from qclaw_gateway_token import read_gateway_token
 import urllib.error
 import urllib.request
+
+from qclaw_gateway_token import read_gateway_token
 
 URL = "http://127.0.0.1:19000/proxy/llm/chat/completions"
 GW_TOKEN = read_gateway_token()
@@ -23,7 +25,9 @@ for label, token, extra_hdr in [
     ("managed-no-host", MANAGED, {}),
 ]:
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}", **extra_hdr}
-    req = urllib.request.Request(URL, data=json.dumps(BODY).encode(), headers=headers, method="POST")
+    req = urllib.request.Request(
+        URL, data=json.dumps(BODY).encode(), headers=headers, method="POST"
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read(300)

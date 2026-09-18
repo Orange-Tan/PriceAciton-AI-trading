@@ -1,4 +1,5 @@
 """One-off analysis of records/pending/*.json."""
+
 from __future__ import annotations
 
 import json

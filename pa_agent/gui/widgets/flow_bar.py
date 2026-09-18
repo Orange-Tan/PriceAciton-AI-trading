@@ -1,4 +1,5 @@
 """5-step horizontal flow indicator."""
+
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
@@ -83,9 +84,7 @@ class _StepWidget(QFrame):
 
     def refresh_theme(self) -> None:
         """按当前主题重绘名称 / 说明文字与状态圆点（主题切换后调用）。"""
-        self._name.setStyleSheet(
-            f"font-size: 12px; font-weight: bold; color: {T.FG};"
-        )
+        self._name.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {T.FG};")
         self._caption.setStyleSheet(f"font-size: 11px; color: {T.FG_2};")
         self.set_status(self._status)
 
@@ -101,9 +100,7 @@ class _StepWidget(QFrame):
         self._dot.setStyleSheet(dot_ss)
 
         if spec["glow"]:
-            self._glow.setStyleSheet(
-                f"background: {spec['glow']}; border-radius: 15px;"
-            )
+            self._glow.setStyleSheet(f"background: {spec['glow']}; border-radius: 15px;")
         else:
             self._glow.setStyleSheet("background: transparent; border-radius: 15px;")
 

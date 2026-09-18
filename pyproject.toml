@@ -36,8 +36,10 @@ dev = [
     "pytest>=8",
     "pytest-qt>=4.4",
     "hypothesis>=6",
-    "ruff>=0.5",
-    "black>=24.4",
+    # 钉住下限：ruff 的默认规则集会随小版本扩张，black 的格式化风格也会随版本变化。
+    # 两者都会让 `make lint` 的结果在无人改动代码时变红，所以不用 >= 的宽范围。
+    "ruff>=0.16,<0.17",
+    "black>=26.5,<27",
 ]
 
 [project.scripts]
@@ -55,8 +57,105 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-extend-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-ignore = ["E501"]
+# 用 select（而非 extend-select）钉死检查范围：extend-select 是「追加到默认规则集」，
+# 而 ruff 的默认规则集会随版本扩张——0.6 起默认含 S110/BLE001，一升级就多出几百条
+# 从没被审阅过的告警。显式列举后，升级 ruff 不会再改变检查范围。
+# 需要新规则时在这里显式添加，并同步收紧 version 下限。
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "BLE"]
+ignore = [
+    "E501",  # 行长交给 black 管（line-length=100），不在 lint 里重复告警
+    # 中文界面/注释的全角标点（（）、，、：等）会被判为「歧义 Unicode 字符」。
+    # 本项目源码以中文为主，这三条是纯噪声：全仓库 4822 条告警里 4106 条来自它们。
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+# ── 为什么剩下的告警不修（`ruff check` 仍会报出来，属已知存量）────────────────────
+#
+# 注意 `make lint` 跑的是 `ruff check .`（含 tools/、scripts/、reference/、run.py），
+# 因此真实数字是 233 条；只看产品代码（`ruff check pa_agent tests`）是 182 条。
+# 差的 51 条几乎全是「脚本先 sys.path.insert 再 import」造成的 E402（24 条）——
+# 那些 import 必须排在 sys.path 修复之后，提到文件顶部反而会 ImportError。
+# 其余零散项（tools/ 的 BLE001 兜底、SIM115 不关文件、F841、E741、B904）都在
+# 一次性诊断脚本里，不值得为它们改代码。下面的逐类说明针对 pa_agent/tests 的 182 条。
+#
+# 逐条审过一遍后的结论：这些不是「待办清单」，而是刻意的选择——自动改法要么改变
+# 运行时行为，要么让代码更难读。ruff 自己也把它们归入 unsafe fix（93 条需要
+# `--unsafe-fixes` 才会动手），默认不开。要修请人工逐条判断，不要整批跑
+# `ruff check --fix --unsafe-fixes`。
+#
+# BLE001 blind-except（47）—— 兜底捕获是刻意的
+#   高发文件：feishu_notifier(5)、workbuddy_connector(5)、order_opportunity(4)。
+#   这些位置捕获宽异常本身就是需求：网络重试循环（tradingview.py:299 记 last_exc）、
+#   可选依赖缺失回退（token_counter.py:21 tiktoken 不可用则退化为 char/4）、
+#   凭据库尽力而为（settings.py:79 keyring.delete_password 失败无所谓）、
+#   以及把失败上报给 UI 而不是崩掉（feishu_scan_dialog.py:87 emit failed）。
+#   改成 except (具体类型) 反而会在新异常出现时炸掉，与「分析不能被外围故障拖垮」
+#   这一设计前提冲突。
+#
+# SIM105 suppressible-exception（34）—— 可读性偏好
+#   高发：main_window.py(15)、app_settings_dialog(3)。多数是「删控件/停定时器/清
+#   临时文件时失败就忽略」这种一两行的收尾代码，写成 contextlib.suppress(...) 会多
+#   一层缩进和一次 import，反而比 try/except/pass 难读。其中 settings.py:77 一类
+#   还嵌在更外层 try 里，展平后异常归属会变模糊。
+#
+# SIM102 collapsible-if（22）—— 中文注释夹在两层条件之间
+#   高发：coherence_checks.py。这些嵌套 if 的第二层常带一句解释「为什么还要再判」的
+#   中文注释，合并成 `if a and b:` 后注释无处安放，条件行也会超长。保持嵌套。
+#
+# RUF046 unnecessary-cast-to-int（15）—— 全是 stage2_normalizer.py
+#   对模型返回值做 int(...) 是刻意的防御性归一化：类型标注说它是 int，但 JSON 里
+#   可能是 float/str。删掉 cast 等于信任模型输出，与归一化层的存在意义相悖。
+#
+# RUF059 unused-unpacked-variable（14）—— 解包是为了表达结构
+#   例：structure_levels.py:64 的 `lo`、qclaw_connector.py:182 的 `gw`。解包时保留
+#   全部字段名能让人一眼看出这个元组/结构是什么，改成 `_` 会丢失这层信息。测试里的
+#   fixture 参数（如 test_smoke_no_order.py:64 的 pending_writer）更是必须保留，
+#   否则 fixture 不再被激活。
+#
+# RUF005 collection-literal-concatenation（12）—— 拼接写法更贴近原意
+#   `a + [x]` 与 `[*a, x]` 语义等价，但前者在「在这个列表后面追加一项」这类场景里
+#   读起来更直白，且部分位置拼接的是元组/常量表（prompts/schemas.py:554），改成
+#   解包会改变推导出的类型。
+#
+# SIM108 if-else-block-instead-of-if-exp（11）—— 三元表达式放不下中文
+#   这些 if/else 的两条分支都带中文注释或较长表达式，压成一行三元会超 100 列，
+#   或者丢掉分支各自的说明。
+#
+# SIM103 needless-bool（9）—— 显式 return True/False 是接口契约
+#   如 pattern_routing.py:114/140、coherence_checks.py:472。这类函数名多为
+#   `_is_xxx`/`_has_xxx`，保留 `if cond: return True` / `return False` 的形状，
+#   便于以后往 True 分支里加日志或额外判断。
+#
+# E741 ambiguous-variable-name（6）—— `l` 是 low 的局部缩写
+#   atr.py:122、trade_logger.py:224/229、decision_flow_viz.py:98 里 `h, l, c` 是
+#   金融数据里约定俗成的 high/low/close，改成 `low` 会破坏这一组三字母的对称性。
+#
+# 其余零散项（各 1–3 条，均为孤立个案，按需单独处理）
+#   SIM117(3)  tests/unit/test_deepseek_client.py 的嵌套 with 是为了让
+#              patch 的作用域一目了然，合并后反而难看出哪个 patch 包哪段。
+#   RUF034(2)  decision_continuity.py:223 / seq_label_item.py:36，三元两支同值，
+#              留着是占位意图，删掉会掩盖「这里本该有分支」。
+#   B905(2)    zip() 未显式 strict=。atr.py:122 两序列本就等长，
+#              general_settings_dialog.py:69 是 UI 侧固定长度配对。
+#   RUF012(1)  watchlist_panel.py:96 的可变类属性在 Qt 控件里是既有写法。
+#   SIM201(1)  coherence_checks.py:590 `not s1_dir == "neutral"`，改 `!=` 后
+#              与相邻的 `not ... in ...` 写法不再统一。
+#   B904(1)    cursor_sdk_client.py:84 在 `except queue.Empty:` 里 raise 自定义错误，
+#              但 queue.Empty 只是「这一轮没读到行」的控制流信号，并不是失败原因，
+#              `raise ... from err` 会把无关的超时误标成根因。
+#   SIM110(1)  data/snapshot.py:38 的 for 循环逐个字段比较并提前 return False，
+#              与 all(...) 语义等价；保留循环是为了让「长度先校验、再逐项比较」
+#              这两步在代码里看得见。
+#   B007(1)    token_counter.py:30 遍历 msg.items() 但只用 value。保留 items()
+#              是为了日后按 role/key 区分 token 权重时不必重构循环。
+
+[tool.ruff.lint.isort]
+# 不加这条时，`from x import (a as b, c as d, e)` 会被 isort 拆成「每个带别名的名字
+# 单独一条 import 语句」，一个 import 块能膨胀成十几行（eastmoney_source.py 就是）。
+# 打开后别名与原名字合并回同一个括号里，保持人工书写的形状。
+combine-as-imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

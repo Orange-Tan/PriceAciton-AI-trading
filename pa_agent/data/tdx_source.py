@@ -9,6 +9,7 @@
 - 指数成交量：与 TDX 返回一致，保持原值；
 - 实时报价的 ``vol`` 为「手」，刷新形成中 K 线时经 ``volume_lots=True`` 换算。
 """
+
 from __future__ import annotations
 
 import logging
@@ -60,14 +61,14 @@ _TF_CATEGORY: dict[str, int] = {
 # 通达信公开行情主站（从 pytdx 内置主站中挑选实测可用的，覆盖电信/联通/移动）
 _TDX_SERVERS: tuple[tuple[str, int], ...] = (
     ("180.153.18.170", 7709),  # 上海电信主站Z1
-    ("180.153.18.172", 80),    # 上海电信主站Z80
-    ("202.108.253.139", 80),   # 北京联通主站Z80
+    ("180.153.18.172", 80),  # 上海电信主站Z80
+    ("202.108.253.139", 80),  # 北京联通主站Z80
     ("60.191.117.167", 7709),  # 杭州电信主站J1
     ("115.238.56.198", 7709),  # 杭州电信主站J2
-    ("218.75.126.9", 7709),    # 杭州电信主站J3
-    ("60.12.136.250", 7709),   # 杭州联通主站J2
-    ("59.36.5.11", 7709),      # 安信
-    ("117.34.114.13", 7709),   # 国泰君安
+    ("218.75.126.9", 7709),  # 杭州电信主站J3
+    ("60.12.136.250", 7709),  # 杭州联通主站J2
+    ("59.36.5.11", 7709),  # 安信
+    ("117.34.114.13", 7709),  # 国泰君安
 )
 
 _CONNECT_TIMEOUT_S = 5.0
@@ -135,9 +136,7 @@ class TdxSource(DataSource):
         try:
             import pytdx  # noqa: F401
         except ImportError as exc:
-            raise DataSourceTransientError(
-                "未安装 pytdx，请执行: pip install pytdx"
-            ) from exc
+            raise DataSourceTransientError("未安装 pytdx，请执行: pip install pytdx") from exc
         self._connected = True
         logger.info("TdxSource connected")
 
@@ -257,9 +256,7 @@ class TdxSource(DataSource):
             raise DataSourceTransientError(f"通达信拉取失败: {exc}") from exc
 
         if not rows_asc:
-            raise DataSourceTransientError(
-                f"通达信未返回数据: {self._symbol} {self._timeframe}"
-            )
+            raise DataSourceTransientError(f"通达信未返回数据: {self._symbol} {self._timeframe}")
 
         daily = self._timeframe == "1d"
         quote = self._fetch_quote(self._symbol)
@@ -274,9 +271,7 @@ class TdxSource(DataSource):
                 session_volume_lots=quote["vol"] if quote else 0.0,
                 session_amount=quote["amount"] if quote else 0.0,
             )
-        if quote is not None and (
-            (daily and ashare_trading_day()) or ashare_session_open()
-        ):
+        if quote is not None and ((daily and ashare_trading_day()) or ashare_session_open()):
             self._apply_spot_to_forming(rows_asc, daily=daily, quote=quote)
 
         rows_newest = list(reversed(rows_asc[-fetch_n:]))
@@ -302,19 +297,13 @@ class TdxSource(DataSource):
             return self._fetch_minute(market, code6, timeframe, n)
         return self._fetch_daily(market, code6, timeframe, n)
 
-    def _fetch_daily(
-        self, market: int, code6: str, timeframe: str, n: int
-    ) -> list[dict[str, Any]]:
+    def _fetch_daily(self, market: int, code6: str, timeframe: str, n: int) -> list[dict[str, Any]]:
         category = _TF_CATEGORY[timeframe]
         api = self._ensure_api()
         if is_index_symbol(code6):
-            bars = self._call_tdx(
-                lambda: api.get_index_bars(category, market, code6, 0, n + 5)
-            )
+            bars = self._call_tdx(lambda: api.get_index_bars(category, market, code6, 0, n + 5))
         else:
-            bars = self._call_tdx(
-                lambda: api.get_security_bars(category, market, code6, 0, n + 5)
-            )
+            bars = self._call_tdx(lambda: api.get_security_bars(category, market, code6, 0, n + 5))
         if not bars:
             return []
         # 周线/月线返回的 vol 是「手」，×100 换算为股/指数原值
@@ -327,13 +316,9 @@ class TdxSource(DataSource):
         category = _TF_CATEGORY[timeframe]
         api = self._ensure_api()
         if is_index_symbol(code6):
-            bars = self._call_tdx(
-                lambda: api.get_index_bars(category, market, code6, 0, n + 8)
-            )
+            bars = self._call_tdx(lambda: api.get_index_bars(category, market, code6, 0, n + 8))
         else:
-            bars = self._call_tdx(
-                lambda: api.get_security_bars(category, market, code6, 0, n + 8)
-            )
+            bars = self._call_tdx(lambda: api.get_security_bars(category, market, code6, 0, n + 8))
         if not bars:
             return []
         return [_tdx_bar_to_row(b) for b in bars][-(n + 8) :]
@@ -344,9 +329,7 @@ class TdxSource(DataSource):
         try:
             prefixed = ashare_prefixed_code(symbol)
             market = _market_for_prefixed(prefixed)
-            quotes = self._call_tdx(
-                lambda: self._api.get_security_quotes([(market, prefixed[2:])])
-            )
+            quotes = self._call_tdx(lambda: self._api.get_security_quotes([(market, prefixed[2:])]))
         except Exception as exc:  # noqa: BLE001
             logger.debug("TDX quote failed: %s", exc)
             return None

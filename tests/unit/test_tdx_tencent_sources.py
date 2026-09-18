@@ -3,6 +3,7 @@
 No network / no Qt: only symbol normalisation, volume-unit conversion and
 row-building helpers shared by the two sources.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -13,7 +14,6 @@ from pa_agent.data.tdx_source import (
     _tdx_bar_to_row,
     ashare_prefixed_code,
 )
-
 
 # ── 通达信 ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +54,15 @@ def test_tdx_bar_to_row_volume_scale() -> None:
 def test_tdx_supported_timeframes() -> None:
     src = TdxSource()
     assert src.supported_timeframes() == [
-        "1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M",
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "4h",
+        "1d",
+        "1w",
+        "1M",
     ]
 
 
@@ -102,7 +110,15 @@ def test_tencent_row_index_volume_unchanged() -> None:
 def test_tencent_supported_timeframes() -> None:
     src = TencentSource()
     assert src.supported_timeframes() == [
-        "1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M",
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "4h",
+        "1d",
+        "1w",
+        "1M",
     ]
 
 
@@ -115,11 +131,21 @@ def test_tencent_subscribe_rejects_invalid_symbol() -> None:
 @pytest.mark.parametrize("source_cls", [TdxSource, TencentSource])
 def test_apply_spot_reuses_supplied_quote(monkeypatch, source_cls) -> None:
     src = source_cls()
-    monkeypatch.setattr(src, "_fetch_quote", lambda symbol: (_ for _ in ()).throw(AssertionError("duplicate quote")))
+    monkeypatch.setattr(
+        src, "_fetch_quote", lambda symbol: (_ for _ in ()).throw(AssertionError("duplicate quote"))
+    )
     rows = [{"open": 10.0, "high": 10.0, "low": 10.0, "close": 10.0, "volume": 0.0, "amount": 0.0}]
     src._apply_spot_to_forming(
         rows,
         daily=False,
-        quote={"price": 11.0, "open": 10.0, "high": 11.0, "low": 9.0, "vol": 2.0, "amount": 3.0, "prev_close": 10.0},
+        quote={
+            "price": 11.0,
+            "open": 10.0,
+            "high": 11.0,
+            "low": 9.0,
+            "vol": 2.0,
+            "amount": 3.0,
+            "prev_close": 10.0,
+        },
     )
     assert rows[0]["close"] == 11.0

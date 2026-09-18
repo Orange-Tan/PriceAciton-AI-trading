@@ -1,4 +1,5 @@
 """Append extra KKAI thinking probes to kkai_thinking_test_result.txt."""
+
 from __future__ import annotations
 
 import json
@@ -42,7 +43,10 @@ def post(payload: dict) -> tuple[int, dict | None]:
 
 def summarize(name: str, payload: dict) -> None:
     log(f"\n=== {name} ===")
-    log("request: " + json.dumps({k: v for k, v in payload.items() if k != "messages"}, ensure_ascii=False))
+    log(
+        "request: "
+        + json.dumps({k: v for k, v in payload.items() if k != "messages"}, ensure_ascii=False)
+    )
     try:
         status, body = post(payload)
     except Exception as exc:
@@ -76,7 +80,10 @@ def stream_thinking() -> None:
         "thinking": {"type": "enabled", "budget_tokens": 1024},
         "messages": MSG,
     }
-    log("request: " + json.dumps({k: v for k, v in payload.items() if k != "messages"}, ensure_ascii=False))
+    log(
+        "request: "
+        + json.dumps({k: v for k, v in payload.items() if k != "messages"}, ensure_ascii=False)
+    )
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         URL,
@@ -128,7 +135,9 @@ def main() -> int:
         return 1
     base = {"model": MODEL, "stream": False, "messages": MSG, "max_tokens": 2048}
     summarize("enable_thinking_true", {**base, "enable_thinking": True})
-    summarize("enable_thinking_budget_2048", {**base, "enable_thinking": True, "thinking_budget": 2048})
+    summarize(
+        "enable_thinking_budget_2048", {**base, "enable_thinking": True, "thinking_budget": 2048}
+    )
     summarize(
         "thinking_budget_8192_max_16384",
         {

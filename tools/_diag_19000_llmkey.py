@@ -1,9 +1,11 @@
 """Use QCLAW_LLM_API_KEY from exec environment for 19000."""
+
 import json
-from qclaw_gateway_token import read_gateway_token
 import os
 import urllib.error
 import urllib.request
+
+from qclaw_gateway_token import read_gateway_token
 
 URL = "http://127.0.0.1:19000/proxy/llm/chat/completions"
 GW = read_gateway_token()
@@ -28,7 +30,9 @@ for label, token in [
         print(f"{label}: skip (empty)")
         continue
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
-    req = urllib.request.Request(URL, data=json.dumps(BODY).encode(), headers=headers, method="POST")
+    req = urllib.request.Request(
+        URL, data=json.dumps(BODY).encode(), headers=headers, method="POST"
+    )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             raw = resp.read(400)

@@ -1,9 +1,9 @@
 """Analyze current pending records vs pre-9.0P baseline."""
+
 from __future__ import annotations
 
 import json
-import re
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 
@@ -52,7 +52,11 @@ def main() -> None:
                     "file": fp.name,
                     "type": exc.get("type") if isinstance(exc, dict) else type(exc).__name__,
                     "stage": exc.get("stage") if isinstance(exc, dict) else None,
-                    "message": (exc.get("message") or str(exc))[:200] if isinstance(exc, dict) else str(exc)[:200],
+                    "message": (
+                        (exc.get("message") or str(exc))[:200]
+                        if isinstance(exc, dict)
+                        else str(exc)[:200]
+                    ),
                     "category": exc.get("category") if isinstance(exc, dict) else None,
                     "invalid_fields": exc.get("invalid_fields") if isinstance(exc, dict) else None,
                 }
@@ -128,7 +132,9 @@ def main() -> None:
         print(f"  {k}: {v}")
 
     print("\n=== Outcomes ===")
-    for k, v in sorted((k for k in stats if k.startswith("outcome_")), key=lambda x: stats[x], reverse=True):
+    for k, v in sorted(
+        (k for k in stats if k.startswith("outcome_")), key=lambda x: stats[x], reverse=True
+    ):
         print(f"  {k.replace('outcome_', '')}: {stats[k]}")
 
     print(f"\n=== Exceptions: {stats.get('has_exception', 0)} ===")

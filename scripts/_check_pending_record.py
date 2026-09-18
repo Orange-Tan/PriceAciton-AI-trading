@@ -1,4 +1,5 @@
 """One-off checker for pending record vs market_features."""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from pa_agent.ai.market_features import compute_simple_market_features, render_simple_market_features
+from pa_agent.ai.market_features import (
+    compute_simple_market_features,
+    render_simple_market_features,
+)
 from pa_agent.ai.pattern_routing import sync_detected_patterns_field
 from pa_agent.data.base import KlineBar, KlineFrame
 from pa_agent.data.snapshot import compute_indicators
@@ -45,7 +49,9 @@ def main() -> None:
         for i, m in enumerate(rec.get(key) or []):
             content = m.get("content") or ""
             has = "程序结构辅助特征" in content
-            print(f"{label}_msg[{i}] role={m.get('role')} market_features={has} chars={len(content)}")
+            print(
+                f"{label}_msg[{i}] role={m.get('role')} market_features={has} chars={len(content)}"
+            )
 
     s1 = dict(rec["stage1_diagnosis"])
     before = list(s1.get("detected_patterns") or [])

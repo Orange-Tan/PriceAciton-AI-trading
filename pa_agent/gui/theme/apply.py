@@ -1,4 +1,5 @@
 """Apply the global application theme (深灰 / 浅色)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,8 +20,8 @@ def _resolve_kind(kind: str | None) -> str:
     if kind in THEME_KINDS:
         return kind
     try:
-        from pa_agent.config.settings import load_settings
         from pa_agent.config.paths import SETTINGS_JSON_PATH
+        from pa_agent.config.settings import load_settings
 
         saved = load_settings(SETTINGS_JSON_PATH).general.theme
         if saved in THEME_KINDS:

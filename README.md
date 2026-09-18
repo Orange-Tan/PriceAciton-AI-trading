@@ -5,7 +5,7 @@ PA Agent 是一个桌面端价格行为（Price Action）分析工具：从行�
 ## 功能
 
 - TradingView、AkShare、东方财富、Tushare、通达信、腾讯财经多数据源
-- TradingView Charting Library 图表与 pyqtgraph 后备图表
+- 本地 KLineChart 图表与 PyQtGraph 后备图表
 - 两阶段分析、增量分析、持续跟踪和下一根 K 线预期
 - 决策树可视化、分析原始响应、Token 用量和完整记录落盘
 - 分析后自由追问与历史经验库
@@ -65,7 +65,7 @@ cp config/settings.example.json config/settings.json
 - AkShare / 东方财富 / Tushare / 通达信 / 腾讯财经：主要用于 A 股和指数；部分来源需要 Token 或本地网络条件。
 - 可在“设置 → 数据源”中逐个检测连通性。
 
-TradingView 嵌入图表资源位于 `tradingview/`，源码运行时必须保留该目录。
+KLineChart 嵌入图表资源位于 `tradingview/`，源码运行时必须保留该目录。
 
 ## 测试与检查
 
@@ -89,4 +89,4 @@ python -m ruff check pa_agent --select F,E9
 
 本工具仅供学习和研究，不构成投资建议。交易有风险，使用者自行承担决策后果。
 
-项目代码采用 [AGPL-3.0](LICENSE) 发布；`tradingview/` 下的第三方资源请同时遵守其附带许可证和 TradingView 使用条款。
+项目代码采用 [AGPL-3.0](LICENSE) 发布；`tradingview/` 下的第三方资源请同时遵守其附带许可证和 NOTICE。

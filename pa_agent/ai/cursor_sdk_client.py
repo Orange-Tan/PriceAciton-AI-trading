@@ -12,7 +12,8 @@ import queue
 import sys
 import threading
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from pa_agent.ai.cursor_connector import resolve_cursor_sdk_model_id
 from pa_agent.ai.deepseek_client import AIReply, AIUsage, CancelledError
@@ -32,7 +33,7 @@ def _patch_cursor_sdk_bridge_windows() -> None:
 
     We replace the discovery reader with a thread + queue approach.
     """
-    global _PATCHED_CURSOR_SDK_BRIDGE  # noqa: PLW0603
+    global _PATCHED_CURSOR_SDK_BRIDGE
     if _PATCHED_CURSOR_SDK_BRIDGE:
         return
     if sys.platform != "win32":
@@ -55,7 +56,7 @@ def _patch_cursor_sdk_bridge_windows() -> None:
         if process.stderr is None:
             raise CursorSDKError("Bridge process stderr is unavailable")
 
-        q: "queue.Queue[str | None]" = queue.Queue()
+        q: queue.Queue[str | None] = queue.Queue()
 
         def _reader() -> None:
             try:
@@ -220,8 +221,13 @@ class CursorSdkClient:
 
         try:
             _patch_cursor_sdk_bridge_windows()
-            from cursor_sdk import Agent, AgentOptions, CursorClient, LocalAgentOptions  # type: ignore
-        except Exception as exc:  # noqa: BLE001
+            from cursor_sdk import (  # type: ignore
+                Agent,
+                AgentOptions,
+                CursorClient,
+                LocalAgentOptions,
+            )
+        except Exception as exc:
             raise RuntimeError(
                 "cursor-sdk 未安装或导入失败。请先安装依赖：pip install cursor-sdk"
             ) from exc
@@ -272,7 +278,9 @@ class CursorSdkClient:
         if not content and final_text and on_content_token is not None:
             on_content_token(final_text)
 
-        usage = AIUsage(prompt_tokens=0, cached_prompt_tokens=0, completion_tokens=0, total_tokens=0)
+        usage = AIUsage(
+            prompt_tokens=0, cached_prompt_tokens=0, completion_tokens=0, total_tokens=0
+        )
 
         return AIReply(
             content=final_text,

@@ -2,6 +2,7 @@
 
 Task 19.4
 """
+
 from __future__ import annotations
 
 import json
@@ -9,12 +10,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from pa_agent.ai.router import route_strategy_files
 from pa_agent.app_context import AppContext
+from tests.fixtures.ai_payloads import VALID_STAGE1, VALID_STAGE2_ORDER
 from tests.fixtures.kline_bars import make_newest_first_bars
 from tests.fixtures.validators import schema_test_validator
-from pa_agent.ai.router import route_strategy_files
-
-from tests.fixtures.ai_payloads import VALID_STAGE1, VALID_STAGE2_ORDER
 
 CHAT_REPLY_CONTENT = "This is a follow-up AI response."
 
@@ -75,9 +75,9 @@ def _make_ctx(tmp_path):
 @pytest.mark.e2e
 def test_free_chat_after_analysis(qtbot, tmp_path):
     """After two-stage analysis, a FreeChatSession can send one turn."""
+    from pa_agent.ai.session_ledger import SessionTokenLedger
     from pa_agent.gui.main_window import MainWindow
     from pa_agent.orchestrator.free_chat import FreeChatSession
-    from pa_agent.ai.session_ledger import SessionTokenLedger
     from pa_agent.util.threading import CancelToken
 
     ctx, pending_writer = _make_ctx(tmp_path)
@@ -119,6 +119,7 @@ def test_free_chat_after_analysis(qtbot, tmp_path):
     # Send one message via the session directly (simulating what the UI does)
     cancel_token = CancelToken()
     reply = session.send("What do you think about the entry?", cancel_token)
+    assert reply.content == CHAT_REPLY_CONTENT
 
     # FreeChatSession should have completed one turn
     assert session._turn == 1, f"Expected 1 turn, got {session._turn}"
@@ -129,6 +130,7 @@ def test_free_chat_after_analysis(qtbot, tmp_path):
     call_args = pending_writer.append_followup.call_args
     record_id_arg = call_args[0][0]
     followup_turn_arg = call_args[0][1]
+    assert record_id_arg == session.record_id
     assert followup_turn_arg.turn == 1
     assert followup_turn_arg.cancelled is False
 

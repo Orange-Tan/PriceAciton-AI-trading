@@ -19,4 +19,3 @@ def test_default_window_size_uses_fallback_without_available_geometry() -> None:
     screen = SimpleNamespace(availableGeometry=lambda: None)
 
     assert _default_window_size(screen) == (1280, 820)
-

@@ -7,6 +7,7 @@ unchanged (``base_url`` + ``model`` + ``api_key``).
 Model ids are editable in the UI — the lists here are convenient defaults, not
 an exhaustive catalog.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,11 +18,11 @@ class ModelProviderPreset:
     """A ready-to-use OpenAI-compatible model vendor."""
 
     id: str
-    name: str                                  # 中文展示名
-    vendor: str                                # 英文厂商名
+    name: str  # 中文展示名
+    vendor: str  # 英文厂商名
     base_url: str
-    models: tuple[tuple[str, str], ...]        # (model_id, 简短说明)
-    api_key_url: str                           # 获取 API Key 的入口
+    models: tuple[tuple[str, str], ...]  # (model_id, 简短说明)
+    api_key_url: str  # 获取 API Key 的入口
     thinking_default: bool = True
 
 
@@ -164,6 +165,11 @@ def guess_provider(base_url: str, model: str = "") -> str | None:
         for preset in PROVIDERS:
             if preset.base_url.lower() in b:
                 return preset.id
+        # A non-empty URL that does not match a preset is an explicit relay or
+        # self-hosted endpoint.  Do not let a model keyword replace it with an
+        # unrelated preset; the settings dialog would then clear the custom
+        # fields when the user selects "自定义" again.
+        return None
 
     m = (model or "").strip().lower()
     if m:

@@ -2,6 +2,7 @@
 
 保持 UI 线程不阻塞：探测在 QThread 中执行，完成后经信号回到主线程。
 """
+
 from __future__ import annotations
 
 import logging

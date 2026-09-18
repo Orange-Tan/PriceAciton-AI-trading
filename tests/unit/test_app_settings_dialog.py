@@ -153,6 +153,7 @@ def test_custom_provider_values_are_kept_when_saved(qtbot, monkeypatch):
 
 def test_existing_api_key_is_not_rendered_as_plaintext(qtbot):
     from PyQt6.QtWidgets import QLineEdit
+
     from pa_agent.gui.app_settings_dialog import AppSettingsDialog
 
     settings = Settings()
@@ -191,6 +192,7 @@ def test_api_key_field_has_no_visibility_button(qtbot):
 
 def test_legacy_settings_dialog_masks_and_preserves_existing_key(qtbot, monkeypatch):
     from PyQt6.QtWidgets import QLineEdit
+
     from pa_agent.gui.settings_dialog import SettingsDialog
 
     settings = Settings()
@@ -210,6 +212,7 @@ def test_legacy_settings_dialog_masks_and_preserves_existing_key(qtbot, monkeypa
 
 def test_model_settings_dialog_masks_and_preserves_existing_key(qtbot, monkeypatch):
     from PyQt6.QtWidgets import QLineEdit
+
     from pa_agent.gui.ai_model_settings_dialog import AIModelSettingsDialog
 
     settings = Settings()

@@ -1,21 +1,19 @@
 """Unit tests for JSON repair in json_validator."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-import pytest
-
 from pa_agent.ai.json_validator import (
     JsonValidator,
     Ok,
-    ValidationError,
     _repair_unescaped_quotes,
     _strip_fences,
 )
+from tests.fixtures.validators import schema_test_validator
 
 _SAMPLE = Path(__file__).resolve().parents[2] / "tools" / "stage2_raw_sample.txt"
-from tests.fixtures.validators import schema_test_validator
 
 _validator = schema_test_validator()
 
@@ -234,9 +232,9 @@ def test_check_next_bar_prediction_direction_mismatch():
         }
     }
     errors = JsonValidator._check_next_bar_prediction(obj)
-    assert any("direction" in e and "argmax" in e for e in errors), (
-        f"Expected direction-argmax error, got {errors}"
-    )
+    assert any(
+        "direction" in e and "argmax" in e for e in errors
+    ), f"Expected direction-argmax error, got {errors}"
 
 
 def test_check_next_bar_prediction_invalid_fields_prefix():
@@ -251,6 +249,6 @@ def test_check_next_bar_prediction_invalid_fields_prefix():
         }
     }
     errors = JsonValidator._check_next_bar_prediction(obj)
-    assert all(e.startswith("next_bar_prediction.") for e in errors), (
-        f"Not all errors have prefix: {errors}"
-    )
+    assert all(
+        e.startswith("next_bar_prediction.") for e in errors
+    ), f"Not all errors have prefix: {errors}"

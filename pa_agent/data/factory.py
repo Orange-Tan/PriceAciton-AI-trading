@@ -1,8 +1,9 @@
 """Construct :class:`DataSource` implementations by kind id."""
+
 from __future__ import annotations
 
-import time
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Literal
 
@@ -114,9 +115,7 @@ def create_data_source(kind: str | None) -> DataSource:
     raise ValueError(f"未知数据源: {kind!r}")
 
 
-def probe_data_source(
-    kind: str | None, timeout_s: float = _PROBE_TIMEOUT_S
-) -> tuple[bool, str]:
+def probe_data_source(kind: str | None, timeout_s: float = _PROBE_TIMEOUT_S) -> tuple[bool, str]:
     """探测 *kind* 数据源连通性，返回 ``(是否连通, 说明)``。
 
     在全新实例上执行 ``connect()`` + 拉取少量日线，失败不抛异常，统一转为

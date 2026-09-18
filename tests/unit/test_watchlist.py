@@ -1,4 +1,5 @@
 """Tests for the left-side watchlist (自选股) panel and its MainWindow wiring."""
+
 from __future__ import annotations
 
 import time
@@ -301,7 +302,10 @@ def test_watchlist_panel_groups_and_quote_table(qtbot) -> None:
     assert panel.add_symbol("600519", group="核心持仓") is False
     panel.update_quote("600519", name="贵州茅台", price=1488, change=1.25)
     assert [panel._table.item(0, c).text() for c in range(4)] == [
-        "600519", "贵州茅台", "1488", "+1.25%"
+        "600519",
+        "贵州茅台",
+        "1488",
+        "+1.25%",
     ]
 
 
@@ -382,8 +386,8 @@ def test_watchlist_decision_adapter_handles_missing_stage2_payload() -> None:
 
 
 def test_persist_watchlist_writes_groups_and_flat_compatibility(monkeypatch) -> None:
-    from pa_agent.gui.watchlist_panel import WatchlistPanel
     from pa_agent.gui.main_window import MainWindow
+    from pa_agent.gui.watchlist_panel import WatchlistPanel
 
     panel = WatchlistPanel({"全部": ["600519"], "观察": ["000001", "600519"]})
     settings = SimpleNamespace(general=SimpleNamespace(watchlist=[], watchlist_groups={}))

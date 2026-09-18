@@ -4,6 +4,7 @@
 字段控件，不内置导航；导航由使用方（齿轮设置对话框的左侧模块栏，或独立
 对话框自己的左右栏）安排，使各分组分开显示。
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -26,8 +27,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from pa_agent.config.settings import Settings, save_settings
 from pa_agent.config.paths import SETTINGS_JSON_PATH
+from pa_agent.config.settings import Settings, save_settings
 from pa_agent.gui.theme.apply import THEME_KINDS, apply_theme, apply_theme_from_settings
 from pa_agent.gui.theme.tokens import THEME_LABELS
 
@@ -102,7 +103,9 @@ class GeneralSettingsPanel(QWidget):
         self._decision_stance_combo.addItem("保守", "conservative")
         self._decision_stance_combo.addItem("均衡（默认，比保守更愿意下单）", "balanced")
         self._decision_stance_combo.addItem("激进（比均衡更愿意下单）", "aggressive")
-        self._decision_stance_combo.addItem("极度激进（强制选方向与进场方式）", "extreme_aggressive")
+        self._decision_stance_combo.addItem(
+            "极度激进（强制选方向与进场方式）", "extreme_aggressive"
+        )
         self._decision_stance_combo.setToolTip(
             "仅影响阶段二交易决策倾向；保守与改版前一致。\n"
             "均衡、激进逐级提高下单意愿；极度激进在未触犯 §14 硬性禁止时\n"
@@ -266,9 +269,7 @@ class GeneralSettingsPanel(QWidget):
         if idx >= 0:
             self._decision_stance_combo.setCurrentIndex(idx)
         self._alert_on_order_check.blockSignals(True)
-        self._alert_on_order_check.setChecked(
-            bool(getattr(g, "alert_on_order_opportunity", True))
-        )
+        self._alert_on_order_check.setChecked(bool(getattr(g, "alert_on_order_opportunity", True)))
         self._alert_on_order_check.blockSignals(False)
         self._enable_next_bar_check.blockSignals(True)
         self._enable_next_bar_check.setChecked(
@@ -295,12 +296,8 @@ class GeneralSettingsPanel(QWidget):
         self._stream_font_spin.setValue(int(getattr(g, "stream_pane_font_pt", 11)))
         self._chart_seq_font_spin.setValue(int(getattr(g, "chart_seq_label_font_pt", 11)))
 
-        self._flow_auto_play_check.setChecked(
-            getattr(g, "decision_flow_auto_play", False)
-        )
-        self._flow_play_seconds_spin.setValue(
-            getattr(g, "decision_flow_play_seconds", 50)
-        )
+        self._flow_auto_play_check.setChecked(getattr(g, "decision_flow_auto_play", False))
+        self._flow_play_seconds_spin.setValue(getattr(g, "decision_flow_play_seconds", 50))
         self._flow_default_zoom_spin.setValue(
             int(getattr(g, "decision_flow_default_zoom_pct", 600))
         )
@@ -407,8 +404,7 @@ class GeneralSettingsDialog(QDialog):
         root.addLayout(body)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save
-            | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         save_btn = buttons.button(QDialogButtonBox.StandardButton.Save)
         if save_btn:
@@ -435,7 +431,7 @@ class GeneralSettingsDialog(QDialog):
         save_settings(self._settings, SETTINGS_JSON_PATH)
         self.accept()
 
-    def reject(self) -> None:  # noqa: N802
+    def reject(self) -> None:
         """取消时回滚界面风格预览（未点保存的主题不留在界面上）。"""
         from PyQt6.QtWidgets import QApplication
 

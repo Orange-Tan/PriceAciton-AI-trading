@@ -1,10 +1,11 @@
 """TradingView outbound connectivity probe."""
+
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
 import sys
 import time
 import types
+from unittest.mock import MagicMock, patch
 
 from pa_agent.data.tradingview_connectivity import check_tradingview_connectivity
 

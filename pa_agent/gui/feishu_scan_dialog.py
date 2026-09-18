@@ -9,6 +9,7 @@
 二维码渲染使用可选依赖 ``segno``（纯 Python，无 PIL）；未安装时降级为
 可复制的链接 + 「在浏览器打开」按钮。
 """
+
 from __future__ import annotations
 
 import logging
@@ -271,6 +272,6 @@ class FeishuScanDialog(QDialog):
         worker.finished.connect(worker.deleteLater)
         self._worker = None
 
-    def reject(self) -> None:  # noqa: N802
+    def reject(self) -> None:
         self._shutdown_worker()
         super().reject()

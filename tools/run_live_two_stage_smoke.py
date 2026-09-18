@@ -6,9 +6,9 @@ Usage (from repo root):
 
 Exit 0 if both stages complete without network/cancel errors; validation may still fail.
 """
+
 from __future__ import annotations
 
-import json
 import logging
 import sys
 import tempfile
@@ -23,13 +23,13 @@ from pa_agent.ai.prompt_assembler import PromptAssembler
 from pa_agent.ai.router import route_strategy_files
 from pa_agent.config.paths import EXPERIENCE_DIR, PROMPT_DIR, SETTINGS_JSON_PATH
 from pa_agent.config.settings import load_settings, provider_api_key_configured
+from pa_agent.data.base import KlineBar, KlineFrame
+from pa_agent.data.snapshot import compute_indicators
 from pa_agent.orchestrator.two_stage import TwoStageOrchestrator
 from pa_agent.records.experience_reader import ExperienceReader
 from pa_agent.records.pending_writer import PendingWriter
 from pa_agent.util.event_bus import EventBus
 from pa_agent.util.threading import CancelToken, OrchestratorEvent
-from pa_agent.data.base import KlineBar, KlineFrame
-from pa_agent.data.snapshot import compute_indicators
 
 # Fewer bars than production default to keep prompt smaller for smoke.
 SMOKE_BAR_COUNT = 30
@@ -113,9 +113,8 @@ def main() -> int:
 
     if args.hybrid_stage1_fixture:
         import json
-        from unittest.mock import MagicMock
-
         from copy import deepcopy
+        from unittest.mock import MagicMock
 
         from tests.fixtures.gate_trace import (
             make_bar_by_bar_summary,
@@ -158,7 +157,9 @@ def main() -> int:
         from tests.fixtures.validators import schema_test_validator
 
         validator = schema_test_validator()
-        log.warning("Using lenient validator (--relax-validation); production uses strict from settings.json")
+        log.warning(
+            "Using lenient validator (--relax-validation); production uses strict from settings.json"
+        )
     else:
         from pa_agent.ai.json_validator import JsonValidator
 
@@ -206,10 +207,14 @@ def main() -> int:
     if s1:
         print(
             "stage1:",
-            "gate_result=", s1.get("gate_result"),
-            "cycle_position=", s1.get("cycle_position"),
-            "direction=", s1.get("direction"),
-            "patterns=", s1.get("detected_patterns"),
+            "gate_result=",
+            s1.get("gate_result"),
+            "cycle_position=",
+            s1.get("cycle_position"),
+            "direction=",
+            s1.get("direction"),
+            "patterns=",
+            s1.get("detected_patterns"),
         )
     else:
         print("stage1: (none)")
@@ -219,9 +224,12 @@ def main() -> int:
         dec = s2.get("decision") or {}
         print(
             "stage2:",
-            "order_type=", dec.get("order_type"),
-            "order_direction=", dec.get("order_direction"),
-            "gate_shortcircuited=", s2.get("gate_shortcircuited"),
+            "order_type=",
+            dec.get("order_type"),
+            "order_direction=",
+            dec.get("order_direction"),
+            "gate_shortcircuited=",
+            s2.get("gate_shortcircuited"),
         )
         strat = record.strategy_files_used or []
         print("strategy_files_used:", strat)
@@ -231,12 +239,8 @@ def main() -> int:
     if record.exception:
         print("exception:", json.dumps(record.exception, ensure_ascii=False, indent=2))
 
-    ok_pipeline = (
-        OrchestratorEvent.Stage1Done in events
-        and (
-            OrchestratorEvent.Stage2Done in events
-            or OrchestratorEvent.RecordSaved in events
-        )
+    ok_pipeline = OrchestratorEvent.Stage1Done in events and (
+        OrchestratorEvent.Stage2Done in events or OrchestratorEvent.RecordSaved in events
     )
     exc = record.exception or {}
     exc_type = exc.get("type", "")

@@ -12,16 +12,14 @@ deserialization cycle with deep equality, including:
   - optional fields both present and absent (None)
   - nested dicts, lists, and string fields
 """
+
 from __future__ import annotations
 
 import json
 
-from hypothesis import given
-from hypothesis import settings as h_settings
-from hypothesis import strategies as st
+from hypothesis import given, settings as h_settings, strategies as st
 
 from pa_agent.records.schema import AnalysisRecord, RecordMeta
-
 
 # ── Strategies ────────────────────────────────────────────────────────────────
 
@@ -149,6 +147,7 @@ def analysis_record_st(draw: st.DrawFn) -> AnalysisRecord:
 
 
 # ── Property ──────────────────────────────────────────────────────────────────
+
 
 @given(analysis_record_st())
 @h_settings(max_examples=100)

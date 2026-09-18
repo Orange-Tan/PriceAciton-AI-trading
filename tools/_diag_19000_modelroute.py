@@ -1,17 +1,53 @@
 """Execute inside QClaw gateway - test modelroute and auth variants."""
+
 import json
-from qclaw_gateway_token import read_gateway_token
 import urllib.error
 import urllib.request
+
+from qclaw_gateway_token import read_gateway_token
 
 TOKEN = read_gateway_token()
 URL = "http://127.0.0.1:19000/proxy/llm/chat/completions"
 
 CASES = [
-    ("modelroute-minimal", {"model": "modelroute", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 16, "stream": False}),
-    ("modelroute-reasoning", {"model": "modelroute", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 50, "stream": False, "reasoning_effort": "max"}),
-    ("modelroute-stream", {"model": "modelroute", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 50, "stream": True, "reasoning_effort": "high"}),
-    ("pool-no-auth", {"model": "pool-deepseek-v4-pro", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 16, "stream": False}),
+    (
+        "modelroute-minimal",
+        {
+            "model": "modelroute",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+        },
+    ),
+    (
+        "modelroute-reasoning",
+        {
+            "model": "modelroute",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 50,
+            "stream": False,
+            "reasoning_effort": "max",
+        },
+    ),
+    (
+        "modelroute-stream",
+        {
+            "model": "modelroute",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 50,
+            "stream": True,
+            "reasoning_effort": "high",
+        },
+    ),
+    (
+        "pool-no-auth",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+        },
+    ),
 ]
 
 for name, body in CASES:

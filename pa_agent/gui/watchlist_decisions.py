@@ -1,4 +1,5 @@
 """Extract compact watchlist decisions from completed analysis records."""
+
 from __future__ import annotations
 
 from datetime import date

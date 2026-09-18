@@ -1,4 +1,5 @@
 """Regression tests for silent analysis completion in MainWindow."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -49,7 +50,9 @@ def _window(debug_widget, stream_widget=None) -> tuple[object, list[str], list[t
     window._ui_is_alive = lambda: True
     window._keep_analysis_checkbox = None
     window._chart_refresh_paused = False
-    window._prompt_debug_report_for_bug_fix = lambda *args, **kwargs: debug_reports.append((args, kwargs))
+    window._prompt_debug_report_for_bug_fix = lambda *args, **kwargs: debug_reports.append(
+        (args, kwargs)
+    )
     truncation_calls: list[dict] = []
     window._maybe_show_truncation_help_dialog = lambda exc: truncation_calls.append(exc)
     window._truncation_calls = truncation_calls

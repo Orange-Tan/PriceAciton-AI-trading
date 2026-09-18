@@ -1,24 +1,56 @@
-import json, os, subprocess, uuid, time
+import json
+import os
+import subprocess
+import time
+import uuid
 from pathlib import Path
+
 from qclaw_gateway_token import read_gateway_token
 
 TOKEN = read_gateway_token()
 rt = json.loads(Path.home().joinpath(".qclaw", "qclaw.json").read_text())
 node, mjs = rt["cli"]["nodeBinary"], rt["cli"]["openclawMjs"]
-env = {**os.environ, "OPENCLAW_CONFIG_PATH": str(Path.home() / ".qclaw/openclaw.json"), "OPENCLAW_STATE_DIR": str(Path.home() / ".qclaw")}
+env = {
+    **os.environ,
+    "OPENCLAW_CONFIG_PATH": str(Path.home() / ".qclaw/openclaw.json"),
+    "OPENCLAW_STATE_DIR": str(Path.home() / ".qclaw"),
+}
 
 for session in ["agent:main:main", "agent:tfxjjhfnjialcuju:main"]:
     script = Path(__file__).with_name("_diag_19000_exact.py").resolve()
     msg = f'timeout=90 python "{script}"'
-    params = json.dumps({"sessionKey": session, "message": msg, "idempotencyKey": str(uuid.uuid4())})
+    params = json.dumps(
+        {"sessionKey": session, "message": msg, "idempotencyKey": str(uuid.uuid4())}
+    )
     print(f"=== {session} ===")
-    subprocess.run([node, mjs, "gateway", "call", "chat.send", "--token", TOKEN, "--params", params, "--json", "--timeout", "120000"], env=env)
+    subprocess.run(
+        [
+            node,
+            mjs,
+            "gateway",
+            "call",
+            "chat.send",
+            "--token",
+            TOKEN,
+            "--params",
+            params,
+            "--json",
+            "--timeout",
+            "120000",
+        ],
+        env=env,
+    )
     time.sleep(45)
 
-p = sorted(Path.home().joinpath(".qclaw/agents/main/sessions").glob("*.jsonl"), key=lambda x: x.stat().st_mtime)[-1]
+p = sorted(
+    Path.home().joinpath(".qclaw/agents/main/sessions").glob("*.jsonl"),
+    key=lambda x: x.stat().st_mtime,
+)[-1]
 for line in p.read_text(encoding="utf-8").splitlines()[-25:]:
     d = json.loads(line)
     if d.get("message", {}).get("role") == "toolResult":
-        t = "".join(x.get("text", "") for x in d["message"].get("content", []) if isinstance(x, dict))
+        t = "".join(
+            x.get("text", "") for x in d["message"].get("content", []) if isinstance(x, dict)
+        )
         if "OK status" in t or "HTTP 4" in t:
             print(t)

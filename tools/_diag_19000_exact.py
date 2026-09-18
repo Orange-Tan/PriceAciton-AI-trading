@@ -1,8 +1,9 @@
 """Exact payload that worked in tfxjjhfnjialcuju session (2026-06-10)."""
-import json
-from qclaw_gateway_token import read_gateway_token
+
 import urllib.error
 import urllib.request
+
+from qclaw_gateway_token import read_gateway_token
 
 URL = "http://127.0.0.1:19000/proxy/llm/chat/completions"
 TOKEN = read_gateway_token()

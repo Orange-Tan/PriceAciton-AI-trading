@@ -1,4 +1,5 @@
 """Application context wiring shared resources without global singletons."""
+
 from __future__ import annotations
 
 import logging
@@ -15,44 +16,44 @@ class AppContext:
     event_bus: Any = None
 
     # Data layer
-    data_source: Any = None       # DataSource implementation
+    data_source: Any = None  # DataSource implementation
 
     # AI / orchestration layer
-    client: Any = None            # DeepSeekClient
-    assembler: Any = None         # PromptAssembler
-    router: Any = None            # route_strategy_files callable
-    validator: Any = None         # JsonValidator
-    pending_writer: Any = None    # PendingWriter
-    exp_reader: Any = None        # ExperienceReader
-    ledger: Any = None            # SessionTokenLedger
+    client: Any = None  # DeepSeekClient
+    assembler: Any = None  # PromptAssembler
+    router: Any = None  # route_strategy_files callable
+    validator: Any = None  # JsonValidator
+    pending_writer: Any = None  # PendingWriter
+    exp_reader: Any = None  # ExperienceReader
+    ledger: Any = None  # SessionTokenLedger
 
     @classmethod
-    def bootstrap(cls) -> "AppContext":
+    def bootstrap(cls) -> AppContext:
         """Wire all real components and return a fully initialised AppContext."""
-        from pa_agent.config.paths import (
-            SETTINGS_JSON_PATH,
-            RECORDS_PENDING_DIR,
-            EXPERIENCE_DIR,
-            PROMPT_DIR,
-        )
-        from pa_agent.config.settings import load_settings
-        from pa_agent.util.logging import configure_logging
-        from pa_agent.util.event_bus import EventBus
-        from pa_agent.data.factory import create_data_source, normalize_data_source_kind
         from pa_agent.ai.cursor_connector import is_openclaw_cs_model
         from pa_agent.ai.deepseek_client import DeepSeekClient
+        from pa_agent.ai.json_validator import JsonValidator
         from pa_agent.ai.prompt_assembler import PromptAssembler
         from pa_agent.ai.router import route_strategy_files
-        from pa_agent.ai.json_validator import JsonValidator
         from pa_agent.ai.session_ledger import SessionTokenLedger
-        from pa_agent.records.pending_writer import PendingWriter
+        from pa_agent.config.paths import (
+            EXPERIENCE_DIR,
+            PROMPT_DIR,
+            RECORDS_PENDING_DIR,
+            SETTINGS_JSON_PATH,
+        )
+        from pa_agent.config.settings import load_settings
+        from pa_agent.data.factory import create_data_source, normalize_data_source_kind
         from pa_agent.records.experience_reader import ExperienceReader
+        from pa_agent.records.pending_writer import PendingWriter
+        from pa_agent.util.event_bus import EventBus
+        from pa_agent.util.logging import configure_logging
 
         # ── Settings ──────────────────────────────────────────────────────────
         settings = load_settings(SETTINGS_JSON_PATH)
+        from pa_agent.ai.cursor_connector import sync_cursor_provider_on_load
         from pa_agent.ai.qclaw_connector import sync_qclaw_agent_provider_on_load
         from pa_agent.ai.workbuddy_connector import sync_workbuddy_provider_on_load
-        from pa_agent.ai.cursor_connector import sync_cursor_provider_on_load
 
         sync_qclaw_agent_provider_on_load(settings, save_path=SETTINGS_JSON_PATH)
         sync_workbuddy_provider_on_load(settings, save_path=SETTINGS_JSON_PATH)
@@ -83,7 +84,9 @@ class AppContext:
 
                 if isinstance(data_source, TradingViewSource):
                     # Use saved exchange setting, default to auto (empty).
-                    saved_exchange = getattr(settings.general, 'last_tradingview_exchange', '') or ''
+                    saved_exchange = (
+                        getattr(settings.general, "last_tradingview_exchange", "") or ""
+                    )
                     data_source.set_exchange(saved_exchange)
             data_source.subscribe(
                 settings.general.last_symbol,

@@ -1,4 +1,5 @@
 """5-metric summary card strip for the AI panel header."""
+
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
@@ -130,7 +131,7 @@ class SummaryStrip(QWidget):
         for card in self._cards:
             card.set_value("—")
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._relayout()
 

@@ -1,4 +1,5 @@
 """Run 19000 payload tests inside QClaw gateway via chat.send /exec."""
+
 from __future__ import annotations
 
 import json
@@ -6,6 +7,7 @@ import os
 import subprocess
 import uuid
 from pathlib import Path
+
 from qclaw_gateway_token import read_gateway_token
 
 TOKEN = read_gateway_token()
@@ -23,9 +25,7 @@ def main() -> int:
         "OPENCLAW_CONFIG_PATH": str(CONFIG),
         "OPENCLAW_STATE_DIR": str(Path.home() / ".qclaw"),
     }
-    message = (
-        f'/exec host=gateway timeout=60 python "{TEST_SCRIPT.resolve()}"'
-    )
+    message = f'/exec host=gateway timeout=60 python "{TEST_SCRIPT.resolve()}"'
     params = json.dumps(
         {
             "sessionKey": "agent:main:main",
@@ -34,7 +34,20 @@ def main() -> int:
         }
     )
     proc = subprocess.run(
-        [node, mjs, "gateway", "call", "chat.send", "--token", TOKEN, "--params", params, "--json", "--timeout", "90000"],
+        [
+            node,
+            mjs,
+            "gateway",
+            "call",
+            "chat.send",
+            "--token",
+            TOKEN,
+            "--params",
+            params,
+            "--json",
+            "--timeout",
+            "90000",
+        ],
         env=env,
         capture_output=True,
         text=True,

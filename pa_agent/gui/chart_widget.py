@@ -5,6 +5,7 @@ Tasks 14.2 + 14.5:
   - Draws entry/TP/SL horizontal lines when order_type != "不下单".
   - 30 Hz QTimer throttles redraws so the 1 Hz data thread never blocks the UI.
 """
+
 from __future__ import annotations
 
 import math
@@ -108,7 +109,7 @@ class ChartWidget(pg.PlotWidget):
         if self._latest_frame is not None:
             self._dirty = True
 
-    def set_frame(self, frame: "KlineFrame", *, fit_view: bool = False) -> None:
+    def set_frame(self, frame: KlineFrame, *, fit_view: bool = False) -> None:
         """Cache the latest KlineFrame; actual redraw happens on the timer."""
         if self._should_skip_redraw(frame):
             self._latest_frame = frame
@@ -120,7 +121,7 @@ class ChartWidget(pg.PlotWidget):
             self._fit_on_next_render = True
         self._dirty = True
 
-    def set_frame_now(self, frame: "KlineFrame", *, fit_view: bool = False) -> None:
+    def set_frame_now(self, frame: KlineFrame, *, fit_view: bool = False) -> None:
         """Apply *frame* to the chart immediately (bypass 30 Hz throttle)."""
         if self._should_skip_redraw(frame):
             self._latest_frame = frame
@@ -133,7 +134,7 @@ class ChartWidget(pg.PlotWidget):
         if fit_view:
             self.fit_view()
 
-    def _should_skip_redraw(self, frame: "KlineFrame") -> bool:
+    def _should_skip_redraw(self, frame: KlineFrame) -> bool:
         """Skip repaint when the screen already shows the same closed-only snapshot."""
         from pa_agent.data.snapshot import frame_is_pure_closed, frames_equal_for_chart
 
@@ -163,7 +164,7 @@ class ChartWidget(pg.PlotWidget):
         )
         self._first_frame_fitted = True
 
-    def displayed_frame(self) -> "KlineFrame | None":
+    def displayed_frame(self) -> KlineFrame | None:
         """Return the KlineFrame currently shown on the chart."""
         return self._latest_frame
 
@@ -185,9 +186,7 @@ class ChartWidget(pg.PlotWidget):
         if entry is not None and tp is not None and sl is not None:
             try:
                 tp2_val = float(tp2) if tp2 is not None else None
-                self._overlay.set_lines(
-                    self, float(entry), float(tp), float(sl), tp2=tp2_val
-                )
+                self._overlay.set_lines(self, float(entry), float(tp), float(sl), tp2=tp2_val)
             except (TypeError, ValueError):
                 self._overlay.clear_lines(self)
         else:
@@ -225,18 +224,17 @@ class ChartWidget(pg.PlotWidget):
                 continue
 
             if kind == "support":
-                color = (34, 197, 94, 180)    # green
-                text_color = (134, 239, 172)   # light green
+                color = (34, 197, 94, 180)  # green
+                text_color = (134, 239, 172)  # light green
             else:
-                color = (245, 158, 11, 180)    # amber
-                text_color = (251, 191, 36)    # yellow
+                color = (245, 158, 11, 180)  # amber
+                text_color = (251, 191, 36)  # yellow
 
             # Draw the midline
             line = pg.InfiniteLine(
                 pos=price,
                 angle=0,
-                pen=pg.mkPen(color=color, width=1,
-                             style=pg.QtCore.Qt.PenStyle.DashLine),
+                pen=pg.mkPen(color=color, width=1, style=pg.QtCore.Qt.PenStyle.DashLine),
                 movable=False,
             )
             plot.addItem(line)
@@ -308,7 +306,7 @@ class ChartWidget(pg.PlotWidget):
         top, bot = self._axis_vertical_range_wy()
         return abs(vx - edge) < _AXIS_RESIZE_EDGE_PX and top <= vy <= bot
 
-    def viewportEvent(self, ev):  # noqa: N802
+    def viewportEvent(self, ev):
         """Intercept viewport mouse events to handle price-axis width resizing.
 
         This is the canonical entry-point for viewport events in
@@ -378,7 +376,7 @@ class ChartWidget(pg.PlotWidget):
 
     # ── Internal rendering ────────────────────────────────────────────────────
 
-    def _render_frame(self, frame: "KlineFrame") -> None:
+    def _render_frame(self, frame: KlineFrame) -> None:
         """Rebuild all candle items, EMA line, and sequence labels."""
         self._clear_candles_and_labels()
         if self._ema_line is not None:
@@ -444,7 +442,7 @@ class ChartWidget(pg.PlotWidget):
 
     def _view_ranges_for_frame(
         self,
-        frame: "KlineFrame",
+        frame: KlineFrame,
     ) -> tuple[tuple[float, float], tuple[float, float]]:
         """Compute (x_range, y_range) for the newest ``_FIT_VISIBLE_BARS`` bars."""
         bars = frame.bars

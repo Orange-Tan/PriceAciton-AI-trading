@@ -1,13 +1,12 @@
 """One-off KKAI thinking probe for claude-opus-4-5. Run: python tools/test_kkai_thinking.py"""
+
 from __future__ import annotations
 
 import json
-import sys
+import os
 import urllib.error
 import urllib.request
 from pathlib import Path
-
-import os
 
 API_KEY = os.environ.get("KKAI_API_KEY", "").strip()
 URL = "https://api.kkone.vip/v1/chat/completions"
@@ -39,7 +38,10 @@ def post(payload: dict) -> dict:
 
 def summarize(name: str, payload: dict) -> None:
     log(f"\n=== {name} ===")
-    log("request: " + json.dumps({k: v for k, v in payload.items() if k != "messages"}, ensure_ascii=False))
+    log(
+        "request: "
+        + json.dumps({k: v for k, v in payload.items() if k != "messages"}, ensure_ascii=False)
+    )
     try:
         body = post(payload)
     except urllib.error.HTTPError as exc:
@@ -111,7 +113,11 @@ def main() -> int:
         log("Set KKAI_API_KEY environment variable first.")
         OUT.write_text("\n".join(_lines) + "\n", encoding="utf-8")
         return 1
-    base = {"model": MODEL, "stream": False, "messages": [{"role": "user", "content": "1+1=? 只答数字"}]}
+    base = {
+        "model": MODEL,
+        "stream": False,
+        "messages": [{"role": "user", "content": "1+1=? 只答数字"}],
+    }
     summarize("baseline", {**base, "max_tokens": 512})
     summarize("reasoning_effort_medium", {**base, "max_tokens": 2048, "reasoning_effort": "medium"})
     summarize("reasoning_effort_low", {**base, "max_tokens": 2048, "reasoning_effort": "low"})

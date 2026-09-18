@@ -16,6 +16,7 @@
 直接 ``from pa_agent.gui.theme.tokens import ACCENT_DANGER`` 也会经
 ``__getattr__`` 返回当前主题值。
 """
+
 from __future__ import annotations
 
 from typing import Any

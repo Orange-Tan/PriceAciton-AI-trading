@@ -1,4 +1,5 @@
 """Verify user diagnosis stats on pending records."""
+
 from __future__ import annotations
 
 import json

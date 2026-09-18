@@ -5,8 +5,9 @@
 
 或者双击 run.py（如果系统关联了 Python）。
 """
-import sys
+
 import os
+import sys
 
 # 确保 PA_Agent 目录在 sys.path 里（当从其他目录运行时也能找到包）
 _here = os.path.dirname(os.path.abspath(__file__))

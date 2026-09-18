@@ -1,4 +1,5 @@
 """Compatibility re-export for the Qt-free watchlist store."""
+
 from pa_agent.config.watchlist_store import (
     DEFAULT_GROUP,
     migrate_watchlist,

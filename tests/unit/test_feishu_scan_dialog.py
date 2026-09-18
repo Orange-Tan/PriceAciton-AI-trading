@@ -8,7 +8,9 @@ from pa_agent.config.settings import Settings
 def test_scan_dialog_cancel_detaches_running_worker(qtbot, monkeypatch):
     from pa_agent.gui.feishu_scan_dialog import FeishuScanDialog
 
-    monkeypatch.setattr("pa_agent.gui.feishu_scan_dialog.FeishuScanWorker.start", lambda _self: None)
+    monkeypatch.setattr(
+        "pa_agent.gui.feishu_scan_dialog.FeishuScanWorker.start", lambda _self: None
+    )
     dialog = FeishuScanDialog(Settings())
     qtbot.addWidget(dialog)
     calls: list[str] = []

@@ -1,4 +1,5 @@
 """One-off repair for corrupted UTF-8 in tests/integration/*.py (ASCII-only source)."""
+
 from __future__ import annotations
 
 from pathlib import Path

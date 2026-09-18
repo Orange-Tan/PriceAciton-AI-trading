@@ -1,8 +1,10 @@
 """Execute inside QClaw gateway process tree - test 19000 payloads."""
+
 import json
-from qclaw_gateway_token import read_gateway_token
 import urllib.error
 import urllib.request
+
+from qclaw_gateway_token import read_gateway_token
 
 TOKEN = read_gateway_token()
 URLS = [
@@ -10,11 +12,58 @@ URLS = [
     "http://127.0.0.1:19000/proxy/chat/completions",
 ]
 CASES = [
-    ("minimal", {"model": "pool-deepseek-v4-pro", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 16, "stream": False}),
-    ("reasoning_effort", {"model": "pool-deepseek-v4-pro", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 16, "stream": False, "reasoning_effort": "low"}),
-    ("api-server-style", {"model": "pool-deepseek-v4-pro", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 50, "temperature": 0.6, "reasoning_effort": "high", "stream": True, "stream_options": {"include_usage": True}}),
-    ("adaptive-top", {"model": "pool-deepseek-v4-pro", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 16, "stream": False, "thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}}),
-    ("deepseek-v4-pro", {"model": "deepseek-v4-pro", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 16, "stream": False, "reasoning_effort": "max"}),
+    (
+        "minimal",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+        },
+    ),
+    (
+        "reasoning_effort",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+            "reasoning_effort": "low",
+        },
+    ),
+    (
+        "api-server-style",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 50,
+            "temperature": 0.6,
+            "reasoning_effort": "high",
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        },
+    ),
+    (
+        "adaptive-top",
+        {
+            "model": "pool-deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": "low"},
+        },
+    ),
+    (
+        "deepseek-v4-pro",
+        {
+            "model": "deepseek-v4-pro",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 16,
+            "stream": False,
+            "reasoning_effort": "max",
+        },
+    ),
 ]
 
 for url in URLS:

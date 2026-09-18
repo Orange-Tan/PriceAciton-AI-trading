@@ -4,6 +4,7 @@ Task 16.5 — pytest-qt test.
 
 Validates: Requirements R17.6, R4.5
 """
+
 from __future__ import annotations
 
 import pytest
@@ -12,7 +13,6 @@ import pytest
 pytest.importorskip("PyQt6")
 
 from pa_agent.util.mask_secret import mask_secret
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -31,6 +31,7 @@ def debug_widget(qtbot):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _all_text_areas(widget) -> list[str]:
     """Return the plain-text content of all 4 QTextEdit areas."""
     return [
@@ -42,6 +43,7 @@ def _all_text_areas(widget) -> list[str]:
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 class TestDebugWidgetMasksKey:
     """DebugWidget must never display the plaintext API key in any text area."""
@@ -66,9 +68,9 @@ class TestDebugWidgetMasksKey:
         debug_widget.add_turn(turn)
 
         for text in _all_text_areas(debug_widget):
-            assert PLAINTEXT_KEY not in text, (
-                f"Plaintext API key found in displayed text: {text[:200]!r}"
-            )
+            assert (
+                PLAINTEXT_KEY not in text
+            ), f"Plaintext API key found in displayed text: {text[:200]!r}"
 
     def test_masked_form_present_in_all_areas(self, debug_widget):
         """After adding a turn that contains the key, all areas show the masked form."""
@@ -86,9 +88,9 @@ class TestDebugWidgetMasksKey:
         debug_widget.add_turn(turn)
 
         for text in _all_text_areas(debug_widget):
-            assert expected_mask in text, (
-                f"Expected masked key {expected_mask!r} not found in: {text[:200]!r}"
-            )
+            assert (
+                expected_mask in text
+            ), f"Expected masked key {expected_mask!r} not found in: {text[:200]!r}"
 
     def test_no_key_in_text_when_key_not_in_turn(self, debug_widget):
         """Turns without the key should display normally without masking artefacts."""

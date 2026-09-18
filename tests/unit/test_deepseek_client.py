@@ -1,19 +1,20 @@
 """Unit tests for DeepSeekClient (task 6.5)."""
+
 from __future__ import annotations
 
-import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, call
-from pa_agent.config.settings import AIProviderSettings
+
 from pa_agent.ai.deepseek_client import (
-    DeepSeekClient,
     AIReply,
-    AIUsage,
     CancelledError,
+    DeepSeekClient,
     _completion_max_tokens,
     _is_deepseek_model,
     _openclaw_agent_request_extra,
 )
+from pa_agent.config.settings import AIProviderSettings
 
 
 def _make_settings(api_key: str = "sk-test-1234abcd") -> AIProviderSettings:
@@ -52,7 +53,7 @@ def test_chat_does_not_send_forbidden_params():
     mock_openai.return_value.chat.completions.create.return_value = mock_resp
 
     with patch("pa_agent.ai.deepseek_client._OpenAI", mock_openai):
-        reply = client.chat([{"role": "user", "content": "hi"}])
+        client.chat([{"role": "user", "content": "hi"}])
 
     call_kwargs = mock_openai.return_value.chat.completions.create.call_args
     kwargs = call_kwargs.kwargs if call_kwargs.kwargs else {}
@@ -89,6 +90,13 @@ def test_completion_max_tokens_deepseek_cap():
     settings.base_url = "https://api.deepseek.com"
     settings.model = "deepseek-v4-pro"
     assert _completion_max_tokens(settings, extra_body={}, effort="max") == 393_216
+
+
+def test_completion_max_tokens_custom_gateway_cap():
+    settings = _make_settings()
+    settings.base_url = "https://cli.999554.xyz/v1"
+    settings.model = "DeepSeek-V4-Flash[free]"
+    assert _completion_max_tokens(settings, extra_body={}, effort="max") == 260_000
 
 
 def test_completion_max_tokens_packy_claude_cap():
@@ -262,9 +270,7 @@ def test_stream_kkai_passes_thinking_extra_body():
     )
 
     mock_openai = MagicMock()
-    mock_openai.return_value.chat.completions.create.return_value = iter(
-        [chunk_reason, chunk_done]
-    )
+    mock_openai.return_value.chat.completions.create.return_value = iter([chunk_reason, chunk_done])
 
     with patch("pa_agent.ai.deepseek_client._OpenAI", mock_openai):
         reply = client.stream_chat(
@@ -281,6 +287,7 @@ def test_stream_kkai_passes_thinking_extra_body():
 def test_chat_cancel_token_raises():
     """If cancel_token is set, chat() raises CancelledError before calling API."""
     from pa_agent.util.threading import CancelToken
+
     settings = _make_settings()
     client = DeepSeekClient(settings)
 
@@ -299,6 +306,7 @@ def test_chat_cancel_token_raises():
 def test_chat_no_plaintext_key_in_logs(caplog):
     """API key must not appear in log output."""
     import logging
+
     settings = _make_settings(api_key="sk-super-secret-9999")
     client = DeepSeekClient(settings)
 
@@ -311,9 +319,9 @@ def test_chat_no_plaintext_key_in_logs(caplog):
             client.chat([{"role": "user", "content": "hi"}])
 
     for record in caplog.records:
-        assert "sk-super-secret-9999" not in record.getMessage(), (
-            f"Plaintext API key found in log: {record.getMessage()}"
-        )
+        assert (
+            "sk-super-secret-9999" not in record.getMessage()
+        ), f"Plaintext API key found in log: {record.getMessage()}"
 
 
 def test_chat_returns_aireply_fields():

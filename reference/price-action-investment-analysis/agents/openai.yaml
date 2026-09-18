@@ -1,0 +1,4 @@
+interface:
+  display_name: "Price Action Analysis"
+  short_description: "Staged analysis of closed-candle market snapshots"
+  default_prompt: "Analyze this closed-candle snapshot with price action and return a staged research assessment."

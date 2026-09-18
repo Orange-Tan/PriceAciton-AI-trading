@@ -53,9 +53,7 @@ def test_switch_failure_restores_previous_source(monkeypatch) -> None:
 
     old_source = _Source()
     new_source = _Source(fail_connect=True)
-    monkeypatch.setattr(
-        "pa_agent.data.factory.create_data_source", lambda _kind: new_source
-    )
+    monkeypatch.setattr("pa_agent.data.factory.create_data_source", lambda _kind: new_source)
 
     window = MainWindow.__new__(MainWindow)
     window._switching = False

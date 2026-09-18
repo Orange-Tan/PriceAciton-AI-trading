@@ -1,4 +1,5 @@
 """Detail: planned-limit path failures in pending records."""
+
 from __future__ import annotations
 
 import json

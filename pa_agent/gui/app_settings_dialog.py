@@ -17,11 +17,12 @@
 对话框只负责把选择写回 ``settings`` 并落盘；真正的数据源切换由 MainWindow
 在 ``exec()`` 返回后调用 ``_select_data_source_kind`` 完成。
 """
+
 from __future__ import annotations
 
+import logging
 import math
 import time
-import logging
 from collections.abc import Callable
 
 from PyQt6.QtCore import QPointF, Qt, QThread, pyqtSignal
@@ -51,8 +52,8 @@ from pa_agent.config.model_providers import (
     find_provider,
     guess_provider,
 )
-from pa_agent.config.settings import AIProviderSettings, Settings, save_settings
 from pa_agent.config.paths import SETTINGS_JSON_PATH
+from pa_agent.config.settings import AIProviderSettings, Settings, save_settings
 from pa_agent.data.factory import normalize_data_source_kind
 from pa_agent.gui.feishu_settings_dialog import FeishuSettingsPanel
 from pa_agent.gui.general_settings_dialog import GeneralSettingsPanel
@@ -111,8 +112,7 @@ DATA_SOURCE_INFO: dict[str, dict[str, str]] = {
         "label": "腾讯财经（A股）",
         "markets": "A股（沪/深）、A股指数；免费，无需 token",
         "connect": (
-            "需联网；纯 HTTP 公开行情接口（前复权）。"
-            "1m/5m/15m/30m/1h/4h/日/周/月 全周期。"
+            "需联网；纯 HTTP 公开行情接口（前复权）。" "1m/5m/15m/30m/1h/4h/日/周/月 全周期。"
         ),
     },
 }
@@ -134,9 +134,7 @@ def make_gear_icon(size: int = 20, color: str = "#8b949e") -> QIcon:
     r_hub = size * 0.09
 
     # Teeth — thick radial strokes.
-    painter.setPen(
-        QPen(c, size * 0.16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap)
-    )
+    painter.setPen(QPen(c, size * 0.16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
     for i in range(n):
         ang = i * (2 * math.pi / n) - math.pi / 2
         x1 = cx + r_ring_in * math.cos(ang)
@@ -194,7 +192,7 @@ class _DataSourceProbeWorker(QThread):
         super().__init__(parent)
         self._kinds = list(kinds)
 
-    def run(self) -> None:  # noqa: D102
+    def run(self) -> None:
         from pa_agent.data.factory import probe_data_source
 
         for kind in self._kinds:
@@ -216,7 +214,7 @@ class _ModelProbeWorker(QThread):
         super().__init__(parent)
         self._settings = settings
 
-    def run(self) -> None:  # noqa: D102
+    def run(self) -> None:
         if self.isInterruptionRequested():
             return
         try:
@@ -300,9 +298,7 @@ class AppSettingsDialog(QDialog):
 
         self._ds_info = QLabel("")
         self._ds_info.setWordWrap(True)
-        self._ds_info.setAlignment(
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
-        )
+        self._ds_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self._ds_info.setStyleSheet(f"color: {T.FG_2}; font-size: 12px;")
 
         # 当前选中数据源的连通检测结果
@@ -319,9 +315,7 @@ class AppSettingsDialog(QDialog):
         ds_right_layout.setSpacing(6)
         ds_right_layout.addWidget(self._ds_info, stretch=1)
         ds_right_layout.addWidget(self._ds_probe_label)
-        ds_right_layout.addWidget(
-            self._ds_probe_btn, alignment=Qt.AlignmentFlag.AlignLeft
-        )
+        ds_right_layout.addWidget(self._ds_probe_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         ds_widget = QWidget()
         ds_layout = QVBoxLayout(ds_widget)
@@ -358,9 +352,7 @@ class AppSettingsDialog(QDialog):
         # 通用设置：四组选项作为独立模块加入（对应 _MODULE_GENERAL_START 起的行号）
         self._general_panel = GeneralSettingsPanel(self._settings)
         self._general_panel.demo_mode_requested.connect(self._request_demo_mode)
-        self._general_panel.set_decision_flow_play_handler(
-            self._decision_flow_play_handler
-        )
+        self._general_panel.set_decision_flow_play_handler(self._decision_flow_play_handler)
         for page in self._general_panel.pages():
             self._stack.addWidget(page)
 
@@ -370,8 +362,7 @@ class AppSettingsDialog(QDialog):
         self._module_list.setCurrentRow(_MODULE_DS)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save
-            | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         save_btn = buttons.button(QDialogButtonBox.StandardButton.Save)
         if save_btn:
@@ -578,7 +569,10 @@ class AppSettingsDialog(QDialog):
         self._start_probe(list(DATA_SOURCE_INFO.keys()))
 
     def _start_probe(self, kinds: list[str]) -> None:
-        if getattr(self, "_ds_probe_worker", None) is not None and self._ds_probe_worker.isRunning():
+        if (
+            getattr(self, "_ds_probe_worker", None) is not None
+            and self._ds_probe_worker.isRunning()
+        ):
             return
         for kind in kinds:
             self._set_ds_busy(kind)
@@ -635,7 +629,7 @@ class AppSettingsDialog(QDialog):
             model_worker.finished.connect(model_worker.deleteLater)
             self._model_probe_worker = None
 
-    def closeEvent(self, event) -> None:  # noqa: N802
+    def closeEvent(self, event) -> None:
         self._shutdown_probe_worker()
         super().closeEvent(event)
 
@@ -774,7 +768,7 @@ class AppSettingsDialog(QDialog):
         save_settings(self._settings, SETTINGS_JSON_PATH)
         self.accept()
 
-    def reject(self) -> None:  # noqa: N802
+    def reject(self) -> None:
         """取消时回滚界面风格预览（未点保存的主题不留在界面上）。"""
         from PyQt6.QtWidgets import QApplication
 
