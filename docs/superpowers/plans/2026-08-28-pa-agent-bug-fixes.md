@@ -46,7 +46,7 @@ def test_analysis_error_survives_debug_widget_runtime_error(qtbot, main_window, 
 
 - [ ] **Step 2: 运行测试确认当前实现失败**
 
-Run: `QT_QPA_PLATFORM=offscreen .venv-review/bin/python -m pytest -q tests/unit/test_main_window_analysis_errors.py -q`
+Run: `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/unit/test_main_window_analysis_errors.py -q`
 
 Expected: 至少一个用例因 `debug.add_turn` 的 `AttributeError` 或 `RuntimeError` 失败。
 
@@ -56,7 +56,7 @@ Expected: 至少一个用例因 `debug.add_turn` 的 `AttributeError` 或 `Runti
 
 - [ ] **Step 4: 运行测试确认通过**
 
-Run: `QT_QPA_PLATFORM=offscreen .venv-review/bin/python -m pytest -q tests/unit/test_main_window_analysis_errors.py`
+Run: `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/unit/test_main_window_analysis_errors.py`
 
 Expected: 所有用例 PASS。
 
@@ -92,7 +92,7 @@ def test_load_settings_recovers_from_validation_error(tmp_path, payload):
 
 - [ ] **Step 2: 运行测试确认当前实现抛出 ValidationError**
 
-Run: `.venv-review/bin/python -m pytest -q tests/unit/test_settings_recovery.py -q`
+Run: `.venv/bin/python -m pytest -q tests/unit/test_settings_recovery.py -q`
 
 Expected: 当前实现直接抛 `pydantic.ValidationError`。
 
@@ -102,7 +102,7 @@ Expected: 当前实现直接抛 `pydantic.ValidationError`。
 
 - [ ] **Step 4: 运行恢复测试及现有设置测试**
 
-Run: `.venv-review/bin/python -m pytest -q tests/unit/test_settings_recovery.py tests/unit/test_settings*.py`
+Run: `.venv/bin/python -m pytest -q tests/unit/test_settings_recovery.py tests/unit/test_settings*.py`
 
 Expected: 新增用例及既有设置用例全部 PASS。
 
@@ -138,7 +138,7 @@ def test_rate_limit_is_classified_separately(openai_status_error):
 
 - [ ] **Step 2: 运行测试确认误判**
 
-Run: `.venv-review/bin/python -m pytest -q tests/unit/test_api_error_classification.py -q`
+Run: `.venv/bin/python -m pytest -q tests/unit/test_api_error_classification.py -q`
 
 Expected: 当前 `invalid_request_error` 被判为鉴权，400/404/422 被判为网络错误。
 
@@ -148,7 +148,7 @@ Expected: 当前 `invalid_request_error` 被判为鉴权，400/404/422 被判为
 
 - [ ] **Step 4: 运行相关 orchestrator 测试**
 
-Run: `.venv-review/bin/python -m pytest -q tests/unit/test_api_error_classification.py tests/unit/test_provider_override_by_model.py tests/unit/test_deepseek_client.py`
+Run: `.venv/bin/python -m pytest -q tests/unit/test_api_error_classification.py tests/unit/test_provider_override_by_model.py tests/unit/test_deepseek_client.py`
 
 Expected: 新分类用例通过；如旧测试仍断言旧契约，更新断言以匹配当前 provider 路由设计。
 
@@ -184,7 +184,7 @@ def test_factory_probe_cancels_pending_future(monkeypatch):
 
 - [ ] **Step 2: 运行测试确认当前第三方调用未传递请求级 timeout**
 
-Run: `.venv-review/bin/python -m pytest -q tests/unit/test_data_source_probe_timeout.py -q`
+Run: `.venv/bin/python -m pytest -q tests/unit/test_data_source_probe_timeout.py -q`
 
 Expected: 模拟调用参数中没有 timeout，或线程在超时后仍保持运行。
 
@@ -194,7 +194,7 @@ Expected: 模拟调用参数中没有 timeout，或线程在超时后仍保持�
 
 - [ ] **Step 4: 运行数据源相关测试**
 
-Run: `.venv-review/bin/python -m pytest -q tests/unit/test_data_source_probe_timeout.py tests/unit/test_market_defaults.py`
+Run: `.venv/bin/python -m pytest -q tests/unit/test_data_source_probe_timeout.py tests/unit/test_market_defaults.py`
 
 Expected: 探测超时在设定时间内返回，线程池无新增长期存活线程。
 
@@ -225,7 +225,7 @@ def test_settings_dialog_close_does_not_wait_ten_seconds(dialog, running_worker,
 
 - [ ] **Step 2: 运行测试确认当前 wait(10000) 阻塞**
 
-Run: `QT_QPA_PLATFORM=offscreen .venv-review/bin/python -m pytest -q tests/unit/test_probe_worker_shutdown.py -q`
+Run: `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/unit/test_probe_worker_shutdown.py -q`
 
 Expected: 当前实现调用 10 秒等待路径。
 
@@ -235,7 +235,7 @@ Expected: 当前实现调用 10 秒等待路径。
 
 - [ ] **Step 4: 运行 Qt 关闭和主窗口测试**
 
-Run: `QT_QPA_PLATFORM=offscreen .venv-review/bin/python -m pytest -q tests/unit/test_probe_worker_shutdown.py tests/unit/test_main_window_analysis_errors.py`
+Run: `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/unit/test_probe_worker_shutdown.py tests/unit/test_main_window_analysis_errors.py`
 
 Expected: 关闭耗时小于 0.5 秒且无 Qt 对象访问异常。
 
@@ -266,7 +266,7 @@ def test_saved_settings_never_persist_provider_or_feishu_secrets(tmp_path):
 
 - [ ] **Step 2: 运行测试确认当前保存路径**
 
-Run: `.venv-review/bin/python -m pytest -q tests/unit/test_credential_storage.py -q`
+Run: `.venv/bin/python -m pytest -q tests/unit/test_credential_storage.py -q`
 
 Expected: provider key 已被清空；Feishu secret 若仍写入则测试失败。
 
@@ -307,7 +307,7 @@ def test_save_settings_replaces_file_atomically(tmp_path, monkeypatch):
 
 - [ ] **Step 2: 运行测试确认当前无备份且直接覆盖**
 
-Run: `.venv-review/bin/python -m pytest -q tests/unit/test_settings_atomic_save.py -q`
+Run: `.venv/bin/python -m pytest -q tests/unit/test_settings_atomic_save.py -q`
 
 Expected: `.bak` 文件不存在。
 
@@ -317,7 +317,7 @@ Expected: `.bak` 文件不存在。
 
 - [ ] **Step 4: 运行全部设置测试**
 
-Run: `.venv-review/bin/python -m pytest -q tests/unit/test_settings_atomic_save.py tests/unit/test_settings_recovery.py tests/unit/test_settings*.py`
+Run: `.venv/bin/python -m pytest -q tests/unit/test_settings_atomic_save.py tests/unit/test_settings_recovery.py tests/unit/test_settings*.py`
 
 Expected: 全部 PASS。
 
@@ -344,13 +344,13 @@ git commit -m "fix: atomically persist settings"
 
 - [ ] **Step 2: 运行完整单元测试**
 
-Run: `QT_QPA_PLATFORM=offscreen .venv-review/bin/python -m pytest -q tests/unit`
+Run: `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/unit`
 
 Expected: 无失败；若仍失败，按错误分类回到对应任务修复，不降低断言强度。
 
 - [ ] **Step 3: 运行最终静态检查**
 
-Run: `.venv-review/bin/python -m compileall -q pa_agent tests && .venv-review/bin/python -m ruff check pa_agent --select F,E9 && git diff --check`
+Run: `.venv/bin/python -m compileall -q pa_agent tests && .venv/bin/python -m ruff check pa_agent --select F,E9 && git diff --check`
 
 Expected: 编译、lint 通过；`git diff --check` 无新增空白错误。
 
